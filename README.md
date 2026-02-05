@@ -12,7 +12,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - Service (daemon): schedules backups, scans files, encrypts, compresses, and uploads to S3.
 - Menu bar app: shows status, last backup, errors, and lets you trigger/configure backups.
 - Storage: S3-compatible backend (AWS S3 or compatible providers).
-- Security: passphrase-derived key stored in macOS Keychain.
+- Security (current): passphrase-derived key from `BAXTER_PASSPHRASE` for CLI operations.
 
 ## Initial Scope (MVP)
 - Configure backup roots.
@@ -30,6 +30,13 @@ A simple, secure macOS backup utility with an S3 backend.
 ## Config
 - Default path: `~/Library/Application Support/baxter/config.toml`
 - Example: `config.example.toml`
+- Set `BAXTER_PASSPHRASE` for CLI backup/restore encryption.
+
+## CLI (current)
+- `baxter backup run`: scan configured roots, encrypt changed files, and store objects.
+- `baxter backup status`: show manifest/object counts.
+- `baxter restore <path>`: restore one path from the latest manifest/object store.
+- Current object storage implementation is local (`~/Library/Application Support/baxter/objects`) while S3 wiring is in progress.
 
 ## First Week Plan
 1. Implement config parsing + validation; design TOML schema.
@@ -40,10 +47,13 @@ A simple, secure macOS backup utility with an S3 backend.
 6. Wire menu bar UI to daemon and show status.
 
 ## Repo Layout
+- `cmd/baxter`: CLI entrypoint.
 - `cmd/baxterd`: daemon entrypoint.
+- `internal/cli`: command handlers.
 - `internal/config`: config types and loading.
 - `internal/backup`: scan + planning.
 - `internal/crypto`: encryption + key handling.
+- `internal/state`: app config/state paths.
 - `internal/storage`: S3 integration.
 - `apps/macos`: menu bar app.
 
