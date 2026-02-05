@@ -55,6 +55,18 @@ A simple, secure macOS backup utility with an S3 backend.
 - `GET /v1/status`
 - `POST /v1/backup/run`
 
+## Daemon Autostart (macOS)
+- Install and start launchd agent:
+- `./scripts/install-launchd.sh`
+- Uninstall launchd agent:
+- `./scripts/uninstall-launchd.sh`
+- Installed paths:
+- LaunchAgent plist: `~/Library/LaunchAgents/com.electriccoding.baxterd.plist`
+- Daemon binary: `~/Library/Application Support/baxter/bin/baxterd`
+- Logs:
+- `~/Library/Logs/baxterd.out.log`
+- `~/Library/Logs/baxterd.err.log`
+
 ## First Week Plan
 1. Implement config parsing + validation; design TOML schema.
 2. Build file scanner + manifest format (hashing, change detection).

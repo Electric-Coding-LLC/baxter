@@ -7,6 +7,8 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - Implemented endpoints:
 - `GET /v1/status`
 - `POST /v1/backup/run`
+- Recommended local daemon setup uses launchd via:
+- `./scripts/install-launchd.sh`
 - A small settings window will manage backup roots, schedule, and S3 settings.
 
 ## Next Steps
