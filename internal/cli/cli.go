@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
@@ -15,6 +16,12 @@ import (
 )
 
 const passphraseEnv = "BAXTER_PASSPHRASE"
+
+type restoreOptions struct {
+	DryRun    bool
+	ToDir     string
+	Overwrite bool
+}
 
 func Run(args []string) error {
 	fs := flag.NewFlagSet("baxter", flag.ContinueOnError)
@@ -54,17 +61,18 @@ func Run(args []string) error {
 			return errors.New("unknown backup subcommand")
 		}
 	case "restore":
-		if len(rest) != 2 {
-			return errors.New("usage: baxter restore <path>")
+		opts, restorePathArg, err := parseRestoreArgs(rest[1:])
+		if err != nil {
+			return err
 		}
-		return restorePath(cfg, rest[1])
+		return restorePath(cfg, restorePathArg, opts)
 	default:
 		return usageError()
 	}
 }
 
 func usageError() error {
-	return errors.New("usage: baxter [-config path] backup run|status | restore <path>")
+	return errors.New("usage: baxter [-config path] backup run|status | restore [--dry-run] [--to dir] [--overwrite] <path>")
 }
 
 func runBackup(cfg *config.Config) error {
@@ -150,12 +158,7 @@ func backupStatus(cfg *config.Config) error {
 	return nil
 }
 
-func restorePath(cfg *config.Config, requestedPath string) error {
-	key, err := encryptionKey(cfg)
-	if err != nil {
-		return err
-	}
-
+func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) error {
 	manifestPath, err := state.ManifestPath()
 	if err != nil {
 		return err
@@ -183,6 +186,21 @@ func restorePath(cfg *config.Config, requestedPath string) error {
 		return err
 	}
 
+	targetPath, err := resolvedRestorePath(entry.Path, opts.ToDir)
+	if err != nil {
+		return err
+	}
+
+	if opts.DryRun {
+		fmt.Printf("restore dry-run: source=%s target=%s overwrite=%t\n", entry.Path, targetPath, opts.Overwrite)
+		return nil
+	}
+
+	key, err := encryptionKey(cfg)
+	if err != nil {
+		return err
+	}
+
 	payload, err := store.GetObject(backup.ObjectKeyForPath(entry.Path))
 	if err != nil {
 		return fmt.Errorf("read object: %w", err)
@@ -193,15 +211,60 @@ func restorePath(cfg *config.Config, requestedPath string) error {
 		return fmt.Errorf("decrypt object: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(entry.Path), 0o755); err != nil {
+	if !opts.Overwrite {
+		if _, err := os.Stat(targetPath); err == nil {
+			return fmt.Errorf("target exists: %s (use --overwrite to replace)", targetPath)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(entry.Path, plain, entry.Mode.Perm()); err != nil {
+	if err := os.WriteFile(targetPath, plain, entry.Mode.Perm()); err != nil {
 		return err
 	}
 
-	fmt.Printf("restore complete: %s\n", entry.Path)
+	fmt.Printf("restore complete: source=%s target=%s\n", entry.Path, targetPath)
 	return nil
+}
+
+func parseRestoreArgs(args []string) (restoreOptions, string, error) {
+	restoreFS := flag.NewFlagSet("restore", flag.ContinueOnError)
+	restoreFS.SetOutput(os.Stderr)
+
+	var opts restoreOptions
+	restoreFS.BoolVar(&opts.DryRun, "dry-run", false, "show what would be restored without writing files")
+	restoreFS.StringVar(&opts.ToDir, "to", "", "destination root directory for restore")
+	restoreFS.BoolVar(&opts.Overwrite, "overwrite", false, "overwrite existing target files")
+
+	if err := restoreFS.Parse(args); err != nil {
+		return restoreOptions{}, "", err
+	}
+
+	rest := restoreFS.Args()
+	if len(rest) != 1 {
+		return restoreOptions{}, "", errors.New("usage: baxter restore [--dry-run] [--to dir] [--overwrite] <path>")
+	}
+	return opts, rest[0], nil
+}
+
+func resolvedRestorePath(sourcePath string, toDir string) (string, error) {
+	if strings.TrimSpace(toDir) == "" {
+		return sourcePath, nil
+	}
+
+	cleanToDir := filepath.Clean(toDir)
+	cleanSource := filepath.Clean(sourcePath)
+	relSource := strings.TrimPrefix(cleanSource, string(filepath.Separator))
+	if relSource == "" || relSource == "." {
+		return "", errors.New("invalid restore source path")
+	}
+
+	targetPath := filepath.Join(cleanToDir, relSource)
+	targetPath = filepath.Clean(targetPath)
+	return targetPath, nil
 }
 
 func encryptionKey(cfg *config.Config) ([]byte, error) {
