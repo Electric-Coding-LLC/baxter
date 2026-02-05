@@ -31,6 +31,8 @@ A simple, secure macOS backup utility with an S3 backend.
 ## Config
 - Default path: `~/Library/Application Support/baxter/config.toml`
 - Example: `config.example.toml`
+- Initialize config with your real backup roots:
+- `./scripts/init-config.sh "/Users/<you>/Documents" "/Users/<you>/Pictures"`
 - Encryption key resolution order:
 - `BAXTER_PASSPHRASE` (env override)
 - macOS Keychain item from `[encryption]` (`keychain_service` + `keychain_account`)
@@ -70,6 +72,26 @@ A simple, secure macOS backup utility with an S3 backend.
 - Logs:
 - `~/Library/Logs/baxterd.out.log`
 - `~/Library/Logs/baxterd.err.log`
+
+## First Backup Runbook
+- Add key to Keychain (example):
+- `security add-generic-password -U -a default -s baxter -w "<your-passphrase>"`
+- Initialize config with your backup roots:
+- `./scripts/init-config.sh "/Users/<you>/Documents" "/Users/<you>/Pictures"`
+- Run a manual backup:
+- `baxter backup run`
+- Check backup status:
+- `baxter backup status`
+- Optional restore preview:
+- `baxter restore --dry-run "/Users/<you>/Documents/example.txt"`
+
+## Release
+- Local versioned build artifacts:
+- `./scripts/release.sh v0.1.0`
+- Artifacts are written to:
+- `dist/v0.1.0/`
+- Tag push triggers GitHub Release workflow:
+- `git tag v0.1.0 && git push origin v0.1.0`
 
 ## First Week Plan
 1. Implement config parsing + validation; design TOML schema.

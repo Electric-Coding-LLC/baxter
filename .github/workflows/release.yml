@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - run: go mod download
+      - run: go test ./...
+      - name: Build release artifacts
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          DIST_DIR="dist/${VERSION}"
+          mkdir -p "$DIST_DIR"
+
+          GOOS=darwin GOARCH=arm64 go build -o "$DIST_DIR/baxter-darwin-arm64" ./cmd/baxter
+          GOOS=darwin GOARCH=arm64 go build -o "$DIST_DIR/baxterd-darwin-arm64" ./cmd/baxterd
+          GOOS=linux GOARCH=amd64 go build -o "$DIST_DIR/baxter-linux-amd64" ./cmd/baxter
+          GOOS=linux GOARCH=amd64 go build -o "$DIST_DIR/baxterd-linux-amd64" ./cmd/baxterd
+
+          (cd "$DIST_DIR" && sha256sum * > SHA256SUMS)
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/${{ github.ref_name }}/baxter-darwin-arm64
+            dist/${{ github.ref_name }}/baxterd-darwin-arm64
+            dist/${{ github.ref_name }}/baxter-linux-amd64
+            dist/${{ github.ref_name }}/baxterd-linux-amd64
+            dist/${{ github.ref_name }}/SHA256SUMS
