@@ -16,6 +16,8 @@ bucket = ""
 prefix = "baxter/"
 
 [encryption]
-# Passphrase-derived key stored in Keychain.
+# CLI key resolution order:
+# 1) BAXTER_PASSPHRASE env var (override)
+# 2) keychain item identified by service+account below
 keychain_service = "baxter"
 keychain_account = "default"

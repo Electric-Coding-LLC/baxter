@@ -103,17 +103,23 @@ func (c *Config) Validate() error {
 		if c.S3.Region != "" || c.S3.Endpoint != "" {
 			return errors.New("s3.bucket is required when s3.region or s3.endpoint is set")
 		}
-		return nil
+	} else {
+		if c.S3.Region == "" {
+			return errors.New("s3.region is required when s3.bucket is set")
+		}
+		if strings.Contains(c.S3.Bucket, "/") {
+			return errors.New("s3.bucket must not contain '/'")
+		}
+		if c.S3.Prefix == "" {
+			return errors.New("s3.prefix must not be empty")
+		}
 	}
 
-	if c.S3.Region == "" {
-		return errors.New("s3.region is required when s3.bucket is set")
+	if strings.TrimSpace(c.Encryption.KeychainService) == "" {
+		return errors.New("encryption.keychain_service must not be empty")
 	}
-	if strings.Contains(c.S3.Bucket, "/") {
-		return errors.New("s3.bucket must not contain '/'")
-	}
-	if c.S3.Prefix == "" {
-		return errors.New("s3.prefix must not be empty")
+	if strings.TrimSpace(c.Encryption.KeychainAccount) == "" {
+		return errors.New("encryption.keychain_account must not be empty")
 	}
 	return nil
 }

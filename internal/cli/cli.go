@@ -72,7 +72,7 @@ func runBackup(cfg *config.Config) error {
 		return errors.New("no backup_roots configured")
 	}
 
-	key, err := encryptionKeyFromEnv()
+	key, err := encryptionKey(cfg)
 	if err != nil {
 		return err
 	}
@@ -151,7 +151,7 @@ func backupStatus(cfg *config.Config) error {
 }
 
 func restorePath(cfg *config.Config, requestedPath string) error {
-	key, err := encryptionKeyFromEnv()
+	key, err := encryptionKey(cfg)
 	if err != nil {
 		return err
 	}
@@ -204,10 +204,15 @@ func restorePath(cfg *config.Config, requestedPath string) error {
 	return nil
 }
 
-func encryptionKeyFromEnv() ([]byte, error) {
+func encryptionKey(cfg *config.Config) ([]byte, error) {
 	passphrase := os.Getenv(passphraseEnv)
-	if passphrase == "" {
-		return nil, fmt.Errorf("%s is required", passphraseEnv)
+	if passphrase != "" {
+		return crypto.KeyFromPassphrase(passphrase), nil
+	}
+
+	passphrase, err := crypto.PassphraseFromKeychain(cfg.Encryption.KeychainService, cfg.Encryption.KeychainAccount)
+	if err != nil {
+		return nil, fmt.Errorf("no %s set and keychain lookup failed: %w", passphraseEnv, err)
 	}
 	return crypto.KeyFromPassphrase(passphrase), nil
 }

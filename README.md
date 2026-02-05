@@ -30,7 +30,9 @@ A simple, secure macOS backup utility with an S3 backend.
 ## Config
 - Default path: `~/Library/Application Support/baxter/config.toml`
 - Example: `config.example.toml`
-- Set `BAXTER_PASSPHRASE` for CLI backup/restore encryption.
+- Encryption key resolution order:
+- `BAXTER_PASSPHRASE` (env override)
+- macOS Keychain item from `[encryption]` (`keychain_service` + `keychain_account`)
 - Storage backend selection:
 - `s3.bucket` empty -> local object storage at `~/Library/Application Support/baxter/objects`
 - `s3.bucket` set -> S3 object storage (requires `s3.region`)
