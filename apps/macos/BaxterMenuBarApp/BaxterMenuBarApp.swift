@@ -13,6 +13,7 @@ final class BackupStatusModel: ObservableObject {
     @Published var state: State = .idle
     @Published var lastBackupAt: Date?
     @Published var lastError: String?
+    @Published var isDaemonReachable: Bool = true
 
     private let baseURL = URL(string: "http://127.0.0.1:41820")!
     private var timer: Timer?
@@ -47,9 +48,11 @@ final class BackupStatusModel: ObservableObject {
 
                 let status = try JSONDecoder().decode(DaemonStatus.self, from: data)
                 apply(status)
+                isDaemonReachable = true
             } catch {
                 state = .failed
                 lastError = "IPC unavailable: \(error.localizedDescription)"
+                isDaemonReachable = false
             }
         }
     }
@@ -133,6 +136,14 @@ struct BaxterMenuBarApp: App {
                 if let lastError = model.lastError {
                     Text("Error: \(lastError)")
                         .foregroundStyle(.red)
+                }
+
+                if !model.isDaemonReachable {
+                    Text("Daemon is not reachable.")
+                    Text("Check: launchctl print gui/$(id -u)/com.electriccoding.baxterd")
+                        .font(.caption)
+                    Text("Install/start: ./scripts/install-launchd.sh")
+                        .font(.caption)
                 }
             }
             .padding(.bottom, 6)

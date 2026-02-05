@@ -51,6 +51,8 @@ A simple, secure macOS backup utility with an S3 backend.
 ## Daemon (current)
 - `baxterd` runs IPC server on `127.0.0.1:41820` by default.
 - `baxterd --once` runs a single backup pass and exits.
+- Run once now example:
+- `go run ./cmd/baxterd --once`
 - Endpoints:
 - `GET /v1/status`
 - `POST /v1/backup/run`
@@ -60,6 +62,8 @@ A simple, secure macOS backup utility with an S3 backend.
 - `./scripts/install-launchd.sh`
 - Uninstall launchd agent:
 - `./scripts/uninstall-launchd.sh`
+- One-command smoke check:
+- `./scripts/smoke-launchd-ipc.sh`
 - Installed paths:
 - LaunchAgent plist: `~/Library/LaunchAgents/com.electriccoding.baxterd.plist`
 - Daemon binary: `~/Library/Application Support/baxter/bin/baxterd`
