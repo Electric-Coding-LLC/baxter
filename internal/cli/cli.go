@@ -49,7 +49,7 @@ func Run(args []string) error {
 		case "run":
 			return runBackup(cfg)
 		case "status":
-			return backupStatus()
+			return backupStatus(cfg)
 		default:
 			return errors.New("unknown backup subcommand")
 		}
@@ -57,7 +57,7 @@ func Run(args []string) error {
 		if len(rest) != 2 {
 			return errors.New("usage: baxter restore <path>")
 		}
-		return restorePath(rest[1])
+		return restorePath(cfg, rest[1])
 	default:
 		return usageError()
 	}
@@ -82,11 +82,10 @@ func runBackup(cfg *config.Config) error {
 		return err
 	}
 
-	objectsDir, err := state.ObjectStoreDir()
+	store, err := objectStoreFromConfig(cfg)
 	if err != nil {
 		return err
 	}
-	store := storage.NewLocalClient(objectsDir)
 
 	previous, err := backup.LoadManifest(manifestPath)
 	if err != nil {
@@ -127,7 +126,7 @@ func runBackup(cfg *config.Config) error {
 	return nil
 }
 
-func backupStatus() error {
+func backupStatus(cfg *config.Config) error {
 	manifestPath, err := state.ManifestPath()
 	if err != nil {
 		return err
@@ -138,11 +137,10 @@ func backupStatus() error {
 		return fmt.Errorf("load manifest: %w", err)
 	}
 
-	objectsDir, err := state.ObjectStoreDir()
+	store, err := objectStoreFromConfig(cfg)
 	if err != nil {
 		return err
 	}
-	store := storage.NewLocalClient(objectsDir)
 	keys, err := store.ListKeys()
 	if err != nil {
 		return fmt.Errorf("list objects: %w", err)
@@ -152,7 +150,7 @@ func backupStatus() error {
 	return nil
 }
 
-func restorePath(requestedPath string) error {
+func restorePath(cfg *config.Config, requestedPath string) error {
 	key, err := encryptionKeyFromEnv()
 	if err != nil {
 		return err
@@ -180,11 +178,10 @@ func restorePath(requestedPath string) error {
 		}
 	}
 
-	objectsDir, err := state.ObjectStoreDir()
+	store, err := objectStoreFromConfig(cfg)
 	if err != nil {
 		return err
 	}
-	store := storage.NewLocalClient(objectsDir)
 
 	payload, err := store.GetObject(backup.ObjectKeyForPath(entry.Path))
 	if err != nil {
@@ -213,4 +210,16 @@ func encryptionKeyFromEnv() ([]byte, error) {
 		return nil, fmt.Errorf("%s is required", passphraseEnv)
 	}
 	return crypto.KeyFromPassphrase(passphrase), nil
+}
+
+func objectStoreFromConfig(cfg *config.Config) (storage.ObjectStore, error) {
+	objectsDir, err := state.ObjectStoreDir()
+	if err != nil {
+		return nil, err
+	}
+	store, err := storage.NewFromConfig(cfg.S3, objectsDir)
+	if err != nil {
+		return nil, fmt.Errorf("create object store: %w", err)
+	}
+	return store, nil
 }

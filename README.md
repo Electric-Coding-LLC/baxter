@@ -31,12 +31,15 @@ A simple, secure macOS backup utility with an S3 backend.
 - Default path: `~/Library/Application Support/baxter/config.toml`
 - Example: `config.example.toml`
 - Set `BAXTER_PASSPHRASE` for CLI backup/restore encryption.
+- Storage backend selection:
+- `s3.bucket` empty -> local object storage at `~/Library/Application Support/baxter/objects`
+- `s3.bucket` set -> S3 object storage (requires `s3.region`)
 
 ## CLI (current)
 - `baxter backup run`: scan configured roots, encrypt changed files, and store objects.
 - `baxter backup status`: show manifest/object counts.
 - `baxter restore <path>`: restore one path from the latest manifest/object store.
-- Current object storage implementation is local (`~/Library/Application Support/baxter/objects`) while S3 wiring is in progress.
+- Object storage uses local mode or S3 mode based on config.
 
 ## First Week Plan
 1. Implement config parsing + validation; design TOML schema.
