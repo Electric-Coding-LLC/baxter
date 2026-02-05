@@ -1,0 +1,19 @@
+backup_roots = [
+  "/Users/you/Documents",
+  "/Users/you/Pictures"
+]
+
+# daily | weekly | manual
+schedule = "daily"
+
+[s3]
+# Leave endpoint empty for AWS S3. Use a full https URL for S3-compatible providers.
+endpoint = ""
+region = "us-west-2"
+bucket = "your-bucket"
+prefix = "baxter/"
+
+[encryption]
+# Passphrase-derived key stored in Keychain.
+keychain_service = "baxter"
+keychain_account = "default"
