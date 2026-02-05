@@ -3,14 +3,11 @@ package daemon
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
+	"baxter/internal/state"
 )
-
-const appName = "baxter"
 
 type Daemon struct {
 	cfg *config.Config
@@ -29,7 +26,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return nil
 	}
 
-	manifestPath, err := stateManifestPath()
+	manifestPath, err := state.ManifestPath()
 	if err != nil {
 		return err
 	}
@@ -52,17 +49,4 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func stateManifestPath() (string, error) {
-	dir, err := os.UserConfigDir()
-	if err != nil || dir == "" {
-		home, homeErr := os.UserHomeDir()
-		if homeErr != nil {
-			return "", homeErr
-		}
-		dir = filepath.Join(home, "Library", "Application Support")
-	}
-
-	return filepath.Join(dir, appName, "manifest.json"), nil
 }

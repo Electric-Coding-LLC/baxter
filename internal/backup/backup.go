@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -147,4 +148,19 @@ func fileSHA256(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func ObjectKeyForPath(path string) string {
+	sum := sha256.Sum256([]byte(filepath.Clean(path)))
+	return hex.EncodeToString(sum[:]) + ".enc"
+}
+
+func FindEntryByPath(m *Manifest, requestedPath string) (ManifestEntry, error) {
+	cleanPath := filepath.Clean(requestedPath)
+	for _, entry := range m.Entries {
+		if filepath.Clean(entry.Path) == cleanPath {
+			return entry, nil
+		}
+	}
+	return ManifestEntry{}, errors.New("path not found in manifest")
 }
