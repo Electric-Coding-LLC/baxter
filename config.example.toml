@@ -7,10 +7,12 @@ backup_roots = [
 schedule = "daily"
 
 [s3]
+# Leave bucket empty to use local object storage only.
+# Set bucket+region to enable S3 object storage.
 # Leave endpoint empty for AWS S3. Use a full https URL for S3-compatible providers.
 endpoint = ""
-region = "us-west-2"
-bucket = "your-bucket"
+region = ""
+bucket = ""
 prefix = "baxter/"
 
 [encryption]

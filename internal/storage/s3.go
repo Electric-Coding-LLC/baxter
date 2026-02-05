@@ -1,88 +1,159 @@
 package storage
 
 import (
+	"bytes"
+	"context"
 	"errors"
-	"os"
-	"path/filepath"
+	"fmt"
 	"sort"
 	"strings"
+
+	appconfig "baxter/internal/config"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-type Client struct {
-	rootDir string
+type S3Client struct {
+	client *s3.Client
+	bucket string
+	prefix string
 }
 
-func NewLocalClient(rootDir string) *Client {
-	return &Client{rootDir: rootDir}
+func NewFromConfig(cfg appconfig.S3Config, localRootDir string) (ObjectStore, error) {
+	if cfg.Bucket == "" {
+		return NewLocalClient(localRootDir), nil
+	}
+	return NewS3Client(cfg)
 }
 
-func (c *Client) PutObject(key string, data []byte) error {
-	fullPath, err := c.objectPath(key)
+func NewS3Client(cfg appconfig.S3Config) (*S3Client, error) {
+	if cfg.Bucket == "" {
+		return nil, errors.New("s3 bucket is required")
+	}
+	if cfg.Region == "" {
+		return nil, errors.New("s3 region is required")
+	}
+
+	loadOpts := []func(*awsconfig.LoadOptions) error{
+		awsconfig.WithRegion(cfg.Region),
+	}
+
+	if cfg.Endpoint != "" {
+		resolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+			return aws.Endpoint{URL: cfg.Endpoint, Source: aws.EndpointSourceCustom}, nil
+		})
+		loadOpts = append(loadOpts, awsconfig.WithEndpointResolverWithOptions(resolver))
+	}
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), loadOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+
+	s3Opts := func(o *s3.Options) {
+		if cfg.Endpoint != "" {
+			o.UsePathStyle = true
+		}
+	}
+
+	return &S3Client{
+		client: s3.NewFromConfig(awsCfg, s3Opts),
+		bucket: cfg.Bucket,
+		prefix: cfg.Prefix,
+	}, nil
+}
+
+func (c *S3Client) PutObject(key string, data []byte) error {
+	objectKey, err := c.prefixedKey(key)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(fullPath, data, 0o600)
-}
 
-func (c *Client) GetObject(key string) ([]byte, error) {
-	fullPath, err := c.objectPath(key)
+	_, err = c.client.PutObject(context.Background(), &s3.PutObjectInput{
+		Bucket: &c.bucket,
+		Key:    &objectKey,
+		Body:   bytes.NewReader(data),
+	})
 	if err != nil {
-		return nil, err
-	}
-	return os.ReadFile(fullPath)
-}
-
-func (c *Client) DeleteObject(key string) error {
-	fullPath, pathErr := c.objectPath(key)
-	if pathErr != nil {
-		return pathErr
-	}
-	err := os.Remove(fullPath)
-	if err != nil && !os.IsNotExist(err) {
-		return err
+		return fmt.Errorf("put object: %w", err)
 	}
 	return nil
 }
 
-func (c *Client) ListKeys() ([]string, error) {
-	if _, err := os.Stat(c.rootDir); err != nil {
-		if os.IsNotExist(err) {
-			return []string{}, nil
-		}
+func (c *S3Client) GetObject(key string) ([]byte, error) {
+	objectKey, err := c.prefixedKey(key)
+	if err != nil {
 		return nil, err
 	}
 
-	keys := make([]string, 0)
-	err := filepath.WalkDir(c.rootDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-
-		rel, err := filepath.Rel(c.rootDir, path)
-		if err != nil {
-			return err
-		}
-		keys = append(keys, filepath.ToSlash(rel))
-		return nil
+	out, err := c.client.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: &c.bucket,
+		Key:    &objectKey,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get object: %w", err)
+	}
+	defer out.Body.Close()
+
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(out.Body); err != nil {
+		return nil, fmt.Errorf("read object body: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func (c *S3Client) DeleteObject(key string) error {
+	objectKey, err := c.prefixedKey(key)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
+		Bucket: &c.bucket,
+		Key:    &objectKey,
+	})
+	if err != nil {
+		return fmt.Errorf("delete object: %w", err)
+	}
+	return nil
+}
+
+func (c *S3Client) ListKeys() ([]string, error) {
+	keys := make([]string, 0)
+	paginator := s3.NewListObjectsV2Paginator(c.client, &s3.ListObjectsV2Input{
+		Bucket: &c.bucket,
+		Prefix: aws.String(c.prefix),
+	})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("list objects: %w", err)
+		}
+		for _, obj := range page.Contents {
+			if obj.Key == nil {
+				continue
+			}
+			trimmed := strings.TrimPrefix(*obj.Key, c.prefix)
+			if trimmed != "" {
+				keys = append(keys, trimmed)
+			}
+		}
 	}
 
 	sort.Strings(keys)
 	return keys, nil
 }
 
-func (c *Client) objectPath(key string) (string, error) {
-	cleaned := filepath.Clean(filepath.FromSlash(key))
-	if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "..") {
-		return "", errors.New("invalid key path")
+func (c *S3Client) prefixedKey(key string) (string, error) {
+	cleaned := strings.TrimSpace(strings.ReplaceAll(key, "\\", "/"))
+	if cleaned == "" {
+		return "", errors.New("object key cannot be empty")
 	}
-	return filepath.Join(c.rootDir, cleaned), nil
+	if strings.HasPrefix(cleaned, "/") || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") {
+		return "", errors.New("invalid object key")
+	}
+	return c.prefix + cleaned, nil
 }

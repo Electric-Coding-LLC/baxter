@@ -11,8 +11,8 @@ import (
 type Config struct {
 	BackupRoots []string         `toml:"backup_roots"`
 	Schedule    string           `toml:"schedule"`
-	S3          S3Config          `toml:"s3"`
-	Encryption  EncryptionConfig  `toml:"encryption"`
+	S3          S3Config         `toml:"s3"`
+	Encryption  EncryptionConfig `toml:"encryption"`
 }
 
 type S3Config struct {
@@ -94,8 +94,26 @@ func (c *Config) Normalize() {
 func (c *Config) Validate() error {
 	switch c.Schedule {
 	case "", "daily", "weekly", "manual":
-		return nil
+		// valid
 	default:
 		return errors.New("schedule must be daily, weekly, or manual")
 	}
+
+	if c.S3.Bucket == "" {
+		if c.S3.Region != "" || c.S3.Endpoint != "" {
+			return errors.New("s3.bucket is required when s3.region or s3.endpoint is set")
+		}
+		return nil
+	}
+
+	if c.S3.Region == "" {
+		return errors.New("s3.region is required when s3.bucket is set")
+	}
+	if strings.Contains(c.S3.Bucket, "/") {
+		return errors.New("s3.bucket must not contain '/'")
+	}
+	if c.S3.Prefix == "" {
+		return errors.New("s3.prefix must not be empty")
+	}
+	return nil
 }
