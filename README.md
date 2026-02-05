@@ -13,6 +13,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - Menu bar app: shows status, last backup, errors, and lets you trigger/configure backups.
 - Storage: S3-compatible backend (AWS S3 or compatible providers).
 - Security (current): passphrase-derived key from `BAXTER_PASSPHRASE` for CLI operations.
+- IPC: local HTTP daemon API at `127.0.0.1:41820` for UI status and run triggers.
 
 ## Initial Scope (MVP)
 - Configure backup roots.
@@ -46,6 +47,13 @@ A simple, secure macOS backup utility with an S3 backend.
 - `--dry-run` shows source and destination without writing files
 - `--to` writes under a destination root instead of the original path
 - Object storage uses local mode or S3 mode based on config.
+
+## Daemon (current)
+- `baxterd` runs IPC server on `127.0.0.1:41820` by default.
+- `baxterd --once` runs a single backup pass and exits.
+- Endpoints:
+- `GET /v1/status`
+- `POST /v1/backup/run`
 
 ## First Week Plan
 1. Implement config parsing + validation; design TOML schema.
