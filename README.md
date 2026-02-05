@@ -27,6 +27,10 @@ A simple, secure macOS backup utility with an S3 backend.
 - Config format: TOML.
 - Config + state: `~/Library/Application Support/baxter`.
 
+## Config
+- Default path: `~/Library/Application Support/baxter/config.toml`
+- Example: `config.example.toml`
+
 ## First Week Plan
 1. Implement config parsing + validation; design TOML schema.
 2. Build file scanner + manifest format (hashing, change detection).

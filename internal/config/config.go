@@ -3,13 +3,16 @@ package config
 import (
 	"errors"
 	"os"
+	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 type Config struct {
-	BackupRoots []string        `toml:"backup_roots"`
-	Schedule    string          `toml:"schedule"`
-	S3          S3Config         `toml:"s3"`
-	Encryption  EncryptionConfig `toml:"encryption"`
+	BackupRoots []string         `toml:"backup_roots"`
+	Schedule    string           `toml:"schedule"`
+	S3          S3Config          `toml:"s3"`
+	Encryption  EncryptionConfig  `toml:"encryption"`
 }
 
 type S3Config struct {
@@ -42,12 +45,57 @@ func DefaultConfig() *Config {
 }
 
 func Load(path string) (*Config, error) {
+	cfg := DefaultConfig()
+
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return DefaultConfig(), nil
+			return cfg, nil
 		}
 		return nil, err
 	}
 
-	return nil, errors.New("TOML parsing not implemented yet")
+	if _, err := toml.DecodeFile(path, cfg); err != nil {
+		return nil, err
+	}
+
+	cfg.ApplyDefaults()
+	cfg.Normalize()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func (c *Config) ApplyDefaults() {
+	if len(c.BackupRoots) == 0 {
+		c.BackupRoots = []string{}
+	}
+	if c.Schedule == "" {
+		c.Schedule = "daily"
+	}
+	if c.S3.Prefix == "" {
+		c.S3.Prefix = "baxter/"
+	}
+	if c.Encryption.KeychainService == "" {
+		c.Encryption.KeychainService = "baxter"
+	}
+	if c.Encryption.KeychainAccount == "" {
+		c.Encryption.KeychainAccount = "default"
+	}
+}
+
+func (c *Config) Normalize() {
+	if c.S3.Prefix != "" && !strings.HasSuffix(c.S3.Prefix, "/") {
+		c.S3.Prefix += "/"
+	}
+}
+
+func (c *Config) Validate() error {
+	switch c.Schedule {
+	case "", "daily", "weekly", "manual":
+		return nil
+	default:
+		return errors.New("schedule must be daily, weekly, or manual")
+	}
 }
