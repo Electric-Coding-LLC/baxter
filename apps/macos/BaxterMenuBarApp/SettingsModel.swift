@@ -31,6 +31,15 @@ struct BaxterConfig {
     )
 }
 
+enum SettingsField: Hashable {
+    case s3Endpoint
+    case s3Region
+    case s3Bucket
+    case s3Prefix
+    case keychainService
+    case keychainAccount
+}
+
 @MainActor
 final class BaxterSettingsModel: ObservableObject {
     @Published var backupRoots: [String] = []
@@ -43,6 +52,11 @@ final class BaxterSettingsModel: ObservableObject {
     @Published var keychainAccount: String = "default"
     @Published var statusMessage: String?
     @Published var errorMessage: String?
+    @Published private(set) var validationErrors: [SettingsField: String] = [:]
+
+    var canSave: Bool {
+        validationErrors.isEmpty
+    }
 
     var configURL: URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -57,6 +71,10 @@ final class BaxterSettingsModel: ObservableObject {
         load()
     }
 
+    func validationMessage(for field: SettingsField) -> String? {
+        validationErrors[field]
+    }
+
     func load() {
         do {
             let config: BaxterConfig
@@ -69,6 +87,7 @@ final class BaxterSettingsModel: ObservableObject {
                 statusMessage = "Config not found. Showing defaults."
             }
             apply(config)
+            validateDraft()
             errorMessage = nil
         } catch {
             errorMessage = "Failed to load config: \(error.localizedDescription)"
@@ -77,6 +96,12 @@ final class BaxterSettingsModel: ObservableObject {
 
     func save() {
         do {
+            validateDraft()
+            guard canSave else {
+                errorMessage = "Fix highlighted fields before saving."
+                return
+            }
+
             let config = try buildConfigForSave()
             let text = encodeConfig(config)
 
@@ -93,6 +118,10 @@ final class BaxterSettingsModel: ObservableObject {
         } catch {
             errorMessage = "Failed to save config: \(error.localizedDescription)"
         }
+    }
+
+    func validateDraft() {
+        validationErrors = validationIssues(for: draftConfig())
     }
 
     func chooseBackupRoots() {
@@ -118,18 +147,21 @@ final class BaxterSettingsModel: ObservableObject {
         }
         statusMessage = nil
         errorMessage = nil
+        validateDraft()
     }
 
     func removeBackupRoot(_ root: String) {
         backupRoots.removeAll { $0 == root }
         statusMessage = nil
         errorMessage = nil
+        validateDraft()
     }
 
     func clearBackupRoots() {
         backupRoots = []
         statusMessage = nil
         errorMessage = nil
+        validateDraft()
     }
 
     private func apply(_ config: BaxterConfig) {
@@ -144,6 +176,43 @@ final class BaxterSettingsModel: ObservableObject {
     }
 
     private func buildConfigForSave() throws -> BaxterConfig {
+        let config = draftConfig()
+        let errors = validationIssues(for: config)
+        validationErrors = errors
+        if let message = firstValidationMessage(from: errors) {
+            throw SettingsError.validation(message)
+        }
+        return config
+    }
+
+    private func addBackupRoots(_ paths: [String]) {
+        let merged = backupRoots + paths
+        backupRoots = normalizedBackupRoots(merged)
+        statusMessage = nil
+        errorMessage = nil
+        validateDraft()
+    }
+
+    private func normalizedBackupRoots(_ roots: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+
+        for root in roots {
+            let trimmed = root.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                continue
+            }
+            guard !seen.contains(trimmed) else {
+                continue
+            }
+            seen.insert(trimmed)
+            result.append(trimmed)
+        }
+
+        return result
+    }
+
+    private func draftConfig() -> BaxterConfig {
         let backupRoots = normalizedBackupRoots(backupRoots)
 
         var config = BaxterConfig(
@@ -164,53 +233,53 @@ final class BaxterSettingsModel: ObservableObject {
             config.s3Prefix += "/"
         }
 
-        if config.s3Bucket.isEmpty {
-            if !config.s3Region.isEmpty || !config.s3Endpoint.isEmpty {
-                throw SettingsError.validation("s3.bucket is required when s3.region or s3.endpoint is set")
-            }
-        } else {
-            if config.s3Region.isEmpty {
-                throw SettingsError.validation("s3.region is required when s3.bucket is set")
-            }
-            if config.s3Bucket.contains("/") {
-                throw SettingsError.validation("s3.bucket must not contain '/'")
-            }
-        }
-
-        if config.keychainService.isEmpty {
-            throw SettingsError.validation("encryption.keychain_service must not be empty")
-        }
-        if config.keychainAccount.isEmpty {
-            throw SettingsError.validation("encryption.keychain_account must not be empty")
-        }
-
         return config
     }
 
-    private func addBackupRoots(_ paths: [String]) {
-        let merged = backupRoots + paths
-        backupRoots = normalizedBackupRoots(merged)
-        statusMessage = nil
-        errorMessage = nil
-    }
+    private func validationIssues(for config: BaxterConfig) -> [SettingsField: String] {
+        var errors: [SettingsField: String] = [:]
 
-    private func normalizedBackupRoots(_ roots: [String]) -> [String] {
-        var seen: Set<String> = []
-        var result: [String] = []
-
-        for root in roots {
-            let trimmed = root.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                continue
+        if config.s3Bucket.isEmpty {
+            if !config.s3Region.isEmpty || !config.s3Endpoint.isEmpty {
+                errors[.s3Bucket] = "Bucket is required when region or endpoint is set."
             }
-            guard !seen.contains(trimmed) else {
-                continue
+        } else {
+            if config.s3Region.isEmpty {
+                errors[.s3Region] = "Region is required when bucket is set."
             }
-            seen.insert(trimmed)
-            result.append(trimmed)
+            if config.s3Bucket.contains("/") {
+                errors[.s3Bucket] = "Bucket must not contain '/'."
+            }
         }
 
-        return result
+        if config.s3Prefix.isEmpty {
+            errors[.s3Prefix] = "Prefix must not be empty."
+        }
+        if config.keychainService.isEmpty {
+            errors[.keychainService] = "Keychain service must not be empty."
+        }
+        if config.keychainAccount.isEmpty {
+            errors[.keychainAccount] = "Keychain account must not be empty."
+        }
+
+        return errors
+    }
+
+    private func firstValidationMessage(from errors: [SettingsField: String]) -> String? {
+        let orderedFields: [SettingsField] = [
+            .s3Bucket,
+            .s3Region,
+            .s3Prefix,
+            .keychainService,
+            .keychainAccount,
+            .s3Endpoint,
+        ]
+        for field in orderedFields {
+            if let message = errors[field] {
+                return message
+            }
+        }
+        return nil
     }
 
     private func decodeConfig(from text: String) -> BaxterConfig {

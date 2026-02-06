@@ -62,28 +62,46 @@ struct BaxterSettingsView: View {
 
                     SettingsCard(title: "S3", subtitle: "Leave bucket empty for local object storage.") {
                         VStack(spacing: 8) {
-                            SettingRow(label: "Endpoint") {
+                            SettingRow(label: "Endpoint", error: model.validationMessage(for: .s3Endpoint)) {
                                 TextField("https://s3.amazonaws.com (optional)", text: $model.s3Endpoint)
+                                    .onChange(of: model.s3Endpoint) { _, _ in
+                                        model.validateDraft()
+                                    }
                             }
-                            SettingRow(label: "Region") {
+                            SettingRow(label: "Region", error: model.validationMessage(for: .s3Region)) {
                                 TextField("us-west-2", text: $model.s3Region)
+                                    .onChange(of: model.s3Region) { _, _ in
+                                        model.validateDraft()
+                                    }
                             }
-                            SettingRow(label: "Bucket") {
+                            SettingRow(label: "Bucket", error: model.validationMessage(for: .s3Bucket)) {
                                 TextField("my-backups", text: $model.s3Bucket)
+                                    .onChange(of: model.s3Bucket) { _, _ in
+                                        model.validateDraft()
+                                    }
                             }
-                            SettingRow(label: "Prefix") {
+                            SettingRow(label: "Prefix", error: model.validationMessage(for: .s3Prefix)) {
                                 TextField("baxter/", text: $model.s3Prefix)
+                                    .onChange(of: model.s3Prefix) { _, _ in
+                                        model.validateDraft()
+                                    }
                             }
                         }
                     }
 
                     SettingsCard(title: "Encryption", subtitle: "Keychain item used when BAXTER_PASSPHRASE is not set.") {
                         VStack(spacing: 8) {
-                            SettingRow(label: "Service") {
+                            SettingRow(label: "Service", error: model.validationMessage(for: .keychainService)) {
                                 TextField("baxter", text: $model.keychainService)
+                                    .onChange(of: model.keychainService) { _, _ in
+                                        model.validateDraft()
+                                    }
                             }
-                            SettingRow(label: "Account") {
+                            SettingRow(label: "Account", error: model.validationMessage(for: .keychainAccount)) {
                                 TextField("default", text: $model.keychainAccount)
+                                    .onChange(of: model.keychainAccount) { _, _ in
+                                        model.validateDraft()
+                                    }
                             }
                         }
                     }
@@ -119,6 +137,7 @@ struct BaxterSettingsView: View {
                     model.save()
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!model.canSave)
                 .keyboardShortcut("s", modifiers: [.command])
             }
         }
@@ -150,14 +169,23 @@ private struct SettingsCard<Content: View>: View {
 
 private struct SettingRow<Content: View>: View {
     let label: String
+    let error: String?
     @ViewBuilder let content: Content
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(label)
-                .foregroundStyle(.secondary)
-                .frame(width: 96, alignment: .leading)
-            content
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 12) {
+                Text(label)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 96, alignment: .leading)
+                content
+            }
+            if let error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
     }
 }
