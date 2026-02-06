@@ -34,6 +34,7 @@ func main() {
 
 	d := daemon.New(cfg)
 	d.SetIPCAddress(ipcAddr)
+	d.SetConfigPath(configPath)
 
 	var runErr error
 	if runOnce {
