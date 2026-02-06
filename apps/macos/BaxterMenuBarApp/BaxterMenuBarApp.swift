@@ -123,6 +123,7 @@ private enum IPCError: Error {
 @main
 struct BaxterMenuBarApp: App {
     @StateObject private var model = BackupStatusModel()
+    @StateObject private var settingsModel = BaxterSettingsModel()
 
     var body: some Scene {
         MenuBarExtra("Baxter", systemImage: iconName) {
@@ -163,8 +164,8 @@ struct BaxterMenuBarApp: App {
 
             Divider()
 
-            Button("Open Settings") {
-                // TODO: open settings window.
+            SettingsLink {
+                Text("Open Settings")
             }
 
             Divider()
@@ -174,6 +175,10 @@ struct BaxterMenuBarApp: App {
             }
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            BaxterSettingsView(model: settingsModel)
+        }
     }
 
     private var iconName: String {

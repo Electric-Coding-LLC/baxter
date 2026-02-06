@@ -11,7 +11,7 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - `./scripts/install-launchd.sh`
 - Operational smoke check:
 - `./scripts/smoke-launchd-ipc.sh`
-- A small settings window will manage backup roots, schedule, and S3 settings.
+- The app includes a settings window (via `Open Settings`) that edits `~/Library/Application Support/baxter/config.toml`.
 
 ## Next Steps
 - Open the project in Xcode:
@@ -19,4 +19,4 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - Build from terminal:
 - `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -configuration Debug build`
 - Add daemon lifecycle integration (start/stop) from the app.
-- Add a settings window and connect UI actions to the daemon.
+- Add folder picker UX for backup roots and validation hints for S3 fields.
