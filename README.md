@@ -47,7 +47,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - Restore safety defaults:
 - existing targets are not overwritten unless `--overwrite` is set
 - `--dry-run` shows source and destination without writing files
-- `--to` writes under a destination root instead of the original path
+- `--to` writes under a destination root instead of the original path (escape/traversal outside destination root is rejected)
 - Object storage uses local mode or S3 mode based on config.
 
 ## Daemon (current)
@@ -63,6 +63,10 @@ A simple, secure macOS backup utility with an S3 backend.
 - `GET /v1/status`
   - includes `state`, `last_backup_at`, optional `next_scheduled_at`, and `last_error`
 - `POST /v1/backup/run`
+
+## Compatibility Note
+- Encryption payload format is currently version 2 (Argon2id-derived key path).
+- This is a breaking change from older payload version 1 data; old encrypted payloads are not decryptable on current `main`.
 
 ## Daemon Autostart (macOS)
 - Install and start launchd agent:
@@ -89,6 +93,14 @@ A simple, secure macOS backup utility with an S3 backend.
 - `baxter backup status`
 - Optional restore preview:
 - `baxter restore --dry-run "/Users/<you>/Documents/example.txt"`
+- If restoring to an alternate root and the target already exists, use:
+- `baxter restore --to "/tmp/restore" --overwrite "/Users/<you>/Documents/example.txt"`
+
+## Test Coverage Highlights
+- `internal/backup`: manifest and change-plan behavior plus shared backup runner tests.
+- `internal/cli`: backup+restore passphrase smoke test, restore path containment checks, and overwrite behavior checks.
+- `internal/daemon`: `/v1/status` schedule visibility and `/v1/backup/run` state transition integration tests.
+- `cmd/baxterd`: process-level `--once` integration test verifying manifest/object outputs.
 
 ## Release
 - Local versioned build artifacts:
@@ -118,7 +130,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - `apps/macos`: menu bar app.
 
 ## Status
-- Planning.
+- Active development; core backup/restore, daemon IPC/scheduling, macOS menu UI, and integration tests are in place.
 
 ## License
 MIT.
