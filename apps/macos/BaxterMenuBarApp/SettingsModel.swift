@@ -120,6 +120,12 @@ final class BaxterSettingsModel: ObservableObject {
         errorMessage = nil
     }
 
+    func removeBackupRoot(_ root: String) {
+        backupRoots.removeAll { $0 == root }
+        statusMessage = nil
+        errorMessage = nil
+    }
+
     func clearBackupRoots() {
         backupRoots = []
         statusMessage = nil

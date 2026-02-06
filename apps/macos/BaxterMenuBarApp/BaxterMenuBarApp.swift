@@ -128,55 +128,93 @@ struct BaxterMenuBarApp: App {
 
     var body: some Scene {
         MenuBarExtra("Baxter", systemImage: iconName) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Status: \(model.state.rawValue)")
-
-                if let lastBackupAt = model.lastBackupAt {
-                    Text("Last Backup: \(lastBackupAt.formatted(date: .abbreviated, time: .shortened))")
-                } else {
-                    Text("Last Backup: never")
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label(model.state.rawValue, systemImage: statusSymbol)
+                        .font(.headline)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(statusTint.opacity(0.18), in: Capsule())
+                    Spacer()
+                    Text("Baxter")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
 
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Last backup")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(lastBackupText)
+                        .font(.title3.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
                 if let lastError = model.lastError {
-                    Text("Error: \(lastError)")
+                    Label(lastError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
                         .foregroundStyle(.red)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                 }
 
                 if !model.isDaemonReachable {
-                    Text("Daemon is not reachable.")
-                    Text("Check: launchctl print gui/$(id -u)/com.electriccoding.baxterd")
-                        .font(.caption)
-                    Text("Install/start: ./scripts/install-launchd.sh")
-                        .font(.caption)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Daemon is not reachable.")
+                        Text("Check: launchctl print gui/$(id -u)/com.electriccoding.baxterd")
+                            .font(.caption)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                }
+
+                Divider()
+
+                Button {
+                    model.runBackup()
+                } label: {
+                    Label("Run Backup", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.state == .running)
+
+                HStack(spacing: 8) {
+                    Button {
+                        model.refreshStatus()
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+
+                    Button {
+                        openSettings()
+                        DispatchQueue.main.async {
+                            NSApplication.shared.activate(ignoringOtherApps: true)
+                        }
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+
+                    Button {
+                        NSApplication.shared.terminate(nil)
+                    } label: {
+                        Label("Quit", systemImage: "xmark")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
                 }
             }
-            .padding(.bottom, 6)
-
-            Button("Run Backup") {
-                model.runBackup()
-            }
-            .disabled(model.state == .running)
-
-            Divider()
-
-            Button("Refresh") {
-                model.refreshStatus()
-            }
-
-            Divider()
-
-            Button("Open Settings") {
-                openSettings()
-                DispatchQueue.main.async {
-                    NSApplication.shared.activate(ignoringOtherApps: true)
-                }
-            }
-
-            Divider()
-
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
+            .padding(14)
+            .frame(width: 340)
         }
         .menuBarExtraStyle(.window)
 
@@ -187,5 +225,34 @@ struct BaxterMenuBarApp: App {
 
     private var iconName: String {
         model.state == .running ? "arrow.triangle.2.circlepath.circle.fill" : "externaldrive"
+    }
+
+    private var lastBackupText: String {
+        if let lastBackupAt = model.lastBackupAt {
+            return lastBackupAt.formatted(date: .abbreviated, time: .shortened)
+        }
+        return "Never"
+    }
+
+    private var statusSymbol: String {
+        switch model.state {
+        case .idle:
+            return "pause.circle.fill"
+        case .running:
+            return "arrow.triangle.2.circlepath.circle.fill"
+        case .failed:
+            return "xmark.octagon.fill"
+        }
+    }
+
+    private var statusTint: Color {
+        switch model.state {
+        case .idle:
+            return .secondary
+        case .running:
+            return .blue
+        case .failed:
+            return .red
+        }
     }
 }
