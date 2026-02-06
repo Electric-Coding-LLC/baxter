@@ -49,6 +49,12 @@ func TestResolvedRestorePathNoDestination(t *testing.T) {
 	}
 }
 
+func TestResolvedRestorePathRejectsTraversal(t *testing.T) {
+	if _, err := resolvedRestorePath("../etc/passwd", "/restore"); err == nil {
+		t.Fatal("expected traversal path to be rejected")
+	}
+}
+
 func TestRunBackupAndRestorePathWithPassphrase(t *testing.T) {
 	homeDir := t.TempDir()
 	srcRoot := filepath.Join(t.TempDir(), "src")
@@ -88,5 +94,28 @@ func TestRunBackupAndRestorePathWithPassphrase(t *testing.T) {
 
 	if !bytes.Equal(restoredContent, sourceContent) {
 		t.Fatalf("restored content mismatch: got %q want %q", string(restoredContent), string(sourceContent))
+	}
+
+	updatedContent := []byte("argon2 smoke test payload v2")
+	if err := os.WriteFile(sourcePath, updatedContent, 0o600); err != nil {
+		t.Fatalf("update source file: %v", err)
+	}
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("second run backup failed: %v", err)
+	}
+
+	if err := restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot}); err == nil {
+		t.Fatal("expected restore to fail when target exists without --overwrite")
+	}
+	if err := restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot, Overwrite: true}); err != nil {
+		t.Fatalf("restore with overwrite failed: %v", err)
+	}
+
+	overwrittenContent, err := os.ReadFile(restoredPath)
+	if err != nil {
+		t.Fatalf("read overwritten file: %v", err)
+	}
+	if !bytes.Equal(overwrittenContent, updatedContent) {
+		t.Fatalf("overwritten content mismatch: got %q want %q", string(overwrittenContent), string(updatedContent))
 	}
 }
