@@ -12,6 +12,7 @@ final class BackupStatusModel: ObservableObject {
 
     @Published var state: State = .idle
     @Published var lastBackupAt: Date?
+    @Published var nextScheduledAt: Date?
     @Published var lastError: String?
     @Published var isDaemonReachable: Bool = true
 
@@ -101,6 +102,11 @@ final class BackupStatusModel: ObservableObject {
         } else {
             lastBackupAt = nil
         }
+        if let raw = status.nextScheduledAt {
+            nextScheduledAt = iso8601.date(from: raw)
+        } else {
+            nextScheduledAt = nil
+        }
         lastError = status.lastError
     }
 }
@@ -108,11 +114,13 @@ final class BackupStatusModel: ObservableObject {
 private struct DaemonStatus: Decodable {
     let state: String
     let lastBackupAt: String?
+    let nextScheduledAt: String?
     let lastError: String?
 
     enum CodingKeys: String, CodingKey {
         case state
         case lastBackupAt = "last_backup_at"
+        case nextScheduledAt = "next_scheduled_at"
         case lastError = "last_error"
     }
 }
@@ -149,6 +157,15 @@ struct BaxterMenuBarApp: App {
                         .foregroundStyle(.secondary)
                     Text(lastBackupText)
                         .font(.title3.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Next backup")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(nextBackupText)
+                        .font(.body.weight(.medium))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -234,6 +251,13 @@ struct BaxterMenuBarApp: App {
             return lastBackupAt.formatted(date: .abbreviated, time: .shortened)
         }
         return "Never"
+    }
+
+    private var nextBackupText: String {
+        if let nextScheduledAt = model.nextScheduledAt {
+            return nextScheduledAt.formatted(date: .abbreviated, time: .shortened)
+        }
+        return "Manual"
     }
 
     private var statusSymbol: String {
