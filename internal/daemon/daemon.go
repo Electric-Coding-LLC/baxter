@@ -6,15 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
+	"baxter/internal/crypto"
 	"baxter/internal/state"
+	"baxter/internal/storage"
 )
 
 const DefaultIPCAddress = "127.0.0.1:41820"
+const passphraseEnv = "BAXTER_PASSPHRASE"
 
 type daemonStatus struct {
 	State        string
@@ -157,32 +161,47 @@ func (d *Daemon) triggerBackup() error {
 
 func (d *Daemon) performBackup(ctx context.Context) error {
 	_ = ctx
-	if len(d.cfg.BackupRoots) == 0 {
-		return errors.New("no backup roots configured")
-	}
-
 	manifestPath, err := state.ManifestPath()
 	if err != nil {
 		return err
 	}
 
-	previous, err := backup.LoadManifest(manifestPath)
+	objectsDir, err := state.ObjectStoreDir()
 	if err != nil {
-		return fmt.Errorf("load manifest: %w", err)
+		return err
 	}
-
-	current, err := backup.BuildManifest(d.cfg.BackupRoots)
+	store, err := storage.NewFromConfig(d.cfg.S3, objectsDir)
 	if err != nil {
-		return fmt.Errorf("build manifest: %w", err)
+		return fmt.Errorf("create object store: %w", err)
+	}
+	key, err := encryptionKey(d.cfg)
+	if err != nil {
+		return err
 	}
 
-	plan := backup.PlanChanges(previous, current)
-	fmt.Printf("planned upload changes=%d removed=%d\n", len(plan.NewOrChanged), len(plan.RemovedPaths))
-
-	if err := backup.SaveManifest(manifestPath, current); err != nil {
-		return fmt.Errorf("save manifest: %w", err)
+	result, err := backup.Run(d.cfg, backup.RunOptions{
+		ManifestPath:  manifestPath,
+		EncryptionKey: key,
+		Store:         store,
+	})
+	if err != nil {
+		return err
 	}
+	fmt.Printf("backup complete: uploaded=%d removed=%d total=%d\n", result.Uploaded, result.Removed, result.Total)
 	return nil
+}
+
+func encryptionKey(cfg *config.Config) ([]byte, error) {
+	passphrase := os.Getenv(passphraseEnv)
+	if passphrase != "" {
+		return crypto.KeyFromPassphrase(passphrase), nil
+	}
+
+	passphrase, err := crypto.PassphraseFromKeychain(cfg.Encryption.KeychainService, cfg.Encryption.KeychainAccount)
+	if err != nil {
+		return nil, fmt.Errorf("no %s set and keychain lookup failed: %w", passphraseEnv, err)
+	}
+	return crypto.KeyFromPassphrase(passphrase), nil
 }
 
 func (d *Daemon) setFailed(err error) {

@@ -76,10 +76,6 @@ func usageError() error {
 }
 
 func runBackup(cfg *config.Config) error {
-	if len(cfg.BackupRoots) == 0 {
-		return errors.New("no backup_roots configured")
-	}
-
 	key, err := encryptionKey(cfg)
 	if err != nil {
 		return err
@@ -95,42 +91,16 @@ func runBackup(cfg *config.Config) error {
 		return err
 	}
 
-	previous, err := backup.LoadManifest(manifestPath)
+	result, err := backup.Run(cfg, backup.RunOptions{
+		ManifestPath:  manifestPath,
+		EncryptionKey: key,
+		Store:         store,
+	})
 	if err != nil {
-		return fmt.Errorf("load manifest: %w", err)
+		return err
 	}
 
-	current, err := backup.BuildManifest(cfg.BackupRoots)
-	if err != nil {
-		return fmt.Errorf("build manifest: %w", err)
-	}
-
-	plan := backup.PlanChanges(previous, current)
-	for _, entry := range plan.NewOrChanged {
-		plain, err := os.ReadFile(entry.Path)
-		if err != nil {
-			return fmt.Errorf("read file %s: %w", entry.Path, err)
-		}
-		encrypted, err := crypto.EncryptBytes(key, plain)
-		if err != nil {
-			return fmt.Errorf("encrypt file %s: %w", entry.Path, err)
-		}
-		if err := store.PutObject(backup.ObjectKeyForPath(entry.Path), encrypted); err != nil {
-			return fmt.Errorf("store object %s: %w", entry.Path, err)
-		}
-	}
-
-	for _, path := range plan.RemovedPaths {
-		if err := store.DeleteObject(backup.ObjectKeyForPath(path)); err != nil {
-			return fmt.Errorf("delete object %s: %w", path, err)
-		}
-	}
-
-	if err := backup.SaveManifest(manifestPath, current); err != nil {
-		return fmt.Errorf("save manifest: %w", err)
-	}
-
-	fmt.Printf("backup complete: uploaded=%d removed=%d total=%d\n", len(plan.NewOrChanged), len(plan.RemovedPaths), len(current.Entries))
+	fmt.Printf("backup complete: uploaded=%d removed=%d total=%d\n", result.Uploaded, result.Removed, result.Total)
 	return nil
 }
 
