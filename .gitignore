@@ -1,2 +1,6 @@
 .codex/
 .DS_Store
+*.xcuserstate
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+apps/macos/BaxterMenuBarApp.xcodeproj/project.xcworkspace/
