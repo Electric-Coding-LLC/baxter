@@ -21,15 +21,17 @@ const DefaultIPCAddress = "127.0.0.1:41820"
 const passphraseEnv = "BAXTER_PASSPHRASE"
 
 type daemonStatus struct {
-	State        string
-	LastBackupAt time.Time
-	LastError    string
+	State           string
+	LastBackupAt    time.Time
+	NextScheduledAt time.Time
+	LastError       string
 }
 
 type statusResponse struct {
-	State        string `json:"state"`
-	LastBackupAt string `json:"last_backup_at,omitempty"`
-	LastError    string `json:"last_error,omitempty"`
+	State           string `json:"state"`
+	LastBackupAt    string `json:"last_backup_at,omitempty"`
+	NextScheduledAt string `json:"next_scheduled_at,omitempty"`
+	LastError       string `json:"last_error,omitempty"`
 }
 
 type Daemon struct {
@@ -80,11 +82,52 @@ func (d *Daemon) Run(ctx context.Context) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
+	go d.runScheduler(ctx)
+
 	err := srv.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
+}
+
+func (d *Daemon) runScheduler(ctx context.Context) {
+	interval, enabled := scheduleInterval(d.cfg.Schedule)
+	if !enabled {
+		d.setNextScheduledAt(time.Time{})
+		return
+	}
+
+	nextRun := time.Now().Add(interval)
+	d.setNextScheduledAt(nextRun)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			nextRun = time.Now().Add(interval)
+			d.setNextScheduledAt(nextRun)
+
+			if err := d.triggerBackup(); err != nil && !errors.Is(err, errBackupAlreadyRunning) {
+				d.setFailed(err)
+			}
+		}
+	}
+}
+
+func scheduleInterval(schedule string) (time.Duration, bool) {
+	switch schedule {
+	case "daily":
+		return 24 * time.Hour, true
+	case "weekly":
+		return 7 * 24 * time.Hour, true
+	default:
+		return 0, false
+	}
 }
 
 func (d *Daemon) RunOnce(ctx context.Context) error {
@@ -221,6 +264,12 @@ func (d *Daemon) setIdleSuccess() {
 	d.status.LastError = ""
 }
 
+func (d *Daemon) setNextScheduledAt(next time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.status.NextScheduledAt = next.UTC()
+}
+
 func (d *Daemon) snapshot() statusResponse {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -231,6 +280,9 @@ func (d *Daemon) snapshot() statusResponse {
 	}
 	if !d.status.LastBackupAt.IsZero() {
 		resp.LastBackupAt = d.status.LastBackupAt.Format(time.RFC3339)
+	}
+	if !d.status.NextScheduledAt.IsZero() {
+		resp.NextScheduledAt = d.status.NextScheduledAt.Format(time.RFC3339)
 	}
 	return resp
 }

@@ -52,11 +52,16 @@ A simple, secure macOS backup utility with an S3 backend.
 
 ## Daemon (current)
 - `baxterd` runs IPC server on `127.0.0.1:41820` by default.
+- Daemon scheduler behavior (from `schedule` in config):
+- `manual`: no automatic runs
+- `daily`: triggers every 24 hours while daemon is running
+- `weekly`: triggers every 7 days while daemon is running
 - `baxterd --once` runs a single backup pass and exits.
 - Run once now example:
 - `go run ./cmd/baxterd --once`
 - Endpoints:
 - `GET /v1/status`
+  - includes `state`, `last_backup_at`, optional `next_scheduled_at`, and `last_error`
 - `POST /v1/backup/run`
 
 ## Daemon Autostart (macOS)
