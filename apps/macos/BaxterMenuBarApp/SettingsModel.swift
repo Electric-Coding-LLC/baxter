@@ -89,6 +89,10 @@ final class BaxterSettingsModel: ObservableObject {
         backupRootWarnings[root]
     }
 
+    func shouldOfferApplyNow(daemonState: DaemonServiceState) -> Bool {
+        errorMessage == nil && daemonState == .running
+    }
+
     func load() {
         do {
             let config: BaxterConfig

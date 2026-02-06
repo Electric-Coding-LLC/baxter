@@ -2,6 +2,8 @@ import SwiftUI
 
 struct BaxterSettingsView: View {
     @ObservedObject var model: BaxterSettingsModel
+    @ObservedObject var statusModel: BackupStatusModel
+    @State private var showApplyNow = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -154,17 +156,38 @@ struct BaxterSettingsView: View {
                 Spacer()
                 Button("Reload") {
                     model.load()
+                    showApplyNow = false
                 }
                 Button("Save") {
                     model.save()
+                    showApplyNow = model.shouldOfferApplyNow(daemonState: statusModel.daemonServiceState)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!model.canSave)
                 .keyboardShortcut("s", modifiers: [.command])
             }
+            if showApplyNow {
+                HStack(spacing: 10) {
+                    Text("Saved settings. Restart daemon to apply changes now.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Apply Now") {
+                        statusModel.startDaemon()
+                        showApplyNow = false
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(statusModel.isLifecycleBusy)
+                }
+            }
         }
         .padding()
         .frame(minWidth: 700, minHeight: 620)
+        .onChange(of: statusModel.daemonServiceState) { _, state in
+            if state != .running {
+                showApplyNow = false
+            }
+        }
     }
 }
 

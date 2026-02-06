@@ -445,7 +445,7 @@ struct BaxterMenuBarApp: App {
         .menuBarExtraStyle(.window)
 
         Settings {
-            BaxterSettingsView(model: settingsModel)
+            BaxterSettingsView(model: settingsModel, statusModel: model)
         }
     }
 
