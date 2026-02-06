@@ -40,7 +40,7 @@ struct BaxterSettingsView: View {
                                 }
                             }
 
-                            HStack {
+                            HStack(spacing: 10) {
                                 Button("Add Folder...") {
                                     model.chooseBackupRoots()
                                 }
@@ -48,14 +48,20 @@ struct BaxterSettingsView: View {
                                     model.clearBackupRoots()
                                 }
                                 .disabled(model.backupRoots.isEmpty)
-                                Spacer()
-                                Picker("Schedule", selection: $model.schedule) {
+                            }
+
+                            HStack(alignment: .center, spacing: 12) {
+                                Text("Backup Schedule")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 110, alignment: .leading)
+                                Picker("Backup Schedule", selection: $model.schedule) {
                                     ForEach(BackupSchedule.allCases) { schedule in
                                         Text(schedule.rawValue.capitalized).tag(schedule)
                                     }
                                 }
                                 .labelsHidden()
-                                .frame(width: 140)
+                                .frame(width: 150, alignment: .leading)
+                                Spacer()
                             }
                         }
                     }
