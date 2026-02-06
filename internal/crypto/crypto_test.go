@@ -1,6 +1,8 @@
 package crypto
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	key := KeyFromPassphrase("secret-passphrase")
@@ -32,5 +34,20 @@ func TestDecryptWithWrongKeyFails(t *testing.T) {
 
 	if _, err := DecryptBytes(keyB, payload); err == nil {
 		t.Fatal("expected decrypt failure with wrong key")
+	}
+}
+
+func TestDecryptRejectsLegacyPayloadVersion(t *testing.T) {
+	key := KeyFromPassphrase("secret-passphrase")
+	plain := []byte("backup payload")
+
+	payload, err := EncryptBytes(key, plain)
+	if err != nil {
+		t.Fatalf("encrypt failed: %v", err)
+	}
+
+	payload[0] = 1
+	if _, err := DecryptBytes(key, payload); err == nil {
+		t.Fatal("expected decrypt failure for legacy payload version")
 	}
 }

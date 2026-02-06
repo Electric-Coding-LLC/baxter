@@ -12,7 +12,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - Service (daemon): schedules backups, scans files, encrypts, compresses, and uploads to S3.
 - Menu bar app: shows status, last backup, errors, and lets you trigger/configure backups.
 - Storage: S3-compatible backend (AWS S3 or compatible providers).
-- Security (current): passphrase-derived key from `BAXTER_PASSPHRASE` for CLI operations.
+- Security (current): passphrase-derived key via Argon2id (`BAXTER_PASSPHRASE` or Keychain passphrase).
 - IPC: local HTTP daemon API at `127.0.0.1:41820` for UI status and run triggers.
 
 ## Initial Scope (MVP)

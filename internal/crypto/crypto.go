@@ -4,19 +4,27 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"errors"
 	"io"
+
+	"golang.org/x/crypto/argon2"
 )
 
 const (
-	payloadVersion byte = 1
-	nonceSize           = 12
+	payloadVersion   byte = 2
+	nonceSize             = 12
+	derivedKeyLength      = 32
+)
+
+var (
+	kdfSalt       = []byte("baxter/argon2id/v1")
+	kdfIterations uint32 = 3
+	kdfMemoryKiB  uint32 = 64 * 1024
+	kdfThreads    uint8  = 4
 )
 
 func KeyFromPassphrase(passphrase string) []byte {
-	sum := sha256.Sum256([]byte(passphrase))
-	return sum[:]
+	return argon2.IDKey([]byte(passphrase), kdfSalt, kdfIterations, kdfMemoryKiB, kdfThreads, derivedKeyLength)
 }
 
 func EncryptBytes(key []byte, plaintext []byte) ([]byte, error) {
