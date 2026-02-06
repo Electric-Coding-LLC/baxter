@@ -71,4 +71,20 @@ final class SettingsModelTests: XCTestCase {
         model.s3Bucket = "my-backups"
         XCTAssertTrue(model.s3ModeHint.contains("S3 mode"))
     }
+
+    func testShouldOfferApplyNowWhenSaveSucceededAndDaemonRunning() {
+        let model = BaxterSettingsModel()
+        model.errorMessage = nil
+
+        XCTAssertTrue(model.shouldOfferApplyNow(daemonState: .running))
+        XCTAssertFalse(model.shouldOfferApplyNow(daemonState: .stopped))
+        XCTAssertFalse(model.shouldOfferApplyNow(daemonState: .unknown))
+    }
+
+    func testShouldNotOfferApplyNowWhenSaveFailed() {
+        let model = BaxterSettingsModel()
+        model.errorMessage = "save failed"
+
+        XCTAssertFalse(model.shouldOfferApplyNow(daemonState: .running))
+    }
 }
