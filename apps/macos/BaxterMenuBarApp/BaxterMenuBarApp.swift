@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import SwiftUI
 
@@ -15,6 +16,9 @@ final class BackupStatusModel: ObservableObject {
     @Published var nextScheduledAt: Date?
     @Published var lastError: String?
     @Published var isDaemonReachable: Bool = true
+    @Published var daemonServiceState: DaemonServiceState = .unknown
+    @Published var lifecycleMessage: String?
+    @Published var isLifecycleBusy: Bool = false
 
     private let baseURL = URL(string: "http://127.0.0.1:41820")!
     private var timer: Timer?
@@ -40,6 +44,7 @@ final class BackupStatusModel: ObservableObject {
 
     func refreshStatus() {
         Task {
+            daemonServiceState = await LaunchdController.queryState()
             do {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/status"))
                 request.httpMethod = "GET"
@@ -53,8 +58,13 @@ final class BackupStatusModel: ObservableObject {
                 apply(status)
                 isDaemonReachable = true
             } catch {
-                state = .failed
-                lastError = "IPC unavailable: \(error.localizedDescription)"
+                if daemonServiceState == .stopped {
+                    state = .idle
+                    lastError = nil
+                } else {
+                    state = .failed
+                    lastError = "IPC unavailable: \(error.localizedDescription)"
+                }
                 isDaemonReachable = false
             }
         }
@@ -83,6 +93,34 @@ final class BackupStatusModel: ObservableObject {
             } catch {
                 state = .failed
                 lastError = "run failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func startDaemon() {
+        Task {
+            isLifecycleBusy = true
+            defer { isLifecycleBusy = false }
+            do {
+                lifecycleMessage = try await LaunchdController.start()
+                lastError = nil
+                refreshStatus()
+            } catch {
+                lifecycleMessage = "Start failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func stopDaemon() {
+        Task {
+            isLifecycleBusy = true
+            defer { isLifecycleBusy = false }
+            do {
+                lifecycleMessage = try await LaunchdController.stop()
+                lastError = nil
+                refreshStatus()
+            } catch {
+                lifecycleMessage = "Stop failed: \(error.localizedDescription)"
             }
         }
     }
@@ -130,6 +168,139 @@ private enum IPCError: Error {
     case badStatus(Int)
 }
 
+enum DaemonServiceState: String {
+    case running = "Running"
+    case stopped = "Stopped"
+    case unknown = "Unknown"
+}
+
+private enum LaunchdController {
+    private static let label = "com.electriccoding.baxterd"
+
+    private static var uid: UInt32 { getuid() }
+
+    private static var domainTarget: String { "gui/\(uid)" }
+
+    private static var serviceTarget: String { "\(domainTarget)/\(label)" }
+
+    private static var plistPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library")
+            .appendingPathComponent("LaunchAgents")
+            .appendingPathComponent("\(label).plist")
+            .path
+    }
+
+    static func queryState() async -> DaemonServiceState {
+        do {
+            let result = try await runLaunchctlAllowFailure(["print", serviceTarget])
+            return result.status == 0 ? .running : .stopped
+        } catch {
+            return .unknown
+        }
+    }
+
+    static func start() async throws -> String {
+        guard FileManager.default.fileExists(atPath: plistPath) else {
+            throw LaunchdError.missingPlist(plistPath)
+        }
+
+        let state = await queryState()
+        if state == .running {
+            _ = try await runLaunchctl(["kickstart", "-k", serviceTarget])
+            return "Daemon restarted."
+        }
+
+        _ = try await runLaunchctl(["bootstrap", domainTarget, plistPath])
+        _ = try await runLaunchctl(["enable", serviceTarget])
+        _ = try await runLaunchctl(["kickstart", "-k", serviceTarget])
+        return "Daemon started."
+    }
+
+    static func stop() async throws -> String {
+        do {
+            _ = try await runLaunchctl(["bootout", serviceTarget])
+            return "Daemon stopped."
+        } catch {
+            let state = await queryState()
+            if state == .stopped {
+                return "Daemon already stopped."
+            }
+            throw error
+        }
+    }
+
+    private static func runLaunchctl(_ arguments: [String]) async throws -> CommandResult {
+        try await runProcess(executable: "/bin/launchctl", arguments: arguments)
+    }
+
+    private static func runLaunchctlAllowFailure(_ arguments: [String]) async throws -> CommandResult {
+        try await runProcessAllowFailure(executable: "/bin/launchctl", arguments: arguments)
+    }
+
+    private static func runProcess(executable: String, arguments: [String]) async throws -> CommandResult {
+        let result = try await runProcessAllowFailure(executable: executable, arguments: arguments)
+        if result.status != 0 {
+            throw LaunchdError.commandFailed(command: executable, arguments: arguments, stderr: result.stderr)
+        }
+        return result
+    }
+
+    private static func runProcessAllowFailure(executable: String, arguments: [String]) async throws -> CommandResult {
+        try await Task.detached(priority: .userInitiated) {
+            let process = Process()
+            let outputPipe = Pipe()
+            let errorPipe = Pipe()
+
+            process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = arguments
+            process.standardOutput = outputPipe
+            process.standardError = errorPipe
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                throw LaunchdError.executionFailed(error.localizedDescription)
+            }
+
+            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let stdout = String(data: outputData, encoding: .utf8) ?? ""
+            let stderr = String(data: errorData, encoding: .utf8) ?? ""
+            let status = process.terminationStatus
+            return CommandResult(status: status, stdout: stdout, stderr: stderr)
+        }.value
+    }
+}
+
+private struct CommandResult {
+    let status: Int32
+    let stdout: String
+    let stderr: String
+}
+
+private enum LaunchdError: LocalizedError {
+    case missingPlist(String)
+    case executionFailed(String)
+    case commandFailed(command: String, arguments: [String], stderr: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingPlist(let path):
+            return "LaunchAgent plist not found at \(path). Run scripts/install-launchd.sh once."
+        case .executionFailed(let reason):
+            return "Failed to execute launchctl: \(reason)"
+        case .commandFailed(_, let arguments, let stderr):
+            let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            if detail.isEmpty {
+                return "launchctl \(arguments.joined(separator: " ")) failed."
+            }
+            return detail
+        }
+    }
+}
+
 @main
 struct BaxterMenuBarApp: App {
     @Environment(\.openSettings) private var openSettings
@@ -145,6 +316,11 @@ struct BaxterMenuBarApp: App {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(statusTint.opacity(0.18), in: Capsule())
+                    Label("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(daemonStateTint.opacity(0.18), in: Capsule())
                     Spacer()
                     Text("Baxter")
                         .font(.subheadline.weight(.semibold))
@@ -181,12 +357,21 @@ struct BaxterMenuBarApp: App {
                 if !model.isDaemonReachable {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Daemon is not reachable.")
-                        Text("Check: launchctl print gui/$(id -u)/com.electriccoding.baxterd")
+                        Text("Use Start Daemon to bootstrap launchd, or inspect launchctl output.")
                             .font(.caption)
                     }
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                }
+
+                if let lifecycleMessage = model.lifecycleMessage {
+                    Label(lifecycleMessage, systemImage: "bolt.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                 }
 
                 Divider()
@@ -198,7 +383,29 @@ struct BaxterMenuBarApp: App {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(model.state == .running)
+                .disabled(model.state == .running || model.isLifecycleBusy || model.daemonServiceState != .running)
+
+                HStack(spacing: 8) {
+                    Button {
+                        model.startDaemon()
+                    } label: {
+                        Label("Start Daemon", systemImage: "play.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                    .disabled(model.isLifecycleBusy || model.daemonServiceState == .running)
+
+                    Button {
+                        model.stopDaemon()
+                    } label: {
+                        Label("Stop Daemon", systemImage: "stop.circle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                    .disabled(model.isLifecycleBusy || model.daemonServiceState == .stopped)
+                }
 
                 HStack(spacing: 8) {
                     Button {
@@ -279,6 +486,28 @@ struct BaxterMenuBarApp: App {
             return .blue
         case .failed:
             return .red
+        }
+    }
+
+    private var daemonStateSymbol: String {
+        switch model.daemonServiceState {
+        case .running:
+            return "dot.circle.fill"
+        case .stopped:
+            return "pause.circle"
+        case .unknown:
+            return "questionmark.circle"
+        }
+    }
+
+    private var daemonStateTint: Color {
+        switch model.daemonServiceState {
+        case .running:
+            return .green
+        case .stopped:
+            return .orange
+        case .unknown:
+            return .secondary
         }
     }
 }

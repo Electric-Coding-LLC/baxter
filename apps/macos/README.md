@@ -7,6 +7,7 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - Implemented endpoints:
 - `GET /v1/status`
 - `POST /v1/backup/run`
+- The menu includes daemon lifecycle controls (`Start Daemon`, `Stop Daemon`) using launchd (`com.electriccoding.baxterd`).
 - Recommended local daemon setup uses launchd via:
 - `./scripts/install-launchd.sh`
 - Operational smoke check:
@@ -18,5 +19,4 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - `open apps/macos/BaxterMenuBarApp.xcodeproj`
 - Build from terminal:
 - `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -configuration Debug build`
-- Add daemon lifecycle integration (start/stop) from the app.
 - Add folder picker UX for backup roots and validation hints for S3 fields.
