@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"baxter/internal/backup"
 	"baxter/internal/config"
 )
 
@@ -173,6 +174,84 @@ func TestReloadConfigEndpointUpdatesSchedule(t *testing.T) {
 	case <-done:
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("scheduler goroutine did not stop in time")
+	}
+}
+
+func TestRestoreListEndpoint(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	m := &backup.Manifest{
+		CreatedAt: time.Now().UTC(),
+		Entries: []backup.ManifestEntry{
+			{Path: "/Users/me/Documents/report.txt"},
+			{Path: "/Users/me/Pictures/photo.jpg"},
+			{Path: "/tmp/notes.txt"},
+		},
+	}
+	if err := backup.SaveManifest(manifestPath, m); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	d := New(config.DefaultConfig())
+	req := httptest.NewRequest(http.MethodGet, "/v1/restore/list?prefix=/Users/me&contains=report", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusOK)
+	}
+
+	var resp restoreListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Paths) != 1 || resp.Paths[0] != "/Users/me/Documents/report.txt" {
+		t.Fatalf("unexpected paths: %#v", resp.Paths)
+	}
+}
+
+func TestRestoreDryRunEndpoint(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	sourcePath := "/Users/me/Documents/report.txt"
+	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	m := &backup.Manifest{
+		CreatedAt: time.Now().UTC(),
+		Entries: []backup.ManifestEntry{
+			{Path: sourcePath, Mode: 0o600},
+		},
+	}
+	if err := backup.SaveManifest(manifestPath, m); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	body := bytes.NewBufferString(`{"path":"/Users/me/Documents/report.txt","to_dir":"/tmp/restore","overwrite":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/dry-run", body)
+	rr := httptest.NewRecorder()
+
+	d := New(config.DefaultConfig())
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var resp restoreDryRunResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.SourcePath != sourcePath {
+		t.Fatalf("unexpected source_path: got %q want %q", resp.SourcePath, sourcePath)
+	}
+	if resp.TargetPath != "/tmp/restore/Users/me/Documents/report.txt" {
+		t.Fatalf("unexpected target_path: got %q", resp.TargetPath)
+	}
+	if !resp.Overwrite {
+		t.Fatal("expected overwrite=true")
 	}
 }
 

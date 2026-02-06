@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +34,22 @@ type statusResponse struct {
 	LastBackupAt    string `json:"last_backup_at,omitempty"`
 	NextScheduledAt string `json:"next_scheduled_at,omitempty"`
 	LastError       string `json:"last_error,omitempty"`
+}
+
+type restoreListResponse struct {
+	Paths []string `json:"paths"`
+}
+
+type restoreDryRunRequest struct {
+	Path      string `json:"path"`
+	ToDir     string `json:"to_dir,omitempty"`
+	Overwrite bool   `json:"overwrite,omitempty"`
+}
+
+type restoreDryRunResponse struct {
+	SourcePath string `json:"source_path"`
+	TargetPath string `json:"target_path"`
+	Overwrite  bool   `json:"overwrite"`
 }
 
 type Daemon struct {
@@ -169,6 +187,8 @@ func (d *Daemon) newHandler() http.Handler {
 	mux.HandleFunc("/v1/status", d.handleStatus)
 	mux.HandleFunc("/v1/backup/run", d.handleRunBackup)
 	mux.HandleFunc("/v1/config/reload", d.handleReloadConfig)
+	mux.HandleFunc("/v1/restore/list", d.handleRestoreList)
+	mux.HandleFunc("/v1/restore/dry-run", d.handleRestoreDryRun)
 	return mux
 }
 
@@ -214,6 +234,85 @@ func (d *Daemon) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
 	d.setLastError("")
 	d.notifyScheduleChanged()
 	d.writeJSON(w, http.StatusOK, map[string]string{"status": "reloaded"})
+}
+
+func (d *Daemon) handleRestoreList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	m, err := backup.LoadManifest(manifestPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("load manifest: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	prefix := strings.TrimSpace(r.URL.Query().Get("prefix"))
+	contains := strings.TrimSpace(r.URL.Query().Get("contains"))
+	paths := filterRestorePaths(m.Entries, prefix, contains)
+	d.writeJSON(w, http.StatusOK, restoreListResponse{Paths: paths})
+}
+
+func (d *Daemon) handleRestoreDryRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req restoreDryRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		return
+	}
+	requestedPath := strings.TrimSpace(req.Path)
+	if requestedPath == "" {
+		http.Error(w, "path is required", http.StatusBadRequest)
+		return
+	}
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	m, err := backup.LoadManifest(manifestPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("load manifest: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	entry, err := backup.FindEntryByPath(m, requestedPath)
+	if err != nil {
+		absPath, absErr := filepath.Abs(requestedPath)
+		if absErr != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		entry, err = backup.FindEntryByPath(m, absPath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	targetPath, err := resolvedRestorePath(entry.Path, req.ToDir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	d.writeJSON(w, http.StatusOK, restoreDryRunResponse{
+		SourcePath: entry.Path,
+		TargetPath: targetPath,
+		Overwrite:  req.Overwrite,
+	})
 }
 
 func (d *Daemon) writeJSON(w http.ResponseWriter, status int, v any) {
@@ -335,6 +434,63 @@ func (d *Daemon) currentConfig() *config.Config {
 	cloned := *d.cfg
 	cloned.BackupRoots = append([]string(nil), d.cfg.BackupRoots...)
 	return &cloned
+}
+
+func filterRestorePaths(entries []backup.ManifestEntry, prefix string, contains string) []string {
+	cleanPrefix := filepath.Clean(strings.TrimSpace(prefix))
+	if cleanPrefix == "." {
+		cleanPrefix = ""
+	}
+	contains = strings.TrimSpace(contains)
+
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		path := entry.Path
+		if cleanPrefix != "" && !strings.HasPrefix(filepath.Clean(path), cleanPrefix) {
+			continue
+		}
+		if contains != "" && !strings.Contains(path, contains) {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+func resolvedRestorePath(sourcePath string, toDir string) (string, error) {
+	if strings.TrimSpace(toDir) == "" {
+		return sourcePath, nil
+	}
+
+	cleanToDir := filepath.Clean(toDir)
+	cleanSource := filepath.Clean(sourcePath)
+	if cleanSource == "." || cleanSource == "" {
+		return "", errors.New("invalid restore source path")
+	}
+
+	relSource := cleanSource
+	if filepath.IsAbs(cleanSource) {
+		relSource = strings.TrimPrefix(cleanSource, string(filepath.Separator))
+	}
+	if relSource == "" || relSource == "." {
+		return "", errors.New("invalid restore source path")
+	}
+	if relSource == ".." || strings.HasPrefix(relSource, ".."+string(filepath.Separator)) {
+		return "", errors.New("restore path escapes destination root")
+	}
+
+	targetPath := filepath.Join(cleanToDir, relSource)
+	targetPath = filepath.Clean(targetPath)
+
+	relToRoot, err := filepath.Rel(cleanToDir, targetPath)
+	if err != nil {
+		return "", err
+	}
+	if relToRoot == ".." || strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
+		return "", errors.New("restore path escapes destination root")
+	}
+
+	return targetPath, nil
 }
 
 func (d *Daemon) reloadConfig() (*config.Config, error) {

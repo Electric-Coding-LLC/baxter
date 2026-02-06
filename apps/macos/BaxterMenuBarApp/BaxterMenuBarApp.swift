@@ -19,6 +19,9 @@ final class BackupStatusModel: ObservableObject {
     @Published var daemonServiceState: DaemonServiceState = .unknown
     @Published var lifecycleMessage: String?
     @Published var isLifecycleBusy: Bool = false
+    @Published var restorePaths: [String] = []
+    @Published var restorePreviewMessage: String?
+    @Published var isRestoreBusy: Bool = false
 
     private let baseURL = URL(string: "http://127.0.0.1:41820")!
     private var timer: Timer?
@@ -162,6 +165,76 @@ final class BackupStatusModel: ObservableObject {
         }
     }
 
+    func fetchRestoreList(prefix: String, contains: String) {
+        Task {
+            isRestoreBusy = true
+            defer { isRestoreBusy = false }
+            do {
+                var components = URLComponents(url: baseURL.appendingPathComponent("v1/restore/list"), resolvingAgainstBaseURL: false)
+                var queryItems: [URLQueryItem] = []
+                let trimmedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedPrefix.isEmpty {
+                    queryItems.append(URLQueryItem(name: "prefix", value: trimmedPrefix))
+                }
+                let trimmedContains = contains.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedContains.isEmpty {
+                    queryItems.append(URLQueryItem(name: "contains", value: trimmedContains))
+                }
+                components?.queryItems = queryItems.isEmpty ? nil : queryItems
+
+                guard let url = components?.url else {
+                    throw IPCError.badResponse
+                }
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    throw IPCError.badResponse
+                }
+                let decoded = try JSONDecoder().decode(RestoreListPayload.self, from: data)
+                restorePaths = decoded.paths
+                restorePreviewMessage = "Found \(decoded.paths.count) path(s)."
+            } catch {
+                restorePreviewMessage = "Restore list failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func previewRestore(path: String, toDir: String, overwrite: Bool) {
+        Task {
+            isRestoreBusy = true
+            defer { isRestoreBusy = false }
+
+            let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedPath.isEmpty {
+                restorePreviewMessage = "Enter a restore path."
+                return
+            }
+
+            do {
+                var request = URLRequest(url: baseURL.appendingPathComponent("v1/restore/dry-run"))
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                let payload = RestoreDryRunRequest(
+                    path: trimmedPath,
+                    toDir: toDir.trimmingCharacters(in: .whitespacesAndNewlines),
+                    overwrite: overwrite
+                )
+                request.httpBody = try JSONEncoder().encode(payload)
+
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw IPCError.badResponse
+                }
+                guard http.statusCode == 200 else {
+                    throw IPCError.badStatus(http.statusCode)
+                }
+                let decoded = try JSONDecoder().decode(RestoreDryRunPayload.self, from: data)
+                restorePreviewMessage = "Dry-run: source=\(decoded.sourcePath) target=\(decoded.targetPath) overwrite=\(decoded.overwrite)"
+            } catch {
+                restorePreviewMessage = "Restore dry-run failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func apply(_ status: DaemonStatus) {
         switch status.state.lowercased() {
         case "running":
@@ -197,6 +270,34 @@ private struct DaemonStatus: Decodable {
         case lastBackupAt = "last_backup_at"
         case nextScheduledAt = "next_scheduled_at"
         case lastError = "last_error"
+    }
+}
+
+private struct RestoreListPayload: Decodable {
+    let paths: [String]
+}
+
+private struct RestoreDryRunRequest: Encodable {
+    let path: String
+    let toDir: String
+    let overwrite: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case path
+        case toDir = "to_dir"
+        case overwrite
+    }
+}
+
+private struct RestoreDryRunPayload: Decodable {
+    let sourcePath: String
+    let targetPath: String
+    let overwrite: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case sourcePath = "source_path"
+        case targetPath = "target_path"
+        case overwrite
     }
 }
 

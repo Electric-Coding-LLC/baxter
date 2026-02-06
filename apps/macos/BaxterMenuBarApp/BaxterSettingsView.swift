@@ -4,6 +4,11 @@ struct BaxterSettingsView: View {
     @ObservedObject var model: BaxterSettingsModel
     @ObservedObject var statusModel: BackupStatusModel
     @State private var showApplyNow = false
+    @State private var restorePrefix = ""
+    @State private var restoreContains = ""
+    @State private var restorePath = ""
+    @State private var restoreToDir = ""
+    @State private var restoreOverwrite = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -126,6 +131,67 @@ struct BaxterSettingsView: View {
                                     .onChange(of: model.keychainAccount) { _, _ in
                                         model.validateDraft()
                                     }
+                            }
+                        }
+                    }
+
+                    SettingsCard(title: "Restore (Preview)", subtitle: "Find paths and preview restore destination without writing files.") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                TextField("Filter prefix (optional)", text: $restorePrefix)
+                                TextField("Contains text (optional)", text: $restoreContains)
+                                Button("Search") {
+                                    statusModel.fetchRestoreList(prefix: restorePrefix, contains: restoreContains)
+                                }
+                                .disabled(statusModel.isRestoreBusy)
+                            }
+
+                            if !statusModel.restorePaths.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(Array(statusModel.restorePaths.prefix(8)), id: \.self) { path in
+                                        Button(path) {
+                                            restorePath = path
+                                        }
+                                        .buttonStyle(.plain)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .font(.caption.monospaced())
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    if statusModel.restorePaths.count > 8 {
+                                        Text("Showing first 8 of \(statusModel.restorePaths.count) paths.")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(8)
+                                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                            }
+
+                            TextField("Path to restore", text: $restorePath)
+                                .font(.system(.body, design: .monospaced))
+                            TextField("Destination root (optional)", text: $restoreToDir)
+                            Toggle("Overwrite", isOn: $restoreOverwrite)
+                                .font(.caption)
+
+                            HStack {
+                                Button("Dry Run Restore") {
+                                    statusModel.previewRestore(path: restorePath, toDir: restoreToDir, overwrite: restoreOverwrite)
+                                }
+                                .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                                if statusModel.isRestoreBusy {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
+                            }
+
+                            if let message = statusModel.restorePreviewMessage {
+                                Text(message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                     }
