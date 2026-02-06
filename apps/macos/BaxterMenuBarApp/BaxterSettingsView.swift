@@ -20,20 +20,27 @@ struct BaxterSettingsView: View {
                                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                             } else {
                                 ForEach(model.backupRoots, id: \.self) { root in
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "folder")
-                                            .foregroundStyle(.secondary)
-                                        Text(root)
-                                            .font(.system(.body, design: .monospaced))
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
-                                        Spacer()
-                                        Button {
-                                            model.removeBackupRoot(root)
-                                        } label: {
-                                            Image(systemName: "trash")
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: "folder")
+                                                .foregroundStyle(.secondary)
+                                            Text(root)
+                                                .font(.system(.body, design: .monospaced))
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
+                                            Spacer()
+                                            Button {
+                                                model.removeBackupRoot(root)
+                                            } label: {
+                                                Image(systemName: "trash")
+                                            }
+                                            .buttonStyle(.borderless)
                                         }
-                                        .buttonStyle(.borderless)
+                                        if let warning = model.backupRootWarning(for: root) {
+                                            Text(warning)
+                                                .font(.caption)
+                                                .foregroundStyle(.red)
+                                        }
                                     }
                                     .padding(8)
                                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
@@ -48,6 +55,11 @@ struct BaxterSettingsView: View {
                                     model.clearBackupRoots()
                                 }
                                 .disabled(model.backupRoots.isEmpty)
+                            }
+                            if let error = model.validationMessage(for: .backupRoots) {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
                             }
 
                             HStack(alignment: .center, spacing: 12) {
@@ -92,6 +104,10 @@ struct BaxterSettingsView: View {
                                         model.validateDraft()
                                     }
                             }
+                            Text(model.s3ModeHint)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
 

@@ -10,17 +10,37 @@
 		A00000000000000000000011 /* BaxterMenuBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* BaxterMenuBarApp.swift */; };
 		A00000000000000000000014 /* SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* SettingsModel.swift */; };
 		A00000000000000000000015 /* BaxterSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* BaxterSettingsView.swift */; };
+		A00000000000000000000061 /* SettingsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000071 /* SettingsModelTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A00000000000000000000080 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000040 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000020;
+			remoteInfo = BaxterMenuBarApp;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A00000000000000000000001 /* BaxterMenuBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BaxterMenuBarApp.swift; sourceTree = "<group>"; };
 		A00000000000000000000002 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsModel.swift; sourceTree = "<group>"; };
 		A00000000000000000000003 /* BaxterSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BaxterSettingsView.swift; sourceTree = "<group>"; };
 		A00000000000000000000021 /* BaxterMenuBarApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaxterMenuBarApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000071 /* SettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarAppTests/SettingsModelTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000072 /* BaxterMenuBarAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaxterMenuBarAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A00000000000000000000012 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000062 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -34,6 +54,7 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000031 /* Sources */,
+				A00000000000000000000033 /* Tests */,
 				A00000000000000000000032 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,10 +69,19 @@
 			path = .;
 			sourceTree = SOURCE_ROOT;
 		};
+		A00000000000000000000033 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000071 /* SettingsModelTests.swift */,
+			);
+			path = .;
+			sourceTree = SOURCE_ROOT;
+		};
 		A00000000000000000000032 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000021 /* BaxterMenuBarApp.app */,
+				A00000000000000000000072 /* BaxterMenuBarAppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -75,6 +105,23 @@
 			productReference = A00000000000000000000021 /* BaxterMenuBarApp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A00000000000000000000070 /* BaxterMenuBarAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000043 /* Build configuration list for PBXNativeTarget "BaxterMenuBarAppTests" */;
+			buildPhases = (
+				A00000000000000000000060 /* Sources */,
+				A00000000000000000000062 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A00000000000000000000081 /* PBXTargetDependency */,
+			);
+			name = BaxterMenuBarAppTests;
+			productName = BaxterMenuBarAppTests;
+			productReference = A00000000000000000000072 /* BaxterMenuBarAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -87,6 +134,10 @@
 				TargetAttributes = {
 					A00000000000000000000020 = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					A00000000000000000000070 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = A00000000000000000000020;
 					};
 				};
 			};
@@ -104,6 +155,7 @@
 			projectRoot = "";
 			targets = (
 				A00000000000000000000020 /* BaxterMenuBarApp */,
+				A00000000000000000000070 /* BaxterMenuBarAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -119,7 +171,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A00000000000000000000060 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000061 /* SettingsModelTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A00000000000000000000081 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000020 /* BaxterMenuBarApp */;
+			targetProxy = A00000000000000000000080 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A00000000000000000000050 /* Debug */ = {
@@ -210,6 +278,40 @@
 			};
 			name = Release;
 		};
+		A00000000000000000000054 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterMenuBarAppTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaxterMenuBarApp.app/Contents/MacOS/BaxterMenuBarApp";
+			};
+			name = Debug;
+		};
+		A00000000000000000000055 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterMenuBarAppTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaxterMenuBarApp.app/Contents/MacOS/BaxterMenuBarApp";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -227,6 +329,15 @@
 			buildConfigurations = (
 				A00000000000000000000052 /* Debug */,
 				A00000000000000000000053 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000043 /* Build configuration list for PBXNativeTarget "BaxterMenuBarAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000054 /* Debug */,
+				A00000000000000000000055 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

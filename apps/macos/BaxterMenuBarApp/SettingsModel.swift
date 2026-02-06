@@ -32,6 +32,7 @@ struct BaxterConfig {
 }
 
 enum SettingsField: Hashable {
+    case backupRoots
     case s3Endpoint
     case s3Region
     case s3Bucket
@@ -53,9 +54,18 @@ final class BaxterSettingsModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var errorMessage: String?
     @Published private(set) var validationErrors: [SettingsField: String] = [:]
+    @Published private(set) var backupRootWarnings: [String: String] = [:]
 
     var canSave: Bool {
         validationErrors.isEmpty
+    }
+
+    var s3ModeHint: String {
+        let config = draftConfig()
+        if config.s3Bucket.isEmpty {
+            return "Local mode: objects are stored on this Mac. Set bucket and region to use S3."
+        }
+        return "S3 mode: uploads go to the configured bucket. Endpoint is optional for AWS and required for some S3-compatible providers."
     }
 
     var configURL: URL {
@@ -73,6 +83,10 @@ final class BaxterSettingsModel: ObservableObject {
 
     func validationMessage(for field: SettingsField) -> String? {
         validationErrors[field]
+    }
+
+    func backupRootWarning(for root: String) -> String? {
+        backupRootWarnings[root]
     }
 
     func load() {
@@ -121,7 +135,9 @@ final class BaxterSettingsModel: ObservableObject {
     }
 
     func validateDraft() {
-        validationErrors = validationIssues(for: draftConfig())
+        let config = draftConfig()
+        backupRootWarnings = backupRootIssues(for: config.backupRoots)
+        validationErrors = validationIssues(for: config, backupRootWarnings: backupRootWarnings)
     }
 
     func chooseBackupRoots() {
@@ -177,7 +193,9 @@ final class BaxterSettingsModel: ObservableObject {
 
     private func buildConfigForSave() throws -> BaxterConfig {
         let config = draftConfig()
-        let errors = validationIssues(for: config)
+        let warnings = backupRootIssues(for: config.backupRoots)
+        backupRootWarnings = warnings
+        let errors = validationIssues(for: config, backupRootWarnings: warnings)
         validationErrors = errors
         if let message = firstValidationMessage(from: errors) {
             throw SettingsError.validation(message)
@@ -236,8 +254,12 @@ final class BaxterSettingsModel: ObservableObject {
         return config
     }
 
-    private func validationIssues(for config: BaxterConfig) -> [SettingsField: String] {
+    private func validationIssues(for config: BaxterConfig, backupRootWarnings: [String: String]) -> [SettingsField: String] {
         var errors: [SettingsField: String] = [:]
+
+        if !backupRootWarnings.isEmpty {
+            errors[.backupRoots] = "Fix invalid backup folders before saving."
+        }
 
         if config.s3Bucket.isEmpty {
             if !config.s3Region.isEmpty || !config.s3Endpoint.isEmpty {
@@ -249,6 +271,13 @@ final class BaxterSettingsModel: ObservableObject {
             }
             if config.s3Bucket.contains("/") {
                 errors[.s3Bucket] = "Bucket must not contain '/'."
+            }
+        }
+        if !config.s3Endpoint.isEmpty {
+            let url = URL(string: config.s3Endpoint)
+            let scheme = url?.scheme?.lowercased()
+            if (scheme != "http" && scheme != "https") || url?.host == nil {
+                errors[.s3Endpoint] = "Endpoint must be a valid http(s) URL."
             }
         }
 
@@ -267,6 +296,7 @@ final class BaxterSettingsModel: ObservableObject {
 
     private func firstValidationMessage(from errors: [SettingsField: String]) -> String? {
         let orderedFields: [SettingsField] = [
+            .backupRoots,
             .s3Bucket,
             .s3Region,
             .s3Prefix,
@@ -280,6 +310,26 @@ final class BaxterSettingsModel: ObservableObject {
             }
         }
         return nil
+    }
+
+    private func backupRootIssues(for roots: [String]) -> [String: String] {
+        var issues: [String: String] = [:]
+        for root in roots {
+            var isDirectory: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: root, isDirectory: &isDirectory)
+            if !exists {
+                issues[root] = "Folder does not exist."
+                continue
+            }
+            if !isDirectory.boolValue {
+                issues[root] = "Path is not a folder."
+                continue
+            }
+            if !FileManager.default.isReadableFile(atPath: root) {
+                issues[root] = "Folder is not readable."
+            }
+        }
+        return issues
     }
 
     private func decodeConfig(from text: String) -> BaxterConfig {
