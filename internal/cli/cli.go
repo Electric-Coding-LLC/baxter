@@ -227,13 +227,32 @@ func resolvedRestorePath(sourcePath string, toDir string) (string, error) {
 
 	cleanToDir := filepath.Clean(toDir)
 	cleanSource := filepath.Clean(sourcePath)
-	relSource := strings.TrimPrefix(cleanSource, string(filepath.Separator))
+	if cleanSource == "." || cleanSource == "" {
+		return "", errors.New("invalid restore source path")
+	}
+
+	relSource := cleanSource
+	if filepath.IsAbs(cleanSource) {
+		relSource = strings.TrimPrefix(cleanSource, string(filepath.Separator))
+	}
 	if relSource == "" || relSource == "." {
 		return "", errors.New("invalid restore source path")
+	}
+	if relSource == ".." || strings.HasPrefix(relSource, ".."+string(filepath.Separator)) {
+		return "", errors.New("restore path escapes destination root")
 	}
 
 	targetPath := filepath.Join(cleanToDir, relSource)
 	targetPath = filepath.Clean(targetPath)
+
+	relToRoot, err := filepath.Rel(cleanToDir, targetPath)
+	if err != nil {
+		return "", err
+	}
+	if relToRoot == ".." || strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
+		return "", errors.New("restore path escapes destination root")
+	}
+
 	return targetPath, nil
 }
 
