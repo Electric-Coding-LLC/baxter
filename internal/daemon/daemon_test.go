@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +74,105 @@ func TestRunBackupEndpointRejectsNonPost(t *testing.T) {
 
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestReloadConfigEndpointRejectsNonPost(t *testing.T) {
+	d := New(config.DefaultConfig())
+	req := httptest.NewRequest(http.MethodGet, "/v1/config/reload", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestReloadConfigEndpointFailureIsExposedInStatus(t *testing.T) {
+	d := New(config.DefaultConfig())
+	d.SetConfigPath("/tmp/config.toml")
+	d.configLoader = func(string) (*config.Config, error) {
+		return nil, errors.New("bad config")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/config/reload", nil)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("reload status code: got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	statusRR := httptest.NewRecorder()
+	d.Handler().ServeHTTP(statusRR, statusReq)
+	if statusRR.Code != http.StatusOK {
+		t.Fatalf("status code: got %d want %d", statusRR.Code, http.StatusOK)
+	}
+
+	var resp statusResponse
+	if err := json.Unmarshal(statusRR.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode status response: %v", err)
+	}
+	if !strings.Contains(resp.LastError, "config reload failed") {
+		t.Fatalf("unexpected last_error: %q", resp.LastError)
+	}
+}
+
+func TestReloadConfigEndpointUpdatesSchedule(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Schedule = "daily"
+	d := New(cfg)
+	d.SetConfigPath("/tmp/config.toml")
+	d.configLoader = func(path string) (*config.Config, error) {
+		updated := config.DefaultConfig()
+		updated.Schedule = "manual"
+		return updated, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		d.runScheduler(ctx)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		if d.snapshot().NextScheduledAt != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected next_scheduled_at before reload")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/config/reload", nil)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reload status code: got %d want %d", rr.Code, http.StatusOK)
+	}
+
+	deadline = time.Now().Add(500 * time.Millisecond)
+	for {
+		if d.snapshot().NextScheduledAt == "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected next_scheduled_at to clear after reload to manual")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("scheduler goroutine did not stop in time")
 	}
 }
 
@@ -149,10 +250,16 @@ func TestStatusEndpointScheduleVisibility(t *testing.T) {
 					time.Sleep(5 * time.Millisecond)
 				}
 			} else {
-				select {
-				case <-done:
-				case <-time.After(500 * time.Millisecond):
-					t.Fatal("manual scheduler did not return in time")
+				deadline := time.Now().Add(500 * time.Millisecond)
+				for {
+					resp := d.snapshot()
+					if resp.NextScheduledAt == "" {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatal("expected empty next_scheduled_at for manual schedule")
+					}
+					time.Sleep(5 * time.Millisecond)
 				}
 			}
 

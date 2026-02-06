@@ -35,18 +35,23 @@ type statusResponse struct {
 }
 
 type Daemon struct {
-	cfg     *config.Config
-	ipcAddr string
-	mu      sync.Mutex
-	running bool
-	status  daemonStatus
-	handler http.Handler
+	cfg             *config.Config
+	configPath      string
+	configLoader    func(string) (*config.Config, error)
+	scheduleChanged chan struct{}
+	ipcAddr         string
+	mu              sync.Mutex
+	running         bool
+	status          daemonStatus
+	handler         http.Handler
 }
 
 func New(cfg *config.Config) *Daemon {
 	d := &Daemon{
-		cfg:     cfg,
-		ipcAddr: DefaultIPCAddress,
+		cfg:             cfg,
+		configLoader:    config.Load,
+		scheduleChanged: make(chan struct{}, 1),
+		ipcAddr:         DefaultIPCAddress,
 		status: daemonStatus{
 			State: "idle",
 		},
@@ -61,6 +66,12 @@ func (d *Daemon) SetIPCAddress(addr string) {
 	if addr != "" {
 		d.ipcAddr = addr
 	}
+}
+
+func (d *Daemon) SetConfigPath(path string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.configPath = path
 }
 
 func (d *Daemon) Handler() http.Handler {
@@ -92,31 +103,45 @@ func (d *Daemon) Run(ctx context.Context) error {
 }
 
 func (d *Daemon) runScheduler(ctx context.Context) {
-	interval, enabled := scheduleInterval(d.cfg.Schedule)
-	if !enabled {
-		d.setNextScheduledAt(time.Time{})
-		return
-	}
-
-	nextRun := time.Now().Add(interval)
-	d.setNextScheduledAt(nextRun)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
 	for {
+		interval, enabled := d.scheduleInterval()
+		if !enabled {
+			d.setNextScheduledAt(time.Time{})
+			select {
+			case <-ctx.Done():
+				return
+			case <-d.scheduleChanged:
+				continue
+			}
+		}
+
+		nextRun := time.Now().Add(interval)
+		d.setNextScheduledAt(nextRun)
+
+		timer := time.NewTimer(time.Until(nextRun))
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return
-		case <-ticker.C:
-			nextRun = time.Now().Add(interval)
-			d.setNextScheduledAt(nextRun)
-
+		case <-d.scheduleChanged:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			continue
+		case <-timer.C:
 			if err := d.triggerBackup(); err != nil && !errors.Is(err, errBackupAlreadyRunning) {
 				d.setFailed(err)
 			}
 		}
 	}
+}
+
+func (d *Daemon) scheduleInterval() (time.Duration, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return scheduleInterval(d.cfg.Schedule)
 }
 
 func scheduleInterval(schedule string) (time.Duration, bool) {
@@ -131,7 +156,7 @@ func scheduleInterval(schedule string) (time.Duration, bool) {
 }
 
 func (d *Daemon) RunOnce(ctx context.Context) error {
-	if err := d.performBackup(ctx); err != nil {
+	if err := d.performBackup(ctx, d.currentConfig()); err != nil {
 		d.setFailed(err)
 		return err
 	}
@@ -143,6 +168,7 @@ func (d *Daemon) newHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/status", d.handleStatus)
 	mux.HandleFunc("/v1/backup/run", d.handleRunBackup)
+	mux.HandleFunc("/v1/config/reload", d.handleReloadConfig)
 	return mux
 }
 
@@ -172,6 +198,24 @@ func (d *Daemon) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 	d.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
 }
 
+func (d *Daemon) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	_, err := d.reloadConfig()
+	if err != nil {
+		d.setLastError(fmt.Sprintf("config reload failed: %v", err))
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	d.setLastError("")
+	d.notifyScheduleChanged()
+	d.writeJSON(w, http.StatusOK, map[string]string{"status": "reloaded"})
+}
+
 func (d *Daemon) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -181,6 +225,8 @@ func (d *Daemon) writeJSON(w http.ResponseWriter, status int, v any) {
 var errBackupAlreadyRunning = errors.New("backup already running")
 
 func (d *Daemon) triggerBackup() error {
+	cfg := d.currentConfig()
+
 	d.mu.Lock()
 	if d.running {
 		d.mu.Unlock()
@@ -192,7 +238,7 @@ func (d *Daemon) triggerBackup() error {
 	d.mu.Unlock()
 
 	go func() {
-		err := d.performBackup(context.Background())
+		err := d.performBackup(context.Background(), cfg)
 		if err != nil {
 			d.setFailed(err)
 			return
@@ -202,7 +248,7 @@ func (d *Daemon) triggerBackup() error {
 	return nil
 }
 
-func (d *Daemon) performBackup(ctx context.Context) error {
+func (d *Daemon) performBackup(ctx context.Context, cfg *config.Config) error {
 	_ = ctx
 	manifestPath, err := state.ManifestPath()
 	if err != nil {
@@ -213,16 +259,16 @@ func (d *Daemon) performBackup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	store, err := storage.NewFromConfig(d.cfg.S3, objectsDir)
+	store, err := storage.NewFromConfig(cfg.S3, objectsDir)
 	if err != nil {
 		return fmt.Errorf("create object store: %w", err)
 	}
-	key, err := encryptionKey(d.cfg)
+	key, err := encryptionKey(cfg)
 	if err != nil {
 		return err
 	}
 
-	result, err := backup.Run(d.cfg, backup.RunOptions{
+	result, err := backup.Run(cfg, backup.RunOptions{
 		ManifestPath:  manifestPath,
 		EncryptionKey: key,
 		Store:         store,
@@ -268,6 +314,48 @@ func (d *Daemon) setNextScheduledAt(next time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.status.NextScheduledAt = next.UTC()
+}
+
+func (d *Daemon) setLastError(lastError string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.status.LastError = lastError
+}
+
+func (d *Daemon) notifyScheduleChanged() {
+	select {
+	case d.scheduleChanged <- struct{}{}:
+	default:
+	}
+}
+
+func (d *Daemon) currentConfig() *config.Config {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	cloned := *d.cfg
+	cloned.BackupRoots = append([]string(nil), d.cfg.BackupRoots...)
+	return &cloned
+}
+
+func (d *Daemon) reloadConfig() (*config.Config, error) {
+	d.mu.Lock()
+	configPath := d.configPath
+	loader := d.configLoader
+	d.mu.Unlock()
+
+	if configPath == "" {
+		return nil, errors.New("config path is not set")
+	}
+
+	cfg, err := loader(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	d.mu.Lock()
+	d.cfg = cfg
+	d.mu.Unlock()
+	return cfg, nil
 }
 
 func (d *Daemon) snapshot() statusResponse {

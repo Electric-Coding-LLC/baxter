@@ -173,7 +173,7 @@ struct BaxterSettingsView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Apply Now") {
-                        statusModel.startDaemon()
+                        statusModel.applyConfigNow()
                         showApplyNow = false
                     }
                     .buttonStyle(.bordered)

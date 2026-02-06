@@ -125,6 +125,43 @@ final class BackupStatusModel: ObservableObject {
         }
     }
 
+    func applyConfigNow() {
+        Task {
+            isLifecycleBusy = true
+            defer { isLifecycleBusy = false }
+            do {
+                var request = URLRequest(url: baseURL.appendingPathComponent("v1/config/reload"))
+                request.httpMethod = "POST"
+
+                let (_, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw IPCError.badResponse
+                }
+                if http.statusCode == 200 {
+                    lifecycleMessage = "Config reloaded."
+                    lastError = nil
+                    refreshStatus()
+                    return
+                }
+                if http.statusCode == 404 || http.statusCode == 405 {
+                    throw IPCError.reloadUnavailable
+                }
+                throw IPCError.badStatus(http.statusCode)
+            } catch IPCError.reloadUnavailable {
+                do {
+                    lifecycleMessage = "Reload unavailable; restarting daemon..."
+                    lifecycleMessage = try await LaunchdController.start()
+                    lastError = nil
+                    refreshStatus()
+                } catch {
+                    lifecycleMessage = "Apply failed: \(error.localizedDescription)"
+                }
+            } catch {
+                lifecycleMessage = "Apply failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func apply(_ status: DaemonStatus) {
         switch status.state.lowercased() {
         case "running":
@@ -164,8 +201,9 @@ private struct DaemonStatus: Decodable {
 }
 
 private enum IPCError: Error {
-    case badResponse
-    case badStatus(Int)
+	case badResponse
+	case badStatus(Int)
+	case reloadUnavailable
 }
 
 enum DaemonServiceState: String {
