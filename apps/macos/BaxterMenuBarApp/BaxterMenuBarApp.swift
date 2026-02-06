@@ -31,7 +31,9 @@ final class BackupStatusModel: ObservableObject {
         refreshStatus()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.refreshStatus()
+            Task { @MainActor [weak self] in
+                self?.refreshStatus()
+            }
         }
     }
 
