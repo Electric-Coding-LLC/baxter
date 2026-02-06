@@ -98,6 +98,8 @@ final class BackupStatusModel: ObservableObject {
 
         if let raw = status.lastBackupAt {
             lastBackupAt = iso8601.date(from: raw)
+        } else {
+            lastBackupAt = nil
         }
         lastError = status.lastError
     }
