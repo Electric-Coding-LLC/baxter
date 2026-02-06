@@ -122,6 +122,7 @@ private enum IPCError: Error {
 
 @main
 struct BaxterMenuBarApp: App {
+    @Environment(\.openSettings) private var openSettings
     @StateObject private var model = BackupStatusModel()
     @StateObject private var settingsModel = BaxterSettingsModel()
 
@@ -165,7 +166,10 @@ struct BaxterMenuBarApp: App {
             Divider()
 
             Button("Open Settings") {
-                openSettingsWindow()
+                openSettings()
+                DispatchQueue.main.async {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
             }
 
             Divider()
@@ -183,13 +187,5 @@ struct BaxterMenuBarApp: App {
 
     private var iconName: String {
         model.state == .running ? "arrow.triangle.2.circlepath.circle.fill" : "externaldrive"
-    }
-
-    private func openSettingsWindow() {
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
-            return
-        }
-        _ = NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
     }
 }
