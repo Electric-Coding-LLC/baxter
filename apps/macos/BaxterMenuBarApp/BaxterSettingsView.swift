@@ -7,13 +7,28 @@ struct BaxterSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Form {
                 Section("Backup") {
-                    Text("Backup roots (one path per line)")
+                    Text("Backup roots")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    TextEditor(text: $model.backupRootsText)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 100)
+                    List {
+                        ForEach(model.backupRoots, id: \.self) { root in
+                            Text(root)
+                                .font(.system(.body, design: .monospaced))
+                        }
+                        .onDelete(perform: model.removeBackupRoots)
+                    }
+                    .frame(minHeight: 140)
+
+                    HStack {
+                        Button("Add Folder...") {
+                            model.chooseBackupRoots()
+                        }
+                        Button("Remove All") {
+                            model.clearBackupRoots()
+                        }
+                        .disabled(model.backupRoots.isEmpty)
+                    }
 
                     Picker("Schedule", selection: $model.schedule) {
                         ForEach(BackupSchedule.allCases) { schedule in
