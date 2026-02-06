@@ -14,6 +14,9 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - A small settings window will manage backup roots, schedule, and S3 settings.
 
 ## Next Steps
-- Create an Xcode project targeting macOS 26.2 and add `BaxterMenuBarApp.swift`.
+- Open the project in Xcode:
+- `open apps/macos/BaxterMenuBarApp.xcodeproj`
+- Build from terminal:
+- `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -configuration Debug build`
 - Add daemon lifecycle integration (start/stop) from the app.
 - Add a settings window and connect UI actions to the daemon.
