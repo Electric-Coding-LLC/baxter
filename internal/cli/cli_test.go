@@ -2,11 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
+	"baxter/internal/backup"
 	"baxter/internal/config"
 )
 
@@ -26,6 +29,22 @@ func TestParseRestoreArgs(t *testing.T) {
 func TestParseRestoreArgsRequiresPath(t *testing.T) {
 	if _, _, err := parseRestoreArgs([]string{"--dry-run"}); err == nil {
 		t.Fatal("expected usage error for missing path")
+	}
+}
+
+func TestParseRestoreListArgs(t *testing.T) {
+	opts, err := parseRestoreListArgs([]string{"--prefix", "/Users/me", "--contains", "report"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Prefix != "/Users/me" || opts.Contains != "report" {
+		t.Fatalf("unexpected opts: %+v", opts)
+	}
+}
+
+func TestParseRestoreListArgsRejectsPositionalArgs(t *testing.T) {
+	if _, err := parseRestoreListArgs([]string{"extra"}); err == nil {
+		t.Fatal("expected usage error for extra args")
 	}
 }
 
@@ -52,6 +71,22 @@ func TestResolvedRestorePathNoDestination(t *testing.T) {
 func TestResolvedRestorePathRejectsTraversal(t *testing.T) {
 	if _, err := resolvedRestorePath("../etc/passwd", "/restore"); err == nil {
 		t.Fatal("expected traversal path to be rejected")
+	}
+}
+
+func TestFilterRestorePaths(t *testing.T) {
+	entries := []backup.ManifestEntry{
+		{Path: "/Users/me/Documents/report.txt"},
+		{Path: "/Users/me/Pictures/photo.jpg"},
+		{Path: "/Users/me/Documents/notes.md"},
+	}
+
+	got := filterRestorePaths(entries, restoreListOptions{
+		Prefix:   "/Users/me/Documents",
+		Contains: "report",
+	})
+	if len(got) != 1 || got[0] != "/Users/me/Documents/report.txt" {
+		t.Fatalf("unexpected filter result: %+v", got)
 	}
 }
 
@@ -118,4 +153,42 @@ func TestRunBackupAndRestorePathWithPassphrase(t *testing.T) {
 	if !bytes.Equal(overwrittenContent, updatedContent) {
 		t.Fatalf("overwritten content mismatch: got %q want %q", string(overwrittenContent), string(updatedContent))
 	}
+
+	listOutput, err := captureStdout(t, func() error {
+		return restoreList(restoreListOptions{
+			Prefix:   srcRoot,
+			Contains: "doc",
+		})
+	})
+	if err != nil {
+		t.Fatalf("restore list failed: %v", err)
+	}
+
+	lines := strings.Fields(strings.TrimSpace(listOutput))
+	sort.Strings(lines)
+	if len(lines) != 1 || lines[0] != sourcePath {
+		t.Fatalf("unexpected restore list output: %q", listOutput)
+	}
+}
+
+func captureStdout(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+
+	original := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+
+	runErr := fn()
+	_ = w.Close()
+	os.Stdout = original
+
+	out, readErr := io.ReadAll(r)
+	_ = r.Close()
+	if readErr != nil {
+		t.Fatalf("read stdout: %v", readErr)
+	}
+	return string(out), runErr
 }

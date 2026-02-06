@@ -23,6 +23,11 @@ type restoreOptions struct {
 	Overwrite bool
 }
 
+type restoreListOptions struct {
+	Prefix   string
+	Contains string
+}
+
 func Run(args []string) error {
 	fs := flag.NewFlagSet("baxter", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -61,6 +66,14 @@ func Run(args []string) error {
 			return errors.New("unknown backup subcommand")
 		}
 	case "restore":
+		if len(rest) >= 2 && rest[1] == "list" {
+			opts, err := parseRestoreListArgs(rest[2:])
+			if err != nil {
+				return err
+			}
+			return restoreList(opts)
+		}
+
 		opts, restorePathArg, err := parseRestoreArgs(rest[1:])
 		if err != nil {
 			return err
@@ -72,7 +85,7 @@ func Run(args []string) error {
 }
 
 func usageError() error {
-	return errors.New("usage: baxter [-config path] backup run|status | restore [--dry-run] [--to dir] [--overwrite] <path>")
+	return errors.New("usage: baxter [-config path] backup run|status | restore list [--prefix path] [--contains text] | restore [--dry-run] [--to dir] [--overwrite] <path>")
 }
 
 func runBackup(cfg *config.Config) error {
@@ -218,6 +231,61 @@ func parseRestoreArgs(args []string) (restoreOptions, string, error) {
 		return restoreOptions{}, "", errors.New("usage: baxter restore [--dry-run] [--to dir] [--overwrite] <path>")
 	}
 	return opts, rest[0], nil
+}
+
+func parseRestoreListArgs(args []string) (restoreListOptions, error) {
+	listFS := flag.NewFlagSet("restore list", flag.ContinueOnError)
+	listFS.SetOutput(os.Stderr)
+
+	var opts restoreListOptions
+	listFS.StringVar(&opts.Prefix, "prefix", "", "filter restore paths by prefix")
+	listFS.StringVar(&opts.Contains, "contains", "", "filter restore paths containing text")
+
+	if err := listFS.Parse(args); err != nil {
+		return restoreListOptions{}, err
+	}
+	if len(listFS.Args()) != 0 {
+		return restoreListOptions{}, errors.New("usage: baxter restore list [--prefix path] [--contains text]")
+	}
+	return opts, nil
+}
+
+func restoreList(opts restoreListOptions) error {
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		return err
+	}
+
+	m, err := backup.LoadManifest(manifestPath)
+	if err != nil {
+		return fmt.Errorf("load manifest: %w", err)
+	}
+
+	for _, path := range filterRestorePaths(m.Entries, opts) {
+		fmt.Println(path)
+	}
+	return nil
+}
+
+func filterRestorePaths(entries []backup.ManifestEntry, opts restoreListOptions) []string {
+	prefix := filepath.Clean(strings.TrimSpace(opts.Prefix))
+	if prefix == "." {
+		prefix = ""
+	}
+	contains := strings.TrimSpace(opts.Contains)
+
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		path := entry.Path
+		if prefix != "" && !strings.HasPrefix(filepath.Clean(path), prefix) {
+			continue
+		}
+		if contains != "" && !strings.Contains(path, contains) {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths
 }
 
 func resolvedRestorePath(sourcePath string, toDir string) (string, error) {

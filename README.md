@@ -43,6 +43,7 @@ A simple, secure macOS backup utility with an S3 backend.
 ## CLI (current)
 - `baxter backup run`: scan configured roots, encrypt changed files, and store objects.
 - `baxter backup status`: show manifest/object counts.
+- `baxter restore list [--prefix path] [--contains text]`: browse/search restoreable paths from the manifest.
 - `baxter restore [--dry-run] [--to dir] [--overwrite] <path>`: restore one path from the latest manifest/object store.
 - Restore safety defaults:
 - existing targets are not overwritten unless `--overwrite` is set
