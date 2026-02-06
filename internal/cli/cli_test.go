@@ -105,6 +105,7 @@ func TestRunBackupAndRestorePathWithPassphrase(t *testing.T) {
 	}
 
 	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
 	t.Setenv(passphraseEnv, "test-passphrase")
 
 	cfg := config.DefaultConfig()

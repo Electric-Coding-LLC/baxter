@@ -198,6 +198,7 @@ func TestRunBackupEndpointStateTransition(t *testing.T) {
 	}
 
 	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
 	t.Setenv(passphraseEnv, "daemon-test-passphrase")
 
 	cfg := config.DefaultConfig()

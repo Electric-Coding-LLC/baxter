@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"baxter/internal/backup"
+	"baxter/internal/state"
 )
 
 func TestRunOnceCreatesManifestAndObjects(t *testing.T) {
@@ -45,9 +46,13 @@ keychain_account = "default"
 	goModCache := goEnv(t, "GOMODCACHE")
 	goCache := goEnv(t, "GOCACHE")
 
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
 	cmd := exec.Command("go", "run", ".", "--once", "--config", configPath)
 	cmd.Env = append(os.Environ(),
 		"HOME="+homeDir,
+		"XDG_CONFIG_HOME="+homeDir,
 		"BAXTER_PASSPHRASE=test-passphrase",
 		"GOMODCACHE="+goModCache,
 		"GOCACHE="+goCache,
@@ -57,7 +62,10 @@ keychain_account = "default"
 		t.Fatalf("run baxterd --once failed: %v\noutput:\n%s", err, string(out))
 	}
 
-	appDir := filepath.Join(homeDir, "Library", "Application Support", "baxter")
+	appDir, err := state.AppDir()
+	if err != nil {
+		t.Fatalf("resolve app dir: %v", err)
+	}
 	manifestPath := filepath.Join(appDir, "manifest.json")
 	objectsDir := filepath.Join(appDir, "objects")
 
