@@ -164,8 +164,8 @@ struct BaxterMenuBarApp: App {
 
             Divider()
 
-            SettingsLink {
-                Text("Open Settings")
+            Button("Open Settings") {
+                openSettingsWindow()
             }
 
             Divider()
@@ -183,5 +183,10 @@ struct BaxterMenuBarApp: App {
 
     private var iconName: String {
         model.state == .running ? "arrow.triangle.2.circlepath.circle.fill" : "externaldrive"
+    }
+
+    private func openSettingsWindow() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 }
