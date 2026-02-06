@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 enum BackupSchedule: String, CaseIterable, Identifiable {
@@ -32,7 +33,7 @@ struct BaxterConfig {
 
 @MainActor
 final class BaxterSettingsModel: ObservableObject {
-    @Published var backupRootsText: String = ""
+    @Published var backupRoots: [String] = []
     @Published var schedule: BackupSchedule = .daily
     @Published var s3Endpoint: String = ""
     @Published var s3Region: String = ""
@@ -94,8 +95,39 @@ final class BaxterSettingsModel: ObservableObject {
         }
     }
 
+    func chooseBackupRoots() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.resolvesAliases = true
+        panel.prompt = "Add"
+        panel.message = "Select one or more folders to back up."
+
+        let response = panel.runModal()
+        guard response == .OK else {
+            return
+        }
+
+        addBackupRoots(panel.urls.map(\.path))
+    }
+
+    func removeBackupRoots(at offsets: IndexSet) {
+        for offset in offsets.sorted(by: >) {
+            backupRoots.remove(at: offset)
+        }
+        statusMessage = nil
+        errorMessage = nil
+    }
+
+    func clearBackupRoots() {
+        backupRoots = []
+        statusMessage = nil
+        errorMessage = nil
+    }
+
     private func apply(_ config: BaxterConfig) {
-        backupRootsText = config.backupRoots.joined(separator: "\n")
+        backupRoots = config.backupRoots
         schedule = config.schedule
         s3Endpoint = config.s3Endpoint
         s3Region = config.s3Region
@@ -106,10 +138,7 @@ final class BaxterSettingsModel: ObservableObject {
     }
 
     private func buildConfigForSave() throws -> BaxterConfig {
-        let backupRoots = backupRootsText
-            .split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let backupRoots = normalizedBackupRoots(backupRoots)
 
         var config = BaxterConfig(
             backupRoots: backupRoots,
@@ -150,6 +179,32 @@ final class BaxterSettingsModel: ObservableObject {
         }
 
         return config
+    }
+
+    private func addBackupRoots(_ paths: [String]) {
+        let merged = backupRoots + paths
+        backupRoots = normalizedBackupRoots(merged)
+        statusMessage = nil
+        errorMessage = nil
+    }
+
+    private func normalizedBackupRoots(_ roots: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+
+        for root in roots {
+            let trimmed = root.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                continue
+            }
+            guard !seen.contains(trimmed) else {
+                continue
+            }
+            seen.insert(trimmed)
+            result.append(trimmed)
+        }
+
+        return result
     }
 
     private func decodeConfig(from text: String) -> BaxterConfig {
