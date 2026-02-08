@@ -18,9 +18,10 @@ import (
 const passphraseEnv = "BAXTER_PASSPHRASE"
 
 type restoreOptions struct {
-	DryRun    bool
-	ToDir     string
-	Overwrite bool
+	DryRun     bool
+	ToDir      string
+	Overwrite  bool
+	VerifyOnly bool
 }
 
 type restoreListOptions struct {
@@ -85,7 +86,7 @@ func Run(args []string) error {
 }
 
 func usageError() error {
-	return errors.New("usage: baxter [-config path] backup run|status | restore list [--prefix path] [--contains text] | restore [--dry-run] [--to dir] [--overwrite] <path>")
+	return errors.New("usage: baxter [-config path] backup run|status | restore list [--prefix path] [--contains text] | restore [--dry-run] [--verify-only] [--to dir] [--overwrite] <path>")
 }
 
 func runBackup(cfg *config.Config) error {
@@ -193,6 +194,14 @@ func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) 
 	if err != nil {
 		return fmt.Errorf("decrypt object: %w", err)
 	}
+	if err := backup.VerifyEntryContent(entry, plain); err != nil {
+		return fmt.Errorf("verify restored content: %w", err)
+	}
+
+	if opts.VerifyOnly {
+		fmt.Printf("restore verify-only complete: source=%s checksum=%s\n", entry.Path, entry.SHA256)
+		return nil
+	}
 
 	if !opts.Overwrite {
 		if _, err := os.Stat(targetPath); err == nil {
@@ -221,6 +230,7 @@ func parseRestoreArgs(args []string) (restoreOptions, string, error) {
 	restoreFS.BoolVar(&opts.DryRun, "dry-run", false, "show what would be restored without writing files")
 	restoreFS.StringVar(&opts.ToDir, "to", "", "destination root directory for restore")
 	restoreFS.BoolVar(&opts.Overwrite, "overwrite", false, "overwrite existing target files")
+	restoreFS.BoolVar(&opts.VerifyOnly, "verify-only", false, "verify restore content checksum without writing files")
 
 	if err := restoreFS.Parse(args); err != nil {
 		return restoreOptions{}, "", err
@@ -228,7 +238,10 @@ func parseRestoreArgs(args []string) (restoreOptions, string, error) {
 
 	rest := restoreFS.Args()
 	if len(rest) != 1 {
-		return restoreOptions{}, "", errors.New("usage: baxter restore [--dry-run] [--to dir] [--overwrite] <path>")
+		return restoreOptions{}, "", errors.New("usage: baxter restore [--dry-run] [--verify-only] [--to dir] [--overwrite] <path>")
+	}
+	if opts.DryRun && opts.VerifyOnly {
+		return restoreOptions{}, "", errors.New("restore --dry-run and --verify-only cannot be used together")
 	}
 	return opts, rest[0], nil
 }

@@ -49,11 +49,13 @@ A simple, secure macOS backup utility with an S3 backend.
 - `baxter backup run`: scan configured roots, encrypt changed files, and store objects.
 - `baxter backup status`: show manifest/object counts.
 - `baxter restore list [--prefix path] [--contains text]`: browse/search restoreable paths from the manifest.
-- `baxter restore [--dry-run] [--to dir] [--overwrite] <path>`: restore one path from the latest manifest/object store.
+- `baxter restore [--dry-run] [--verify-only] [--to dir] [--overwrite] <path>`: restore one path from the latest manifest/object store.
 - Restore safety defaults:
 - existing targets are not overwritten unless `--overwrite` is set
 - `--dry-run` shows source and destination without writing files
+- `--verify-only` decrypts and verifies checksum without writing files
 - `--to` writes under a destination root instead of the original path (escape/traversal outside destination root is rejected)
+- restore verifies decrypted content checksum against the manifest before writing
 - Object storage uses local mode or S3 mode based on config.
 
 ## Daemon (current)
@@ -69,6 +71,8 @@ A simple, secure macOS backup utility with an S3 backend.
 - `GET /v1/status`
   - includes `state`, `last_backup_at`, optional `next_scheduled_at`, and `last_error`
 - `POST /v1/backup/run`
+- `POST /v1/restore/run`
+  - supports `path`, optional `to_dir`, optional `overwrite`, optional `verify_only`
 - Error responses use JSON: `{"code":"...", "message":"..."}`.
 
 ## Compatibility Note
