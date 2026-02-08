@@ -45,6 +45,15 @@ func waitForNextScheduledAt(t *testing.T, d *Daemon, want string) {
 	}
 }
 
+func testManifestPath(t *testing.T) string {
+	t.Helper()
+	path, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	return path
+}
+
 func TestStatusEndpointDefaultsToIdle(t *testing.T) {
 	d := New(config.DefaultConfig())
 	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
@@ -230,7 +239,7 @@ func TestRestoreListEndpoint(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 	t.Setenv("XDG_CONFIG_HOME", homeDir)
 
-	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	manifestPath := testManifestPath(t)
 	m := &backup.Manifest{
 		CreatedAt: time.Now().UTC(),
 		Entries: []backup.ManifestEntry{
@@ -267,7 +276,7 @@ func TestRestoreDryRunEndpoint(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", homeDir)
 
 	sourcePath := "/Users/me/Documents/report.txt"
-	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	manifestPath := testManifestPath(t)
 	m := &backup.Manifest{
 		CreatedAt: time.Now().UTC(),
 		Entries: []backup.ManifestEntry{
@@ -681,7 +690,7 @@ func TestDaemonErrorContractRestoreListManifestLoadFailed(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	t.Setenv("XDG_CONFIG_HOME", homeDir)
-	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	manifestPath := testManifestPath(t)
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
 		t.Fatalf("mkdir manifest dir: %v", err)
 	}
@@ -708,7 +717,7 @@ func TestDaemonErrorContractRestoreDryRunPathLookupFailed(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 	t.Setenv("XDG_CONFIG_HOME", homeDir)
 
-	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	manifestPath := testManifestPath(t)
 	m := &backup.Manifest{
 		CreatedAt: time.Now().UTC(),
 		Entries: []backup.ManifestEntry{
@@ -738,7 +747,7 @@ func TestDaemonErrorContractRestoreDryRunInvalidRestoreTarget(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 	t.Setenv("XDG_CONFIG_HOME", homeDir)
 
-	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	manifestPath := testManifestPath(t)
 	m := &backup.Manifest{
 		CreatedAt: time.Now().UTC(),
 		Entries: []backup.ManifestEntry{
