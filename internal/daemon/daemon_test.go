@@ -54,6 +54,15 @@ func testManifestPath(t *testing.T) string {
 	return path
 }
 
+func testManifestSnapshotsDir(t *testing.T) string {
+	t.Helper()
+	path, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("manifest snapshots dir: %v", err)
+	}
+	return path
+}
+
 func TestStatusEndpointDefaultsToIdle(t *testing.T) {
 	d := New(config.DefaultConfig())
 	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
@@ -270,6 +279,46 @@ func TestRestoreListEndpoint(t *testing.T) {
 	}
 }
 
+func TestRestoreListEndpointWithSnapshotSelector(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	manifestPath := testManifestPath(t)
+	if err := backup.SaveManifest(manifestPath, &backup.Manifest{
+		CreatedAt: time.Now().UTC(),
+		Entries:   []backup.ManifestEntry{},
+	}); err != nil {
+		t.Fatalf("save latest manifest: %v", err)
+	}
+
+	snapshotDir := testManifestSnapshotsDir(t)
+	snapshot, err := backup.SaveSnapshotManifest(snapshotDir, &backup.Manifest{
+		CreatedAt: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+		Entries:   []backup.ManifestEntry{{Path: "/Users/me/Documents/report.txt"}},
+	})
+	if err != nil {
+		t.Fatalf("save snapshot manifest: %v", err)
+	}
+
+	d := New(config.DefaultConfig())
+	req := httptest.NewRequest(http.MethodGet, "/v1/restore/list?snapshot="+snapshot.ID+"&contains=report", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var resp restoreListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Paths) != 1 || resp.Paths[0] != "/Users/me/Documents/report.txt" {
+		t.Fatalf("unexpected paths: %#v", resp.Paths)
+	}
+}
+
 func TestRestoreDryRunEndpoint(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
@@ -327,6 +376,45 @@ func TestRestoreDryRunEndpointRequiresPath(t *testing.T) {
 	}
 }
 
+func TestSnapshotsEndpoint(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	snapshotDir := testManifestSnapshotsDir(t)
+	if _, err := backup.SaveSnapshotManifest(snapshotDir, &backup.Manifest{
+		CreatedAt: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+		Entries:   []backup.ManifestEntry{{Path: "/a.txt"}},
+	}); err != nil {
+		t.Fatalf("save first snapshot: %v", err)
+	}
+	if _, err := backup.SaveSnapshotManifest(snapshotDir, &backup.Manifest{
+		CreatedAt: time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC),
+		Entries:   []backup.ManifestEntry{{Path: "/a.txt"}, {Path: "/b.txt"}},
+	}); err != nil {
+		t.Fatalf("save second snapshot: %v", err)
+	}
+
+	d := New(config.DefaultConfig())
+	req := httptest.NewRequest(http.MethodGet, "/v1/snapshots?limit=1", nil)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var resp snapshotsResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Snapshots) != 1 {
+		t.Fatalf("expected one snapshot due to limit, got %d", len(resp.Snapshots))
+	}
+	if resp.Snapshots[0].Entries != 2 {
+		t.Fatalf("expected latest snapshot with 2 entries, got %d", resp.Snapshots[0].Entries)
+	}
+}
+
 func TestDaemonErrorContractMethodNotAllowedAcrossEndpoints(t *testing.T) {
 	d := New(config.DefaultConfig())
 
@@ -338,6 +426,7 @@ func TestDaemonErrorContractMethodNotAllowedAcrossEndpoints(t *testing.T) {
 		{name: "status", method: http.MethodPost, path: "/v1/status"},
 		{name: "backup run", method: http.MethodGet, path: "/v1/backup/run"},
 		{name: "config reload", method: http.MethodGet, path: "/v1/config/reload"},
+		{name: "snapshots", method: http.MethodPost, path: "/v1/snapshots"},
 		{name: "restore list", method: http.MethodPost, path: "/v1/restore/list"},
 		{name: "restore dry-run", method: http.MethodGet, path: "/v1/restore/dry-run"},
 		{name: "restore run", method: http.MethodGet, path: "/v1/restore/run"},
@@ -387,6 +476,10 @@ func TestRestoreRunEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("manifest path: %v", err)
 	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("manifest snapshots dir: %v", err)
+	}
 	objectsDir, err := state.ObjectStoreDir()
 	if err != nil {
 		t.Fatalf("object store dir: %v", err)
@@ -396,9 +489,11 @@ func TestRestoreRunEndpoint(t *testing.T) {
 		t.Fatalf("new object store: %v", err)
 	}
 	_, err = backup.Run(cfg, backup.RunOptions{
-		ManifestPath:  manifestPath,
-		EncryptionKey: crypto.KeyFromPassphrase("daemon-restore-passphrase"),
-		Store:         store,
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: cfg.Retention.ManifestSnapshots,
+		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		Store:             store,
 	})
 	if err != nil {
 		t.Fatalf("run backup: %v", err)
@@ -474,6 +569,10 @@ func TestRestoreRunEndpointVerifyOnlyDoesNotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("manifest path: %v", err)
 	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("manifest snapshots dir: %v", err)
+	}
 	objectsDir, err := state.ObjectStoreDir()
 	if err != nil {
 		t.Fatalf("object store dir: %v", err)
@@ -483,9 +582,11 @@ func TestRestoreRunEndpointVerifyOnlyDoesNotWrite(t *testing.T) {
 		t.Fatalf("new object store: %v", err)
 	}
 	_, err = backup.Run(cfg, backup.RunOptions{
-		ManifestPath:  manifestPath,
-		EncryptionKey: crypto.KeyFromPassphrase("daemon-restore-passphrase"),
-		Store:         store,
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: cfg.Retention.ManifestSnapshots,
+		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		Store:             store,
 	})
 	if err != nil {
 		t.Fatalf("run backup: %v", err)
@@ -542,6 +643,10 @@ func TestRestoreRunEndpointRejectsExistingTargetWithoutOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("manifest path: %v", err)
 	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("manifest snapshots dir: %v", err)
+	}
 	objectsDir, err := state.ObjectStoreDir()
 	if err != nil {
 		t.Fatalf("object store dir: %v", err)
@@ -551,9 +656,11 @@ func TestRestoreRunEndpointRejectsExistingTargetWithoutOverwrite(t *testing.T) {
 		t.Fatalf("new object store: %v", err)
 	}
 	_, err = backup.Run(cfg, backup.RunOptions{
-		ManifestPath:  manifestPath,
-		EncryptionKey: crypto.KeyFromPassphrase("daemon-restore-passphrase"),
-		Store:         store,
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: cfg.Retention.ManifestSnapshots,
+		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		Store:             store,
 	})
 	if err != nil {
 		t.Fatalf("run backup: %v", err)
@@ -609,6 +716,10 @@ func TestRestoreRunEndpointChecksumMismatchDoesNotOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("manifest path: %v", err)
 	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("manifest snapshots dir: %v", err)
+	}
 	objectsDir, err := state.ObjectStoreDir()
 	if err != nil {
 		t.Fatalf("object store dir: %v", err)
@@ -618,9 +729,11 @@ func TestRestoreRunEndpointChecksumMismatchDoesNotOverwrite(t *testing.T) {
 		t.Fatalf("new object store: %v", err)
 	}
 	_, err = backup.Run(cfg, backup.RunOptions{
-		ManifestPath:  manifestPath,
-		EncryptionKey: crypto.KeyFromPassphrase("daemon-restore-passphrase"),
-		Store:         store,
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: cfg.Retention.ManifestSnapshots,
+		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		Store:             store,
 	})
 	if err != nil {
 		t.Fatalf("run backup: %v", err)

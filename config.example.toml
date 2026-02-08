@@ -26,3 +26,7 @@ prefix = "baxter/"
 # 2) keychain item identified by service+account below
 keychain_service = "baxter"
 keychain_account = "default"
+
+[retention]
+# Number of manifest snapshots to keep (0 = keep all).
+manifest_snapshots = 30

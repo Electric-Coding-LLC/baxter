@@ -18,6 +18,7 @@ type Config struct {
 	WeeklyTime  string           `toml:"weekly_time"`
 	S3          S3Config         `toml:"s3"`
 	Encryption  EncryptionConfig `toml:"encryption"`
+	Retention   RetentionConfig  `toml:"retention"`
 }
 
 type S3Config struct {
@@ -30,6 +31,10 @@ type S3Config struct {
 type EncryptionConfig struct {
 	KeychainService string `toml:"keychain_service"`
 	KeychainAccount string `toml:"keychain_account"`
+}
+
+type RetentionConfig struct {
+	ManifestSnapshots int `toml:"manifest_snapshots"`
 }
 
 func DefaultConfig() *Config {
@@ -48,6 +53,9 @@ func DefaultConfig() *Config {
 		Encryption: EncryptionConfig{
 			KeychainService: "baxter",
 			KeychainAccount: "default",
+		},
+		Retention: RetentionConfig{
+			ManifestSnapshots: 30,
 		},
 	}
 }
@@ -181,6 +189,9 @@ func (c *Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Encryption.KeychainAccount) == "" {
 		return errors.New("encryption.keychain_account must not be empty")
+	}
+	if c.Retention.ManifestSnapshots < 0 {
+		return errors.New("retention.manifest_snapshots must be >= 0")
 	}
 	return nil
 }

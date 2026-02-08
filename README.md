@@ -44,12 +44,16 @@ A simple, secure macOS backup utility with an S3 backend.
 - Storage backend selection:
 - `s3.bucket` empty -> local object storage at `~/Library/Application Support/baxter/objects`
 - `s3.bucket` set -> S3 object storage (requires `s3.region`)
+- Snapshot retention:
+- `retention.manifest_snapshots` controls how many manifest snapshots are kept
+- `0` disables pruning and keeps all snapshots
 
 ## CLI (current)
 - `baxter backup run`: scan configured roots, encrypt changed files, and store objects.
 - `baxter backup status`: show manifest/object counts.
-- `baxter restore list [--prefix path] [--contains text]`: browse/search restoreable paths from the manifest.
-- `baxter restore [--dry-run] [--verify-only] [--to dir] [--overwrite] <path>`: restore one path from the latest manifest/object store.
+- `baxter snapshot list [--limit n]`: list available manifest snapshots (newest first).
+- `baxter restore list [--snapshot latest|<id>|<RFC3339>] [--prefix path] [--contains text]`: browse/search restoreable paths from the selected restore point.
+- `baxter restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|<id>|<RFC3339>] <path>`: restore one path from latest or point-in-time snapshot.
 - Restore safety defaults:
 - existing targets are not overwritten unless `--overwrite` is set
 - `--dry-run` shows source and destination without writing files
@@ -57,6 +61,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - `--to` writes under a destination root instead of the original path (escape/traversal outside destination root is rejected)
 - restore verifies decrypted content checksum against the manifest before writing
 - Object storage uses local mode or S3 mode based on config.
+- Backups now write immutable timestamped manifest snapshots under `~/Library/Application Support/baxter/manifests`.
 
 ## Daemon (current)
 - `baxterd` runs IPC server on `127.0.0.1:41820` by default.
@@ -71,8 +76,11 @@ A simple, secure macOS backup utility with an S3 backend.
 - `GET /v1/status`
   - includes `state`, `last_backup_at`, optional `next_scheduled_at`, and `last_error`
 - `POST /v1/backup/run`
+- `GET /v1/snapshots?limit=n`
+- `GET /v1/restore/list?snapshot=latest|<id>|<RFC3339>&prefix=&contains=`
+- `POST /v1/restore/dry-run` (supports optional `snapshot` field)
 - `POST /v1/restore/run`
-  - supports `path`, optional `to_dir`, optional `overwrite`, optional `verify_only`
+  - supports `path`, optional `to_dir`, optional `overwrite`, optional `verify_only`, optional `snapshot`
 - Error responses use JSON: `{"code":"...", "message":"..."}`.
 
 ## Compatibility Note

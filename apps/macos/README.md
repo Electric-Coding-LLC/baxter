@@ -7,6 +7,9 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - Implemented endpoints:
 - `GET /v1/status`
 - `POST /v1/backup/run`
+- `GET /v1/snapshots`
+- `GET /v1/restore/list`
+- `POST /v1/restore/dry-run`
 - The menu includes daemon lifecycle controls (`Start Daemon`, `Stop Daemon`) using launchd (`com.electriccoding.baxterd`).
 - Recommended local daemon setup uses launchd via:
 - `./scripts/install-launchd.sh`

@@ -67,6 +67,7 @@ keychain_account = "default"
 		t.Fatalf("resolve app dir: %v", err)
 	}
 	manifestPath := filepath.Join(appDir, "manifest.json")
+	snapshotsDir := filepath.Join(appDir, "manifests")
 	objectsDir := filepath.Join(appDir, "objects")
 
 	manifest, err := backup.LoadManifest(manifestPath)
@@ -75,6 +76,14 @@ keychain_account = "default"
 	}
 	if len(manifest.Entries) != 1 {
 		t.Fatalf("expected 1 manifest entry, got %d", len(manifest.Entries))
+	}
+
+	snapshots, err := os.ReadDir(snapshotsDir)
+	if err != nil {
+		t.Fatalf("read snapshots dir: %v", err)
+	}
+	if len(snapshots) == 0 {
+		t.Fatal("expected manifest snapshots to be written")
 	}
 
 	objects, err := os.ReadDir(objectsDir)

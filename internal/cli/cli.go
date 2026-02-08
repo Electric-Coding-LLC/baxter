@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
@@ -22,11 +23,17 @@ type restoreOptions struct {
 	ToDir      string
 	Overwrite  bool
 	VerifyOnly bool
+	Snapshot   string
 }
 
 type restoreListOptions struct {
 	Prefix   string
 	Contains string
+	Snapshot string
+}
+
+type snapshotListOptions struct {
+	Limit int
 }
 
 func Run(args []string) error {
@@ -80,13 +87,22 @@ func Run(args []string) error {
 			return err
 		}
 		return restorePath(cfg, restorePathArg, opts)
+	case "snapshot":
+		if len(rest) < 2 || rest[1] != "list" {
+			return errors.New("unknown snapshot subcommand")
+		}
+		opts, err := parseSnapshotListArgs(rest[2:])
+		if err != nil {
+			return err
+		}
+		return snapshotList(opts)
 	default:
 		return usageError()
 	}
 }
 
 func usageError() error {
-	return errors.New("usage: baxter [-config path] backup run|status | restore list [--prefix path] [--contains text] | restore [--dry-run] [--verify-only] [--to dir] [--overwrite] <path>")
+	return errors.New("usage: baxter [-config path] backup run|status | snapshot list [--limit n] | restore list [--snapshot latest|id|RFC3339] [--prefix path] [--contains text] | restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|id|RFC3339] <path>")
 }
 
 func runBackup(cfg *config.Config) error {
@@ -99,6 +115,10 @@ func runBackup(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		return err
+	}
 
 	store, err := objectStoreFromConfig(cfg)
 	if err != nil {
@@ -106,9 +126,11 @@ func runBackup(cfg *config.Config) error {
 	}
 
 	result, err := backup.Run(cfg, backup.RunOptions{
-		ManifestPath:  manifestPath,
-		EncryptionKey: key,
-		Store:         store,
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: cfg.Retention.ManifestSnapshots,
+		EncryptionKey:     key,
+		Store:             store,
 	})
 	if err != nil {
 		return err
@@ -128,6 +150,14 @@ func backupStatus(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("load manifest: %w", err)
 	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		return err
+	}
+	snapshots, err := backup.ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		return fmt.Errorf("list snapshots: %w", err)
+	}
 
 	store, err := objectStoreFromConfig(cfg)
 	if err != nil {
@@ -138,19 +168,25 @@ func backupStatus(cfg *config.Config) error {
 		return fmt.Errorf("list objects: %w", err)
 	}
 
-	fmt.Printf("manifest entries=%d objects=%d created_at=%s\n", len(m.Entries), len(keys), m.CreatedAt.Format("2006-01-02 15:04:05Z07:00"))
+	latestSnapshot := ""
+	if len(snapshots) > 0 {
+		latestSnapshot = snapshots[0].ID
+	}
+	fmt.Printf(
+		"manifest entries=%d objects=%d snapshots=%d latest_snapshot=%s created_at=%s\n",
+		len(m.Entries),
+		len(keys),
+		len(snapshots),
+		latestSnapshot,
+		m.CreatedAt.Format("2006-01-02 15:04:05Z07:00"),
+	)
 	return nil
 }
 
 func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) error {
-	manifestPath, err := state.ManifestPath()
+	m, err := loadRestoreManifest(opts.Snapshot)
 	if err != nil {
 		return err
-	}
-
-	m, err := backup.LoadManifest(manifestPath)
-	if err != nil {
-		return fmt.Errorf("load manifest: %w", err)
 	}
 
 	entry, err := backup.FindEntryByPath(m, requestedPath)
@@ -231,6 +267,7 @@ func parseRestoreArgs(args []string) (restoreOptions, string, error) {
 	restoreFS.StringVar(&opts.ToDir, "to", "", "destination root directory for restore")
 	restoreFS.BoolVar(&opts.Overwrite, "overwrite", false, "overwrite existing target files")
 	restoreFS.BoolVar(&opts.VerifyOnly, "verify-only", false, "verify restore content checksum without writing files")
+	restoreFS.StringVar(&opts.Snapshot, "snapshot", "", "restore from snapshot selector (latest, snapshot id, or RFC3339 timestamp)")
 
 	if err := restoreFS.Parse(args); err != nil {
 		return restoreOptions{}, "", err
@@ -238,7 +275,7 @@ func parseRestoreArgs(args []string) (restoreOptions, string, error) {
 
 	rest := restoreFS.Args()
 	if len(rest) != 1 {
-		return restoreOptions{}, "", errors.New("usage: baxter restore [--dry-run] [--verify-only] [--to dir] [--overwrite] <path>")
+		return restoreOptions{}, "", errors.New("usage: baxter restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|id|RFC3339] <path>")
 	}
 	if opts.DryRun && opts.VerifyOnly {
 		return restoreOptions{}, "", errors.New("restore --dry-run and --verify-only cannot be used together")
@@ -253,29 +290,65 @@ func parseRestoreListArgs(args []string) (restoreListOptions, error) {
 	var opts restoreListOptions
 	listFS.StringVar(&opts.Prefix, "prefix", "", "filter restore paths by prefix")
 	listFS.StringVar(&opts.Contains, "contains", "", "filter restore paths containing text")
+	listFS.StringVar(&opts.Snapshot, "snapshot", "", "list paths from snapshot selector (latest, snapshot id, or RFC3339 timestamp)")
 
 	if err := listFS.Parse(args); err != nil {
 		return restoreListOptions{}, err
 	}
 	if len(listFS.Args()) != 0 {
-		return restoreListOptions{}, errors.New("usage: baxter restore list [--prefix path] [--contains text]")
+		return restoreListOptions{}, errors.New("usage: baxter restore list [--snapshot latest|id|RFC3339] [--prefix path] [--contains text]")
 	}
 	return opts, nil
 }
 
 func restoreList(opts restoreListOptions) error {
-	manifestPath, err := state.ManifestPath()
+	m, err := loadRestoreManifest(opts.Snapshot)
 	if err != nil {
 		return err
 	}
 
-	m, err := backup.LoadManifest(manifestPath)
-	if err != nil {
-		return fmt.Errorf("load manifest: %w", err)
-	}
-
 	for _, path := range filterRestorePaths(m.Entries, opts) {
 		fmt.Println(path)
+	}
+	return nil
+}
+
+func parseSnapshotListArgs(args []string) (snapshotListOptions, error) {
+	listFS := flag.NewFlagSet("snapshot list", flag.ContinueOnError)
+	listFS.SetOutput(os.Stderr)
+
+	var opts snapshotListOptions
+	listFS.IntVar(&opts.Limit, "limit", 20, "maximum number of snapshots to show (0 for all)")
+
+	if err := listFS.Parse(args); err != nil {
+		return snapshotListOptions{}, err
+	}
+	if len(listFS.Args()) != 0 {
+		return snapshotListOptions{}, errors.New("usage: baxter snapshot list [--limit n]")
+	}
+	if opts.Limit < 0 {
+		return snapshotListOptions{}, errors.New("limit must be >= 0")
+	}
+	return opts, nil
+}
+
+func snapshotList(opts snapshotListOptions) error {
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		return err
+	}
+	snapshots, err := backup.ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		return fmt.Errorf("list snapshots: %w", err)
+	}
+
+	limit := len(snapshots)
+	if opts.Limit > 0 && opts.Limit < limit {
+		limit = opts.Limit
+	}
+	for i := 0; i < limit; i++ {
+		s := snapshots[i]
+		fmt.Printf("%s %s entries=%d\n", s.ID, s.CreatedAt.Format(time.RFC3339), s.Entries)
 	}
 	return nil
 }
@@ -360,4 +433,21 @@ func objectStoreFromConfig(cfg *config.Config) (storage.ObjectStore, error) {
 		return nil, fmt.Errorf("create object store: %w", err)
 	}
 	return store, nil
+}
+
+func loadRestoreManifest(snapshotSelector string) (*backup.Manifest, error) {
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		return nil, err
+	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		return nil, err
+	}
+
+	manifest, err := backup.LoadManifestForRestore(manifestPath, snapshotDir, snapshotSelector)
+	if err != nil {
+		return nil, fmt.Errorf("load manifest: %w", err)
+	}
+	return manifest, nil
 }

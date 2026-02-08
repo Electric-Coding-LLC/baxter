@@ -10,9 +10,11 @@ import (
 )
 
 type RunOptions struct {
-	ManifestPath  string
-	EncryptionKey []byte
-	Store         storage.ObjectStore
+	ManifestPath      string
+	SnapshotDir       string
+	SnapshotRetention int
+	EncryptionKey     []byte
+	Store             storage.ObjectStore
 }
 
 type RunResult struct {
@@ -33,6 +35,9 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 	}
 	if opts.Store == nil {
 		return RunResult{}, fmt.Errorf("object store is required")
+	}
+	if opts.SnapshotDir == "" {
+		return RunResult{}, fmt.Errorf("snapshot directory is required")
 	}
 
 	previous, err := LoadManifest(opts.ManifestPath)
@@ -60,14 +65,14 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 		}
 	}
 
-	for _, path := range plan.RemovedPaths {
-		if err := opts.Store.DeleteObject(ObjectKeyForPath(path)); err != nil {
-			return RunResult{}, fmt.Errorf("delete object %s: %w", path, err)
-		}
-	}
-
 	if err := SaveManifest(opts.ManifestPath, current); err != nil {
 		return RunResult{}, fmt.Errorf("save manifest: %w", err)
+	}
+	if _, err := SaveSnapshotManifest(opts.SnapshotDir, current); err != nil {
+		return RunResult{}, fmt.Errorf("save snapshot manifest: %w", err)
+	}
+	if _, err := PruneSnapshotManifests(opts.SnapshotDir, opts.SnapshotRetention); err != nil {
+		return RunResult{}, fmt.Errorf("prune snapshot manifests: %w", err)
 	}
 
 	return RunResult{
