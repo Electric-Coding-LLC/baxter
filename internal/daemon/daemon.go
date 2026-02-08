@@ -52,10 +52,25 @@ type restoreDryRunResponse struct {
 	Overwrite  bool   `json:"overwrite"`
 }
 
+type errorResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type scheduleConfig struct {
+	Schedule   string
+	DailyTime  string
+	WeeklyDay  string
+	WeeklyTime string
+}
+
 type Daemon struct {
 	cfg             *config.Config
 	configPath      string
 	configLoader    func(string) (*config.Config, error)
+	clockNow        func() time.Time
+	timerAfter      func(time.Duration) <-chan time.Time
+	backupRunner    func(context.Context, *config.Config) error
 	scheduleChanged chan struct{}
 	ipcAddr         string
 	mu              sync.Mutex
@@ -68,12 +83,15 @@ func New(cfg *config.Config) *Daemon {
 	d := &Daemon{
 		cfg:             cfg,
 		configLoader:    config.Load,
+		clockNow:        time.Now,
+		timerAfter:      time.After,
 		scheduleChanged: make(chan struct{}, 1),
 		ipcAddr:         DefaultIPCAddress,
 		status: daemonStatus{
 			State: "idle",
 		},
 	}
+	d.backupRunner = d.performBackup
 	d.handler = d.newHandler()
 	return d
 }
@@ -122,8 +140,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 func (d *Daemon) runScheduler(ctx context.Context) {
 	for {
-		interval, enabled := d.scheduleInterval()
+		now := d.now()
+		schedule := d.scheduleConfig()
+		nextRun, enabled := nextScheduledRun(schedule, now)
 		if !enabled {
+			fmt.Printf("scheduler disabled: schedule=%s\n", schedule.Schedule)
 			d.setNextScheduledAt(time.Time{})
 			select {
 			case <-ctx.Done():
@@ -133,22 +154,20 @@ func (d *Daemon) runScheduler(ctx context.Context) {
 			}
 		}
 
-		nextRun := time.Now().Add(interval)
 		d.setNextScheduledAt(nextRun)
+		wait := time.Until(nextRun)
+		if wait < 0 {
+			wait = 0
+		}
+		fmt.Printf("scheduler next run: schedule=%s next=%s wait=%s\n", schedule.Schedule, nextRun.Format(time.RFC3339), wait)
 
-		timer := time.NewTimer(time.Until(nextRun))
 		select {
 		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
 			return
 		case <-d.scheduleChanged:
-			if !timer.Stop() {
-				<-timer.C
-			}
+			fmt.Printf("scheduler config changed: recomputing next run\n")
 			continue
-		case <-timer.C:
+		case <-d.timerAfter(wait):
 			if err := d.triggerBackup(); err != nil && !errors.Is(err, errBackupAlreadyRunning) {
 				d.setFailed(err)
 			}
@@ -156,25 +175,130 @@ func (d *Daemon) runScheduler(ctx context.Context) {
 	}
 }
 
-func (d *Daemon) scheduleInterval() (time.Duration, bool) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return scheduleInterval(d.cfg.Schedule)
+func (d *Daemon) now() time.Time {
+	return d.clockNow()
 }
 
-func scheduleInterval(schedule string) (time.Duration, bool) {
-	switch schedule {
+func (d *Daemon) scheduleConfig() scheduleConfig {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return scheduleConfig{
+		Schedule:   d.cfg.Schedule,
+		DailyTime:  d.cfg.DailyTime,
+		WeeklyDay:  d.cfg.WeeklyDay,
+		WeeklyTime: d.cfg.WeeklyTime,
+	}
+}
+
+func nextScheduledRun(cfg scheduleConfig, now time.Time) (time.Time, bool) {
+	switch cfg.Schedule {
 	case "daily":
-		return 24 * time.Hour, true
+		hour, minute, ok := parseHHMM(cfg.DailyTime)
+		if !ok {
+			return time.Time{}, false
+		}
+		return nextDailyRun(now, hour, minute), true
 	case "weekly":
-		return 7 * 24 * time.Hour, true
+		weekday, ok := parseWeekday(cfg.WeeklyDay)
+		if !ok {
+			return time.Time{}, false
+		}
+		hour, minute, ok := parseHHMM(cfg.WeeklyTime)
+		if !ok {
+			return time.Time{}, false
+		}
+		return nextWeeklyRun(now, weekday, hour, minute), true
 	default:
-		return 0, false
+		return time.Time{}, false
+	}
+}
+
+func nextDailyRun(now time.Time, hour int, minute int) time.Time {
+	return nextRunAtLocalTime(now, hour, minute, nil)
+}
+
+func nextWeeklyRun(now time.Time, weekday time.Weekday, hour int, minute int) time.Time {
+	return nextRunAtLocalTime(now, hour, minute, &weekday)
+}
+
+func nextRunAtLocalTime(now time.Time, hour int, minute int, weeklyDay *time.Weekday) time.Time {
+	loc := now.Location()
+	if loc == nil {
+		loc = time.Local
+	}
+
+	nowLocal := now.In(loc)
+	candidate := time.Date(
+		nowLocal.Year(),
+		nowLocal.Month(),
+		nowLocal.Day(),
+		hour,
+		minute,
+		0,
+		0,
+		loc,
+	)
+
+	if weeklyDay != nil {
+		daysAhead := (int(*weeklyDay) - int(nowLocal.Weekday()) + 7) % 7
+		candidate = candidate.AddDate(0, 0, daysAhead)
+		if !candidate.After(nowLocal) {
+			candidate = candidate.AddDate(0, 0, 7)
+		}
+		return candidate
+	}
+
+	if !candidate.After(nowLocal) {
+		candidate = candidate.AddDate(0, 0, 1)
+	}
+	return candidate
+}
+
+func parseHHMM(value string) (int, int, bool) {
+	if len(value) != 5 || value[2] != ':' {
+		return 0, 0, false
+	}
+	hourTens := value[0]
+	hourOnes := value[1]
+	minuteTens := value[3]
+	minuteOnes := value[4]
+	if hourTens < '0' || hourTens > '2' || hourOnes < '0' || hourOnes > '9' {
+		return 0, 0, false
+	}
+	if minuteTens < '0' || minuteTens > '5' || minuteOnes < '0' || minuteOnes > '9' {
+		return 0, 0, false
+	}
+	hour := int(hourTens-'0')*10 + int(hourOnes-'0')
+	minute := int(minuteTens-'0')*10 + int(minuteOnes-'0')
+	if hour < 0 || hour > 23 {
+		return 0, 0, false
+	}
+	return hour, minute, true
+}
+
+func parseWeekday(value string) (time.Weekday, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "sunday":
+		return time.Sunday, true
+	case "monday":
+		return time.Monday, true
+	case "tuesday":
+		return time.Tuesday, true
+	case "wednesday":
+		return time.Wednesday, true
+	case "thursday":
+		return time.Thursday, true
+	case "friday":
+		return time.Friday, true
+	case "saturday":
+		return time.Saturday, true
+	default:
+		return time.Sunday, false
 	}
 }
 
 func (d *Daemon) RunOnce(ctx context.Context) error {
-	if err := d.performBackup(ctx, d.currentConfig()); err != nil {
+	if err := d.backupRunner(ctx, d.currentConfig()); err != nil {
 		d.setFailed(err)
 		return err
 	}
@@ -194,7 +318,7 @@ func (d *Daemon) newHandler() http.Handler {
 
 func (d *Daemon) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		d.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
 	d.writeJSON(w, http.StatusOK, d.snapshot())
@@ -202,16 +326,16 @@ func (d *Daemon) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func (d *Daemon) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		d.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
 
 	if err := d.triggerBackup(); err != nil {
 		if errors.Is(err, errBackupAlreadyRunning) {
-			http.Error(w, err.Error(), http.StatusConflict)
+			d.writeError(w, http.StatusConflict, "backup_running", err.Error())
 			return
 		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		d.writeError(w, http.StatusBadRequest, "backup_start_failed", err.Error())
 		return
 	}
 
@@ -220,14 +344,14 @@ func (d *Daemon) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 
 func (d *Daemon) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		d.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
 
 	_, err := d.reloadConfig()
 	if err != nil {
 		d.setLastError(fmt.Sprintf("config reload failed: %v", err))
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		d.writeError(w, http.StatusBadRequest, "config_reload_failed", err.Error())
 		return
 	}
 
@@ -238,19 +362,19 @@ func (d *Daemon) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
 
 func (d *Daemon) handleRestoreList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		d.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
 
 	manifestPath, err := state.ManifestPath()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		d.writeError(w, http.StatusInternalServerError, "state_path_failed", err.Error())
 		return
 	}
 
 	m, err := backup.LoadManifest(manifestPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("load manifest: %v", err), http.StatusBadRequest)
+		d.writeError(w, http.StatusBadRequest, "manifest_load_failed", fmt.Sprintf("load manifest: %v", err))
 		return
 	}
 
@@ -262,29 +386,29 @@ func (d *Daemon) handleRestoreList(w http.ResponseWriter, r *http.Request) {
 
 func (d *Daemon) handleRestoreDryRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		d.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
 
 	var req restoreDryRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("decode request: %v", err), http.StatusBadRequest)
+		d.writeError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("decode request: %v", err))
 		return
 	}
 	requestedPath := strings.TrimSpace(req.Path)
 	if requestedPath == "" {
-		http.Error(w, "path is required", http.StatusBadRequest)
+		d.writeError(w, http.StatusBadRequest, "invalid_request", "path is required")
 		return
 	}
 
 	manifestPath, err := state.ManifestPath()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		d.writeError(w, http.StatusInternalServerError, "state_path_failed", err.Error())
 		return
 	}
 	m, err := backup.LoadManifest(manifestPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("load manifest: %v", err), http.StatusBadRequest)
+		d.writeError(w, http.StatusBadRequest, "manifest_load_failed", fmt.Sprintf("load manifest: %v", err))
 		return
 	}
 
@@ -292,19 +416,19 @@ func (d *Daemon) handleRestoreDryRun(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		absPath, absErr := filepath.Abs(requestedPath)
 		if absErr != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			d.writeError(w, http.StatusBadRequest, "path_lookup_failed", err.Error())
 			return
 		}
 		entry, err = backup.FindEntryByPath(m, absPath)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			d.writeError(w, http.StatusBadRequest, "path_lookup_failed", err.Error())
 			return
 		}
 	}
 
 	targetPath, err := resolvedRestorePath(entry.Path, req.ToDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		d.writeError(w, http.StatusBadRequest, "invalid_restore_target", err.Error())
 		return
 	}
 
@@ -319,6 +443,13 @@ func (d *Daemon) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (d *Daemon) writeError(w http.ResponseWriter, status int, code string, message string) {
+	d.writeJSON(w, status, errorResponse{
+		Code:    code,
+		Message: message,
+	})
 }
 
 var errBackupAlreadyRunning = errors.New("backup already running")
@@ -337,7 +468,7 @@ func (d *Daemon) triggerBackup() error {
 	d.mu.Unlock()
 
 	go func() {
-		err := d.performBackup(context.Background(), cfg)
+		err := d.backupRunner(context.Background(), cfg)
 		if err != nil {
 			d.setFailed(err)
 			return
@@ -405,7 +536,7 @@ func (d *Daemon) setIdleSuccess() {
 	defer d.mu.Unlock()
 	d.running = false
 	d.status.State = "idle"
-	d.status.LastBackupAt = time.Now().UTC()
+	d.status.LastBackupAt = d.now().UTC()
 	d.status.LastError = ""
 }
 

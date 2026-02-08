@@ -10,12 +10,37 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
 )
+
+func decodeErrorResponse(t *testing.T, rr *httptest.ResponseRecorder) errorResponse {
+	t.Helper()
+	var resp errorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode error response: %v body=%s", err, rr.Body.String())
+	}
+	return resp
+}
+
+func waitForNextScheduledAt(t *testing.T, d *Daemon, want string) {
+	t.Helper()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		got := d.snapshot().NextScheduledAt
+		if got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("next_scheduled_at mismatch: got %q want %q", got, want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
 
 func TestStatusEndpointDefaultsToIdle(t *testing.T) {
 	d := New(config.DefaultConfig())
@@ -47,6 +72,10 @@ func TestStatusEndpointRejectsNonGet(t *testing.T) {
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusMethodNotAllowed)
 	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "method_not_allowed" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
 }
 
 func TestRunBackupEndpointReturnsConflictWhenAlreadyRunning(t *testing.T) {
@@ -64,6 +93,10 @@ func TestRunBackupEndpointReturnsConflictWhenAlreadyRunning(t *testing.T) {
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusConflict)
 	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "backup_running" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
 }
 
 func TestRunBackupEndpointRejectsNonPost(t *testing.T) {
@@ -76,6 +109,10 @@ func TestRunBackupEndpointRejectsNonPost(t *testing.T) {
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusMethodNotAllowed)
 	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "method_not_allowed" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
 }
 
 func TestReloadConfigEndpointRejectsNonPost(t *testing.T) {
@@ -87,6 +124,10 @@ func TestReloadConfigEndpointRejectsNonPost(t *testing.T) {
 
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "method_not_allowed" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
 	}
 }
 
@@ -103,6 +144,10 @@ func TestReloadConfigEndpointFailureIsExposedInStatus(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("reload status code: got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "config_reload_failed" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
 	}
 
 	statusReq := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
@@ -255,26 +300,298 @@ func TestRestoreDryRunEndpoint(t *testing.T) {
 	}
 }
 
-func TestScheduleInterval(t *testing.T) {
+func TestRestoreDryRunEndpointRequiresPath(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/dry-run", bytes.NewBufferString(`{"path":"   "}`))
+	rr := httptest.NewRecorder()
+
+	d := New(config.DefaultConfig())
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "invalid_request" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestDaemonErrorContractMethodNotAllowedAcrossEndpoints(t *testing.T) {
+	d := New(config.DefaultConfig())
+
 	tests := []struct {
-		name     string
-		schedule string
-		want     time.Duration
-		enabled  bool
+		name   string
+		method string
+		path   string
 	}{
-		{name: "manual", schedule: "manual", want: 0, enabled: false},
-		{name: "daily", schedule: "daily", want: 24 * time.Hour, enabled: true},
-		{name: "weekly", schedule: "weekly", want: 7 * 24 * time.Hour, enabled: true},
-		{name: "unknown", schedule: "monthly", want: 0, enabled: false},
+		{name: "status", method: http.MethodPost, path: "/v1/status"},
+		{name: "backup run", method: http.MethodGet, path: "/v1/backup/run"},
+		{name: "config reload", method: http.MethodGet, path: "/v1/config/reload"},
+		{name: "restore list", method: http.MethodPost, path: "/v1/restore/list"},
+		{name: "restore dry-run", method: http.MethodGet, path: "/v1/restore/dry-run"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, enabled := scheduleInterval(tc.schedule)
-			if got != tc.want || enabled != tc.enabled {
-				t.Fatalf("scheduleInterval(%q) = (%v, %v), want (%v, %v)", tc.schedule, got, enabled, tc.want, tc.enabled)
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			rr := httptest.NewRecorder()
+			d.Handler().ServeHTTP(rr, req)
+			if rr.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status code: got %d want %d", rr.Code, http.StatusMethodNotAllowed)
+			}
+			errResp := decodeErrorResponse(t, rr)
+			if errResp.Code != "method_not_allowed" {
+				t.Fatalf("unexpected error code: got %q", errResp.Code)
+			}
+			if errResp.Message == "" {
+				t.Fatal("expected non-empty error message")
 			}
 		})
+	}
+}
+
+func TestDaemonErrorContractRestoreDryRunDecodeFailure(t *testing.T) {
+	d := New(config.DefaultConfig())
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/dry-run", bytes.NewBufferString(`{"path":`))
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "invalid_request" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestDaemonErrorContractRestoreListManifestLoadFailed(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
+		t.Fatalf("mkdir manifest dir: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, []byte("{invalid"), 0o600); err != nil {
+		t.Fatalf("write invalid manifest: %v", err)
+	}
+
+	d := New(config.DefaultConfig())
+	req := httptest.NewRequest(http.MethodGet, "/v1/restore/list", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "manifest_load_failed" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestDaemonErrorContractRestoreDryRunPathLookupFailed(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	m := &backup.Manifest{
+		CreatedAt: time.Now().UTC(),
+		Entries: []backup.ManifestEntry{
+			{Path: "/Users/me/exists.txt"},
+		},
+	}
+	if err := backup.SaveManifest(manifestPath, m); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	body := bytes.NewBufferString(`{"path":"/Users/me/missing.txt"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/dry-run", body)
+	rr := httptest.NewRecorder()
+	d := New(config.DefaultConfig())
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "path_lookup_failed" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestDaemonErrorContractRestoreDryRunInvalidRestoreTarget(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	manifestPath := filepath.Join(homeDir, "Library", "Application Support", "baxter", "manifest.json")
+	m := &backup.Manifest{
+		CreatedAt: time.Now().UTC(),
+		Entries: []backup.ManifestEntry{
+			{Path: "../escape"},
+		},
+	}
+	if err := backup.SaveManifest(manifestPath, m); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	body := bytes.NewBufferString(`{"path":"../escape","to_dir":"/tmp/out"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/dry-run", body)
+	rr := httptest.NewRecorder()
+	d := New(config.DefaultConfig())
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "invalid_restore_target" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestNextScheduledRun(t *testing.T) {
+	loc := time.FixedZone("UTC-0800", -8*60*60)
+
+	tests := []struct {
+		name    string
+		cfg     scheduleConfig
+		now     time.Time
+		want    time.Time
+		enabled bool
+	}{
+		{
+			name: "manual disabled",
+			cfg: scheduleConfig{
+				Schedule: "manual",
+			},
+			now:     time.Date(2026, time.February, 8, 8, 0, 0, 0, loc),
+			want:    time.Time{},
+			enabled: false,
+		},
+		{
+			name: "daily before configured time uses same day",
+			cfg: scheduleConfig{
+				Schedule:  "daily",
+				DailyTime: "09:30",
+			},
+			now:     time.Date(2026, time.February, 8, 8, 0, 0, 0, loc),
+			want:    time.Date(2026, time.February, 8, 9, 30, 0, 0, loc),
+			enabled: true,
+		},
+		{
+			name: "daily after configured time uses next day",
+			cfg: scheduleConfig{
+				Schedule:  "daily",
+				DailyTime: "09:30",
+			},
+			now:     time.Date(2026, time.February, 8, 10, 0, 0, 0, loc),
+			want:    time.Date(2026, time.February, 9, 9, 30, 0, 0, loc),
+			enabled: true,
+		},
+		{
+			name: "weekly before configured weekday/time uses same week",
+			cfg: scheduleConfig{
+				Schedule:   "weekly",
+				WeeklyDay:  "sunday",
+				WeeklyTime: "09:30",
+			},
+			now:     time.Date(2026, time.February, 6, 8, 0, 0, 0, loc),  // Friday
+			want:    time.Date(2026, time.February, 8, 9, 30, 0, 0, loc), // Sunday
+			enabled: true,
+		},
+		{
+			name: "weekly after configured weekday/time uses next week",
+			cfg: scheduleConfig{
+				Schedule:   "weekly",
+				WeeklyDay:  "sunday",
+				WeeklyTime: "09:30",
+			},
+			now:     time.Date(2026, time.February, 8, 12, 0, 0, 0, loc),  // Sunday
+			want:    time.Date(2026, time.February, 15, 9, 30, 0, 0, loc), // next Sunday
+			enabled: true,
+		},
+		{
+			name: "invalid daily time disabled",
+			cfg: scheduleConfig{
+				Schedule:  "daily",
+				DailyTime: "oops",
+			},
+			now:     time.Date(2026, time.February, 8, 8, 0, 0, 0, loc),
+			want:    time.Time{},
+			enabled: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, enabled := nextScheduledRun(tc.cfg, tc.now)
+			if enabled != tc.enabled {
+				t.Fatalf("nextScheduledRun(%+v) enabled=%v want %v", tc.cfg, enabled, tc.enabled)
+			}
+			if !got.Equal(tc.want) {
+				t.Fatalf("nextScheduledRun(%+v) = %v, want %v", tc.cfg, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNextScheduledRunDailyPreservesWallClockAcrossDST(t *testing.T) {
+	loc, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Skipf("timezone data unavailable: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		now       time.Time
+		want      time.Time
+		wantDelta time.Duration
+	}{
+		{
+			name:      "spring forward keeps same local clock time",
+			now:       time.Date(2026, time.March, 8, 10, 0, 0, 0, loc), // PDT
+			want:      time.Date(2026, time.March, 9, 9, 30, 0, 0, loc), // PDT
+			wantDelta: 23*time.Hour + 30*time.Minute,
+		},
+		{
+			name:      "fall back keeps same local clock time",
+			now:       time.Date(2026, time.October, 31, 10, 0, 0, 0, loc), // PDT
+			want:      time.Date(2026, time.November, 1, 9, 30, 0, 0, loc), // PST
+			wantDelta: 24*time.Hour + 30*time.Minute,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := scheduleConfig{Schedule: "daily", DailyTime: "09:30"}
+			got, enabled := nextScheduledRun(cfg, tc.now)
+			if !enabled {
+				t.Fatal("expected daily schedule to be enabled")
+			}
+			if !got.Equal(tc.want) {
+				t.Fatalf("nextScheduledRun(daily) = %v, want %v", got, tc.want)
+			}
+			if delta := got.Sub(tc.now); delta != tc.wantDelta {
+				t.Fatalf("unexpected next-run delta: got %v want %v", delta, tc.wantDelta)
+			}
+		})
+	}
+}
+
+func TestSetIdleSuccessUsesInjectedClock(t *testing.T) {
+	d := New(config.DefaultConfig())
+	fixed := time.Date(2026, time.February, 8, 11, 15, 0, 0, time.UTC)
+	d.clockNow = func() time.Time { return fixed }
+
+	d.mu.Lock()
+	d.running = true
+	d.mu.Unlock()
+	d.setIdleSuccess()
+
+	resp := d.snapshot()
+	if resp.LastBackupAt != fixed.Format(time.RFC3339) {
+		t.Fatalf("unexpected last_backup_at: got %q want %q", resp.LastBackupAt, fixed.Format(time.RFC3339))
 	}
 }
 
@@ -369,6 +686,148 @@ func TestStatusEndpointScheduleVisibility(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReloadConfigEndpointUpdatesNextScheduledAtWithFixedClock(t *testing.T) {
+	now := time.Date(2026, time.February, 8, 8, 0, 0, 0, time.UTC)
+	cfg := config.DefaultConfig()
+	cfg.Schedule = "daily"
+	cfg.DailyTime = "09:30"
+	d := New(cfg)
+	d.clockNow = func() time.Time { return now }
+	d.timerAfter = func(time.Duration) <-chan time.Time {
+		return make(chan time.Time)
+	}
+
+	var step int
+	d.SetConfigPath("/tmp/config.toml")
+	d.configLoader = func(path string) (*config.Config, error) {
+		updated := config.DefaultConfig()
+		switch step {
+		case 0:
+			updated.Schedule = "weekly"
+			updated.WeeklyDay = "friday"
+			updated.WeeklyTime = "18:15"
+		default:
+			updated.Schedule = "manual"
+		}
+		step++
+		return updated, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		d.runScheduler(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("scheduler goroutine did not stop in time")
+		}
+	}()
+
+	waitForNextScheduledAt(t, d, time.Date(2026, time.February, 8, 9, 30, 0, 0, time.UTC).Format(time.RFC3339))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/config/reload", nil)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reload status code: got %d want %d", rr.Code, http.StatusOK)
+	}
+	waitForNextScheduledAt(t, d, time.Date(2026, time.February, 13, 18, 15, 0, 0, time.UTC).Format(time.RFC3339))
+
+	req = httptest.NewRequest(http.MethodPost, "/v1/config/reload", nil)
+	rr = httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reload status code: got %d want %d", rr.Code, http.StatusOK)
+	}
+	waitForNextScheduledAt(t, d, "")
+}
+
+func TestDaemonEndToEndReloadScheduledTriggerAndStatus(t *testing.T) {
+	initialNow := time.Date(2026, time.February, 8, 9, 0, 0, 0, time.UTC)
+	currentNow := initialNow
+	var nowMu sync.Mutex
+
+	cfg := config.DefaultConfig()
+	cfg.Schedule = "daily"
+	cfg.DailyTime = "09:30"
+	d := New(cfg)
+	d.clockNow = func() time.Time {
+		nowMu.Lock()
+		defer nowMu.Unlock()
+		return currentNow
+	}
+
+	timerCh := make(chan time.Time, 1)
+	d.timerAfter = func(time.Duration) <-chan time.Time {
+		return timerCh
+	}
+
+	backupDone := make(chan struct{}, 1)
+	d.backupRunner = func(ctx context.Context, cfg *config.Config) error {
+		nowMu.Lock()
+		currentNow = time.Date(2026, time.February, 8, 9, 30, 0, 0, time.UTC)
+		nowMu.Unlock()
+		backupDone <- struct{}{}
+		return nil
+	}
+
+	d.SetConfigPath("/tmp/config.toml")
+	d.configLoader = func(path string) (*config.Config, error) {
+		updated := config.DefaultConfig()
+		updated.Schedule = "manual"
+		return updated, nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		d.runScheduler(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("scheduler goroutine did not stop in time")
+		}
+	}()
+
+	waitForNextScheduledAt(t, d, time.Date(2026, time.February, 8, 9, 30, 0, 0, time.UTC).Format(time.RFC3339))
+
+	timerCh <- time.Now()
+	select {
+	case <-backupDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("scheduled backup did not trigger")
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		snap := d.snapshot()
+		if snap.State == "idle" && snap.LastBackupAt == time.Date(2026, time.February, 8, 9, 30, 0, 0, time.UTC).Format(time.RFC3339) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("unexpected status after scheduled run: %+v", snap)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/config/reload", nil)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reload status code: got %d want %d", rr.Code, http.StatusOK)
+	}
+	waitForNextScheduledAt(t, d, "")
 }
 
 func TestRunBackupEndpointStateTransition(t *testing.T) {

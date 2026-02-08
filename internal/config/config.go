@@ -2,7 +2,9 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -11,6 +13,9 @@ import (
 type Config struct {
 	BackupRoots []string         `toml:"backup_roots"`
 	Schedule    string           `toml:"schedule"`
+	DailyTime   string           `toml:"daily_time"`
+	WeeklyDay   string           `toml:"weekly_day"`
+	WeeklyTime  string           `toml:"weekly_time"`
 	S3          S3Config         `toml:"s3"`
 	Encryption  EncryptionConfig `toml:"encryption"`
 }
@@ -31,6 +36,9 @@ func DefaultConfig() *Config {
 	return &Config{
 		BackupRoots: []string{},
 		Schedule:    "daily",
+		DailyTime:   "09:00",
+		WeeklyDay:   "sunday",
+		WeeklyTime:  "09:00",
 		S3: S3Config{
 			Endpoint: "",
 			Region:   "",
@@ -74,6 +82,15 @@ func (c *Config) ApplyDefaults() {
 	if c.Schedule == "" {
 		c.Schedule = "daily"
 	}
+	if c.DailyTime == "" {
+		c.DailyTime = "09:00"
+	}
+	if c.WeeklyDay == "" {
+		c.WeeklyDay = "sunday"
+	}
+	if c.WeeklyTime == "" {
+		c.WeeklyTime = "09:00"
+	}
 	if c.S3.Prefix == "" {
 		c.S3.Prefix = "baxter/"
 	}
@@ -86,6 +103,19 @@ func (c *Config) ApplyDefaults() {
 }
 
 func (c *Config) Normalize() {
+	c.DailyTime = strings.TrimSpace(c.DailyTime)
+	c.WeeklyDay = strings.ToLower(strings.TrimSpace(c.WeeklyDay))
+	c.WeeklyTime = strings.TrimSpace(c.WeeklyTime)
+
+	for i, root := range c.BackupRoots {
+		trimmed := strings.TrimSpace(root)
+		if trimmed == "" {
+			c.BackupRoots[i] = ""
+			continue
+		}
+		c.BackupRoots[i] = filepath.Clean(trimmed)
+	}
+
 	if c.S3.Prefix != "" && !strings.HasSuffix(c.S3.Prefix, "/") {
 		c.S3.Prefix += "/"
 	}
@@ -97,6 +127,37 @@ func (c *Config) Validate() error {
 		// valid
 	default:
 		return errors.New("schedule must be daily, weekly, or manual")
+	}
+	if c.Schedule == "daily" {
+		if c.DailyTime == "" {
+			return errors.New("daily_time is required when schedule is daily")
+		}
+		if !isValidHHMM(c.DailyTime) {
+			return errors.New("daily_time must be in HH:MM (24-hour) format")
+		}
+	}
+	if c.Schedule == "weekly" {
+		if c.WeeklyDay == "" {
+			return errors.New("weekly_day is required when schedule is weekly")
+		}
+		if !isValidWeekday(c.WeeklyDay) {
+			return errors.New("weekly_day must be one of: sunday,monday,tuesday,wednesday,thursday,friday,saturday")
+		}
+		if c.WeeklyTime == "" {
+			return errors.New("weekly_time is required when schedule is weekly")
+		}
+		if !isValidHHMM(c.WeeklyTime) {
+			return errors.New("weekly_time must be in HH:MM (24-hour) format")
+		}
+	}
+
+	for i, root := range c.BackupRoots {
+		if strings.TrimSpace(root) == "" {
+			return fmt.Errorf("backup_roots[%d] must not be empty", i)
+		}
+		if !filepath.IsAbs(root) {
+			return fmt.Errorf("backup_roots[%d] must be an absolute path", i)
+		}
 	}
 
 	if c.S3.Bucket == "" {
@@ -122,4 +183,29 @@ func (c *Config) Validate() error {
 		return errors.New("encryption.keychain_account must not be empty")
 	}
 	return nil
+}
+
+func isValidHHMM(value string) bool {
+	if len(value) != 5 || value[2] != ':' {
+		return false
+	}
+	hour := value[0:2]
+	minute := value[3:5]
+	if hour[0] < '0' || hour[0] > '2' || hour[1] < '0' || hour[1] > '9' {
+		return false
+	}
+	if minute[0] < '0' || minute[0] > '5' || minute[1] < '0' || minute[1] > '9' {
+		return false
+	}
+	h := int(hour[0]-'0')*10 + int(hour[1]-'0')
+	return h >= 0 && h <= 23
+}
+
+func isValidWeekday(value string) bool {
+	switch value {
+	case "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday":
+		return true
+	default:
+		return false
+	}
 }

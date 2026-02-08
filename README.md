@@ -33,6 +33,11 @@ A simple, secure macOS backup utility with an S3 backend.
 - Example: `config.example.toml`
 - Initialize config with your real backup roots:
 - `./scripts/init-config.sh "/Users/<you>/Documents" "/Users/<you>/Pictures"`
+- `backup_roots` entries must be absolute, non-empty paths.
+- Schedule fields:
+- `schedule = "daily"` requires `daily_time` in `HH:MM` (24-hour local time)
+- `schedule = "weekly"` requires `weekly_day` (`sunday`..`saturday`) and `weekly_time` in `HH:MM`
+- `schedule = "manual"` disables automatic runs
 - Encryption key resolution order:
 - `BAXTER_PASSPHRASE` (env override)
 - macOS Keychain item from `[encryption]` (`keychain_service` + `keychain_account`)
@@ -55,8 +60,8 @@ A simple, secure macOS backup utility with an S3 backend.
 - `baxterd` runs IPC server on `127.0.0.1:41820` by default.
 - Daemon scheduler behavior (from `schedule` in config):
 - `manual`: no automatic runs
-- `daily`: triggers every 24 hours while daemon is running
-- `weekly`: triggers every 7 days while daemon is running
+- `daily`: runs at the same local wall-clock time each day while daemon is running
+- `weekly`: runs at the same local weekday/time each week while daemon is running
 - `baxterd --once` runs a single backup pass and exits.
 - Run once now example:
 - `go run ./cmd/baxterd --once`
@@ -64,6 +69,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - `GET /v1/status`
   - includes `state`, `last_backup_at`, optional `next_scheduled_at`, and `last_error`
 - `POST /v1/backup/run`
+- Error responses use JSON: `{"code":"...", "message":"..."}`.
 
 ## Compatibility Note
 - Encryption payload format is currently version 2 (Argon2id-derived key path).
@@ -110,6 +116,23 @@ A simple, secure macOS backup utility with an S3 backend.
 - `dist/v0.1.0/`
 - Tag push triggers GitHub Release workflow:
 - `git tag v0.1.0 && git push origin v0.1.0`
+
+## Release Smoke Matrix
+- CLI backup/restore:
+- `go test ./internal/cli -run TestRunBackupAndRestoreNestedPaths -v`
+- `go test ./internal/cli -run TestRunBackupAndRestoreEdgeFilenames -v`
+- Daemon API + scheduling contract:
+- `go test ./internal/daemon -run TestDaemonErrorContract -v`
+- `go test ./internal/daemon -run TestReloadConfigEndpointUpdatesNextScheduledAtWithFixedClock -v`
+- `go test ./internal/daemon -run TestDaemonEndToEndReloadScheduledTriggerAndStatus -v`
+- launchd/IPC runtime smoke:
+- `./scripts/smoke-launchd-ipc.sh`
+- macOS app settings:
+- `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' test`
+- Manual verification checklist:
+- Save settings with `daily_time`/`weekly_day`/`weekly_time` from the Settings UI.
+- Verify invalid schedule entries show inline validation and cannot be saved.
+- Confirm daemon error alerts display server-provided error messages.
 
 ## First Week Plan
 1. Implement config parsing + validation; design TOML schema.

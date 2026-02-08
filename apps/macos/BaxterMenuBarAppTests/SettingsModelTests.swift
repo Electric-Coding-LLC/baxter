@@ -87,4 +87,38 @@ final class SettingsModelTests: XCTestCase {
 
         XCTAssertFalse(model.shouldOfferApplyNow(daemonState: .running))
     }
+
+    func testDailyScheduleRequiresValidTime() {
+        let model = BaxterSettingsModel()
+        model.backupRoots = []
+        model.schedule = .daily
+        model.dailyTime = "9:0"
+
+        model.validateDraft()
+
+        XCTAssertEqual(model.validationMessage(for: .dailyTime), "Daily time must be HH:MM (24-hour).")
+        XCTAssertFalse(model.canSave)
+    }
+
+    func testWeeklyScheduleRequiresValidTime() {
+        let model = BaxterSettingsModel()
+        model.backupRoots = []
+        model.schedule = .weekly
+        model.weeklyTime = "24:00"
+
+        model.validateDraft()
+
+        XCTAssertEqual(model.validationMessage(for: .weeklyTime), "Weekly time must be HH:MM (24-hour).")
+        XCTAssertFalse(model.canSave)
+    }
+
+    func testRelativeBackupRootShowsAbsolutePathWarning() {
+        let model = BaxterSettingsModel()
+        model.backupRoots = ["relative/path"]
+
+        model.validateDraft()
+
+        XCTAssertEqual(model.backupRootWarning(for: "relative/path"), "Folder path must be absolute.")
+        XCTAssertEqual(model.validationMessage(for: .backupRoots), "Fix invalid backup folders before saving.")
+    }
 }
