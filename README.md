@@ -125,6 +125,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - `go test ./internal/daemon -run TestDaemonErrorContract -v`
 - `go test ./internal/daemon -run TestReloadConfigEndpointUpdatesNextScheduledAtWithFixedClock -v`
 - `go test ./internal/daemon -run TestDaemonEndToEndReloadScheduledTriggerAndStatus -v`
+- `go test ./internal/daemon -run TestRestoreRunEndpoint -v`
 - launchd/IPC runtime smoke:
 - `./scripts/smoke-launchd-ipc.sh`
 - macOS app settings:

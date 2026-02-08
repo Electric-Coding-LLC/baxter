@@ -22,6 +22,9 @@ final class BackupStatusModel: ObservableObject {
     @Published var restorePaths: [String] = []
     @Published var restorePreviewMessage: String?
     @Published var isRestoreBusy: Bool = false
+    @Published var lastRestoreAt: Date?
+    @Published var lastRestorePath: String?
+    @Published var lastRestoreError: String?
 
     private let baseURL = URL(string: "http://127.0.0.1:41820")!
     private var timer: Timer?
@@ -238,6 +241,44 @@ final class BackupStatusModel: ObservableObject {
         }
     }
 
+    func runRestore(path: String, toDir: String, overwrite: Bool) {
+        Task {
+            isRestoreBusy = true
+            defer { isRestoreBusy = false }
+
+            let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedPath.isEmpty {
+                restorePreviewMessage = "Enter a restore path."
+                return
+            }
+
+            do {
+                var request = URLRequest(url: baseURL.appendingPathComponent("v1/restore/run"))
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                let payload = RestoreDryRunRequest(
+                    path: trimmedPath,
+                    toDir: toDir.trimmingCharacters(in: .whitespacesAndNewlines),
+                    overwrite: overwrite
+                )
+                request.httpBody = try JSONEncoder().encode(payload)
+
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw IPCError.badResponse
+                }
+                guard http.statusCode == 200 else {
+                    throw decodeDaemonError(data: data, statusCode: http.statusCode)
+                }
+                let decoded = try JSONDecoder().decode(RestoreDryRunPayload.self, from: data)
+                restorePreviewMessage = "Restore complete: source=\(decoded.sourcePath) target=\(decoded.targetPath)"
+                refreshStatus()
+            } catch {
+                restorePreviewMessage = "Restore failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func decodeDaemonError(data: Data, statusCode: Int) -> IPCError {
         if let payload = try? JSONDecoder().decode(DaemonErrorPayload.self, from: data) {
             return IPCError.server(code: payload.code, message: payload.message, statusCode: statusCode)
@@ -265,6 +306,13 @@ final class BackupStatusModel: ObservableObject {
         } else {
             nextScheduledAt = nil
         }
+        if let raw = status.lastRestoreAt {
+            lastRestoreAt = iso8601.date(from: raw)
+        } else {
+            lastRestoreAt = nil
+        }
+        lastRestorePath = status.lastRestorePath
+        lastRestoreError = status.lastRestoreError
         lastError = status.lastError
     }
 }
@@ -274,12 +322,18 @@ private struct DaemonStatus: Decodable {
     let lastBackupAt: String?
     let nextScheduledAt: String?
     let lastError: String?
+    let lastRestoreAt: String?
+    let lastRestorePath: String?
+    let lastRestoreError: String?
 
     enum CodingKeys: String, CodingKey {
         case state
         case lastBackupAt = "last_backup_at"
         case nextScheduledAt = "next_scheduled_at"
         case lastError = "last_error"
+        case lastRestoreAt = "last_restore_at"
+        case lastRestorePath = "last_restore_path"
+        case lastRestoreError = "last_restore_error"
     }
 }
 
