@@ -216,6 +216,11 @@ struct BaxterSettingsView: View {
                                     statusModel.previewRestore(path: restorePath, toDir: restoreToDir, overwrite: restoreOverwrite)
                                 }
                                 .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                Button("Run Restore") {
+                                    statusModel.runRestore(path: restorePath, toDir: restoreToDir, overwrite: restoreOverwrite)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                                 if statusModel.isRestoreBusy {
                                     ProgressView()
@@ -228,6 +233,27 @@ struct BaxterSettingsView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            if let lastRestoreAt = statusModel.lastRestoreAt {
+                                Text("Last restore: \(lastRestoreAt.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if let lastRestorePath = statusModel.lastRestorePath {
+                                Text("Last restored path: \(lastRestorePath)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if let lastRestoreError = statusModel.lastRestoreError {
+                                Text("Last restore error: \(lastRestoreError)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }

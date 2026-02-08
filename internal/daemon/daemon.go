@@ -23,17 +23,23 @@ const DefaultIPCAddress = "127.0.0.1:41820"
 const passphraseEnv = "BAXTER_PASSPHRASE"
 
 type daemonStatus struct {
-	State           string
-	LastBackupAt    time.Time
-	NextScheduledAt time.Time
-	LastError       string
+	State            string
+	LastBackupAt     time.Time
+	NextScheduledAt  time.Time
+	LastError        string
+	LastRestoreAt    time.Time
+	LastRestorePath  string
+	LastRestoreError string
 }
 
 type statusResponse struct {
-	State           string `json:"state"`
-	LastBackupAt    string `json:"last_backup_at,omitempty"`
-	NextScheduledAt string `json:"next_scheduled_at,omitempty"`
-	LastError       string `json:"last_error,omitempty"`
+	State            string `json:"state"`
+	LastBackupAt     string `json:"last_backup_at,omitempty"`
+	NextScheduledAt  string `json:"next_scheduled_at,omitempty"`
+	LastError        string `json:"last_error,omitempty"`
+	LastRestoreAt    string `json:"last_restore_at,omitempty"`
+	LastRestorePath  string `json:"last_restore_path,omitempty"`
+	LastRestoreError string `json:"last_restore_error,omitempty"`
 }
 
 type restoreListResponse struct {
@@ -50,6 +56,17 @@ type restoreDryRunResponse struct {
 	SourcePath string `json:"source_path"`
 	TargetPath string `json:"target_path"`
 	Overwrite  bool   `json:"overwrite"`
+}
+
+type restoreRunRequest struct {
+	Path      string `json:"path"`
+	ToDir     string `json:"to_dir,omitempty"`
+	Overwrite bool   `json:"overwrite,omitempty"`
+}
+
+type restoreRunResponse struct {
+	SourcePath string `json:"source_path"`
+	TargetPath string `json:"target_path"`
 }
 
 type errorResponse struct {
@@ -313,6 +330,7 @@ func (d *Daemon) newHandler() http.Handler {
 	mux.HandleFunc("/v1/config/reload", d.handleReloadConfig)
 	mux.HandleFunc("/v1/restore/list", d.handleRestoreList)
 	mux.HandleFunc("/v1/restore/dry-run", d.handleRestoreDryRun)
+	mux.HandleFunc("/v1/restore/run", d.handleRestoreRun)
 	return mux
 }
 
@@ -401,34 +419,9 @@ func (d *Daemon) handleRestoreDryRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	manifestPath, err := state.ManifestPath()
+	entry, targetPath, err := d.resolveRestoreTarget(requestedPath, req.ToDir)
 	if err != nil {
-		d.writeError(w, http.StatusInternalServerError, "state_path_failed", err.Error())
-		return
-	}
-	m, err := backup.LoadManifest(manifestPath)
-	if err != nil {
-		d.writeError(w, http.StatusBadRequest, "manifest_load_failed", fmt.Sprintf("load manifest: %v", err))
-		return
-	}
-
-	entry, err := backup.FindEntryByPath(m, requestedPath)
-	if err != nil {
-		absPath, absErr := filepath.Abs(requestedPath)
-		if absErr != nil {
-			d.writeError(w, http.StatusBadRequest, "path_lookup_failed", err.Error())
-			return
-		}
-		entry, err = backup.FindEntryByPath(m, absPath)
-		if err != nil {
-			d.writeError(w, http.StatusBadRequest, "path_lookup_failed", err.Error())
-			return
-		}
-	}
-
-	targetPath, err := resolvedRestorePath(entry.Path, req.ToDir)
-	if err != nil {
-		d.writeError(w, http.StatusBadRequest, "invalid_restore_target", err.Error())
+		d.writeRestoreError(w, err)
 		return
 	}
 
@@ -436,6 +429,90 @@ func (d *Daemon) handleRestoreDryRun(w http.ResponseWriter, r *http.Request) {
 		SourcePath: entry.Path,
 		TargetPath: targetPath,
 		Overwrite:  req.Overwrite,
+	})
+}
+
+func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		d.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+
+	var req restoreRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		d.writeError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("decode request: %v", err))
+		return
+	}
+	requestedPath := strings.TrimSpace(req.Path)
+	if requestedPath == "" {
+		d.writeError(w, http.StatusBadRequest, "invalid_request", "path is required")
+		return
+	}
+
+	entry, targetPath, err := d.resolveRestoreTarget(requestedPath, req.ToDir)
+	if err != nil {
+		d.setLastRestoreError(err.Error())
+		d.writeRestoreError(w, err)
+		return
+	}
+
+	cfg := d.currentConfig()
+	store, err := d.objectStore(cfg)
+	if err != nil {
+		d.setLastRestoreError(err.Error())
+		d.writeError(w, http.StatusInternalServerError, "object_store_failed", err.Error())
+		return
+	}
+
+	key, err := encryptionKey(cfg)
+	if err != nil {
+		d.setLastRestoreError(err.Error())
+		d.writeError(w, http.StatusBadRequest, "restore_key_unavailable", err.Error())
+		return
+	}
+
+	payload, err := store.GetObject(backup.ObjectKeyForPath(entry.Path))
+	if err != nil {
+		d.setLastRestoreError(err.Error())
+		d.writeError(w, http.StatusBadRequest, "read_object_failed", fmt.Sprintf("read object: %v", err))
+		return
+	}
+
+	plain, err := crypto.DecryptBytes(key, payload)
+	if err != nil {
+		d.setLastRestoreError(err.Error())
+		d.writeError(w, http.StatusBadRequest, "decrypt_failed", fmt.Sprintf("decrypt object: %v", err))
+		return
+	}
+
+	if !req.Overwrite {
+		if _, err := os.Stat(targetPath); err == nil {
+			msg := fmt.Sprintf("target exists: %s (use overwrite=true to replace)", targetPath)
+			d.setLastRestoreError(msg)
+			d.writeError(w, http.StatusBadRequest, "target_exists", msg)
+			return
+		} else if !os.IsNotExist(err) {
+			d.setLastRestoreError(err.Error())
+			d.writeError(w, http.StatusBadRequest, "write_failed", err.Error())
+			return
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		d.setLastRestoreError(err.Error())
+		d.writeError(w, http.StatusBadRequest, "write_failed", err.Error())
+		return
+	}
+	if err := os.WriteFile(targetPath, plain, entry.Mode.Perm()); err != nil {
+		d.setLastRestoreError(err.Error())
+		d.writeError(w, http.StatusBadRequest, "write_failed", err.Error())
+		return
+	}
+
+	d.setRestoreSuccess(entry.Path)
+	d.writeJSON(w, http.StatusOK, restoreRunResponse{
+		SourcePath: entry.Path,
+		TargetPath: targetPath,
 	})
 }
 
@@ -450,6 +527,65 @@ func (d *Daemon) writeError(w http.ResponseWriter, status int, code string, mess
 		Code:    code,
 		Message: message,
 	})
+}
+
+var (
+	errRestoreStatePath     = errors.New("state path failed")
+	errRestoreManifestLoad  = errors.New("manifest load failed")
+	errRestorePathLookup    = errors.New("path lookup failed")
+	errRestoreTargetInvalid = errors.New("invalid restore target")
+)
+
+func (d *Daemon) resolveRestoreTarget(requestedPath string, toDir string) (backup.ManifestEntry, string, error) {
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		return backup.ManifestEntry{}, "", fmt.Errorf("%w: %v", errRestoreStatePath, err)
+	}
+	m, err := backup.LoadManifest(manifestPath)
+	if err != nil {
+		return backup.ManifestEntry{}, "", fmt.Errorf("%w: load manifest: %v", errRestoreManifestLoad, err)
+	}
+
+	entry, err := backup.FindEntryByPath(m, requestedPath)
+	if err != nil {
+		absPath, absErr := filepath.Abs(requestedPath)
+		if absErr != nil {
+			return backup.ManifestEntry{}, "", fmt.Errorf("%w: %v", errRestorePathLookup, err)
+		}
+		entry, err = backup.FindEntryByPath(m, absPath)
+		if err != nil {
+			return backup.ManifestEntry{}, "", fmt.Errorf("%w: %v", errRestorePathLookup, err)
+		}
+	}
+
+	targetPath, err := resolvedRestorePath(entry.Path, toDir)
+	if err != nil {
+		return backup.ManifestEntry{}, "", fmt.Errorf("%w: %v", errRestoreTargetInvalid, err)
+	}
+	return entry, targetPath, nil
+}
+
+func (d *Daemon) writeRestoreError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errRestoreStatePath):
+		d.writeError(w, http.StatusInternalServerError, "state_path_failed", err.Error())
+	case errors.Is(err, errRestoreManifestLoad):
+		d.writeError(w, http.StatusBadRequest, "manifest_load_failed", err.Error())
+	case errors.Is(err, errRestorePathLookup):
+		d.writeError(w, http.StatusBadRequest, "path_lookup_failed", err.Error())
+	case errors.Is(err, errRestoreTargetInvalid):
+		d.writeError(w, http.StatusBadRequest, "invalid_restore_target", err.Error())
+	default:
+		d.writeError(w, http.StatusBadRequest, "restore_failed", err.Error())
+	}
+}
+
+func (d *Daemon) objectStore(cfg *config.Config) (storage.ObjectStore, error) {
+	objectsDir, err := state.ObjectStoreDir()
+	if err != nil {
+		return nil, err
+	}
+	return storage.NewFromConfig(cfg.S3, objectsDir)
 }
 
 var errBackupAlreadyRunning = errors.New("backup already running")
@@ -485,11 +621,7 @@ func (d *Daemon) performBackup(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
-	objectsDir, err := state.ObjectStoreDir()
-	if err != nil {
-		return err
-	}
-	store, err := storage.NewFromConfig(cfg.S3, objectsDir)
+	store, err := d.objectStore(cfg)
 	if err != nil {
 		return fmt.Errorf("create object store: %w", err)
 	}
@@ -550,6 +682,20 @@ func (d *Daemon) setLastError(lastError string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.status.LastError = lastError
+}
+
+func (d *Daemon) setLastRestoreError(lastRestoreError string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.status.LastRestoreError = lastRestoreError
+}
+
+func (d *Daemon) setRestoreSuccess(restoredPath string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.status.LastRestoreAt = d.now().UTC()
+	d.status.LastRestorePath = restoredPath
+	d.status.LastRestoreError = ""
 }
 
 func (d *Daemon) notifyScheduleChanged() {
@@ -658,6 +804,15 @@ func (d *Daemon) snapshot() statusResponse {
 	}
 	if !d.status.NextScheduledAt.IsZero() {
 		resp.NextScheduledAt = d.status.NextScheduledAt.Format(time.RFC3339)
+	}
+	if !d.status.LastRestoreAt.IsZero() {
+		resp.LastRestoreAt = d.status.LastRestoreAt.Format(time.RFC3339)
+	}
+	if d.status.LastRestorePath != "" {
+		resp.LastRestorePath = d.status.LastRestorePath
+	}
+	if d.status.LastRestoreError != "" {
+		resp.LastRestoreError = d.status.LastRestoreError
 	}
 	return resp
 }

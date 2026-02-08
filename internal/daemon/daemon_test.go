@@ -16,6 +16,9 @@ import (
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
+	"baxter/internal/crypto"
+	"baxter/internal/state"
+	"baxter/internal/storage"
 )
 
 func decodeErrorResponse(t *testing.T, rr *httptest.ResponseRecorder) errorResponse {
@@ -328,6 +331,7 @@ func TestDaemonErrorContractMethodNotAllowedAcrossEndpoints(t *testing.T) {
 		{name: "config reload", method: http.MethodGet, path: "/v1/config/reload"},
 		{name: "restore list", method: http.MethodPost, path: "/v1/restore/list"},
 		{name: "restore dry-run", method: http.MethodGet, path: "/v1/restore/dry-run"},
+		{name: "restore run", method: http.MethodGet, path: "/v1/restore/run"},
 	}
 
 	for _, tc := range tests {
@@ -346,6 +350,157 @@ func TestDaemonErrorContractMethodNotAllowedAcrossEndpoints(t *testing.T) {
 				t.Fatal("expected non-empty error message")
 			}
 		})
+	}
+}
+
+func TestRestoreRunEndpoint(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	sourceBody := []byte("daemon restore body")
+	if err := os.WriteFile(sourcePath, sourceBody, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "daemon-restore-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	objectsDir, err := state.ObjectStoreDir()
+	if err != nil {
+		t.Fatalf("object store dir: %v", err)
+	}
+	store, err := storage.NewFromConfig(cfg.S3, objectsDir)
+	if err != nil {
+		t.Fatalf("new object store: %v", err)
+	}
+	_, err = backup.Run(cfg, backup.RunOptions{
+		ManifestPath:  manifestPath,
+		EncryptionKey: crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		Store:         store,
+	})
+	if err != nil {
+		t.Fatalf("run backup: %v", err)
+	}
+
+	d := New(cfg)
+	restoreAt := time.Date(2026, time.February, 8, 12, 30, 0, 0, time.UTC)
+	d.clockNow = func() time.Time { return restoreAt }
+
+	body := bytes.NewBufferString(`{"path":"` + sourcePath + `","to_dir":"` + restoreRoot + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/run", body)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var restoreResp restoreRunResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &restoreResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	trimmedSource := strings.TrimPrefix(filepath.Clean(sourcePath), string(filepath.Separator))
+	expectedTarget := filepath.Join(restoreRoot, trimmedSource)
+	if restoreResp.TargetPath != expectedTarget {
+		t.Fatalf("unexpected target path: got %q want %q", restoreResp.TargetPath, expectedTarget)
+	}
+
+	restored, err := os.ReadFile(expectedTarget)
+	if err != nil {
+		t.Fatalf("read restored file: %v", err)
+	}
+	if !bytes.Equal(restored, sourceBody) {
+		t.Fatalf("restored body mismatch: got %q want %q", string(restored), string(sourceBody))
+	}
+
+	status := d.snapshot()
+	if status.LastRestoreAt != restoreAt.Format(time.RFC3339) {
+		t.Fatalf("unexpected last_restore_at: got %q want %q", status.LastRestoreAt, restoreAt.Format(time.RFC3339))
+	}
+	if status.LastRestorePath != sourcePath {
+		t.Fatalf("unexpected last_restore_path: got %q want %q", status.LastRestorePath, sourcePath)
+	}
+	if status.LastRestoreError != "" {
+		t.Fatalf("unexpected last_restore_error: %q", status.LastRestoreError)
+	}
+}
+
+func TestRestoreRunEndpointRejectsExistingTargetWithoutOverwrite(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	if err := os.WriteFile(sourcePath, []byte("restore body"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "daemon-restore-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	objectsDir, err := state.ObjectStoreDir()
+	if err != nil {
+		t.Fatalf("object store dir: %v", err)
+	}
+	store, err := storage.NewFromConfig(cfg.S3, objectsDir)
+	if err != nil {
+		t.Fatalf("new object store: %v", err)
+	}
+	_, err = backup.Run(cfg, backup.RunOptions{
+		ManifestPath:  manifestPath,
+		EncryptionKey: crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		Store:         store,
+	})
+	if err != nil {
+		t.Fatalf("run backup: %v", err)
+	}
+
+	trimmedSource := strings.TrimPrefix(filepath.Clean(sourcePath), string(filepath.Separator))
+	target := filepath.Join(restoreRoot, trimmedSource)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("already there"), 0o600); err != nil {
+		t.Fatalf("write existing target: %v", err)
+	}
+
+	d := New(cfg)
+	body := bytes.NewBufferString(`{"path":"` + sourcePath + `","to_dir":"` + restoreRoot + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/run", body)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "target_exists" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+	if d.snapshot().LastRestoreError == "" {
+		t.Fatal("expected last_restore_error to be set")
 	}
 }
 
