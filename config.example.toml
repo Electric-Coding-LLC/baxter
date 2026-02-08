@@ -5,6 +5,11 @@ backup_roots = [
 
 # daily | weekly | manual
 schedule = "daily"
+# Used when schedule="daily" (HH:MM local 24-hour time)
+daily_time = "09:00"
+# Used when schedule="weekly"
+weekly_day = "sunday"
+weekly_time = "09:00"
 
 [s3]
 # Leave bucket empty to use local object storage only.

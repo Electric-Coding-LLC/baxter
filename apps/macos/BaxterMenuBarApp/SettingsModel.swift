@@ -9,9 +9,24 @@ enum BackupSchedule: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum WeekdayOption: String, CaseIterable, Identifiable {
+    case sunday
+    case monday
+    case tuesday
+    case wednesday
+    case thursday
+    case friday
+    case saturday
+
+    var id: String { rawValue }
+}
+
 struct BaxterConfig {
     var backupRoots: [String]
     var schedule: BackupSchedule
+    var dailyTime: String
+    var weeklyDay: WeekdayOption
+    var weeklyTime: String
     var s3Endpoint: String
     var s3Region: String
     var s3Bucket: String
@@ -22,6 +37,9 @@ struct BaxterConfig {
     static let `default` = BaxterConfig(
         backupRoots: [],
         schedule: .daily,
+        dailyTime: "09:00",
+        weeklyDay: .sunday,
+        weeklyTime: "09:00",
         s3Endpoint: "",
         s3Region: "",
         s3Bucket: "",
@@ -33,6 +51,9 @@ struct BaxterConfig {
 
 enum SettingsField: Hashable {
     case backupRoots
+    case dailyTime
+    case weeklyDay
+    case weeklyTime
     case s3Endpoint
     case s3Region
     case s3Bucket
@@ -45,6 +66,9 @@ enum SettingsField: Hashable {
 final class BaxterSettingsModel: ObservableObject {
     @Published var backupRoots: [String] = []
     @Published var schedule: BackupSchedule = .daily
+    @Published var dailyTime: String = "09:00"
+    @Published var weeklyDay: WeekdayOption = .sunday
+    @Published var weeklyTime: String = "09:00"
     @Published var s3Endpoint: String = ""
     @Published var s3Region: String = ""
     @Published var s3Bucket: String = ""
@@ -187,6 +211,9 @@ final class BaxterSettingsModel: ObservableObject {
     private func apply(_ config: BaxterConfig) {
         backupRoots = config.backupRoots
         schedule = config.schedule
+        dailyTime = config.dailyTime
+        weeklyDay = config.weeklyDay
+        weeklyTime = config.weeklyTime
         s3Endpoint = config.s3Endpoint
         s3Region = config.s3Region
         s3Bucket = config.s3Bucket
@@ -240,6 +267,9 @@ final class BaxterSettingsModel: ObservableObject {
         var config = BaxterConfig(
             backupRoots: backupRoots,
             schedule: schedule,
+            dailyTime: dailyTime.trimmingCharacters(in: .whitespacesAndNewlines),
+            weeklyDay: weeklyDay,
+            weeklyTime: weeklyTime.trimmingCharacters(in: .whitespacesAndNewlines),
             s3Endpoint: s3Endpoint.trimmingCharacters(in: .whitespacesAndNewlines),
             s3Region: s3Region.trimmingCharacters(in: .whitespacesAndNewlines),
             s3Bucket: s3Bucket.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -254,6 +284,12 @@ final class BaxterSettingsModel: ObservableObject {
         if !config.s3Prefix.hasSuffix("/") {
             config.s3Prefix += "/"
         }
+        if config.dailyTime.isEmpty {
+            config.dailyTime = "09:00"
+        }
+        if config.weeklyTime.isEmpty {
+            config.weeklyTime = "09:00"
+        }
 
         return config
     }
@@ -263,6 +299,18 @@ final class BaxterSettingsModel: ObservableObject {
 
         if !backupRootWarnings.isEmpty {
             errors[.backupRoots] = "Fix invalid backup folders before saving."
+        }
+        switch config.schedule {
+        case .daily:
+            if !isValidTime(config.dailyTime) {
+                errors[.dailyTime] = "Daily time must be HH:MM (24-hour)."
+            }
+        case .weekly:
+            if !isValidTime(config.weeklyTime) {
+                errors[.weeklyTime] = "Weekly time must be HH:MM (24-hour)."
+            }
+        case .manual:
+            break
         }
 
         if config.s3Bucket.isEmpty {
@@ -301,6 +349,9 @@ final class BaxterSettingsModel: ObservableObject {
     private func firstValidationMessage(from errors: [SettingsField: String]) -> String? {
         let orderedFields: [SettingsField] = [
             .backupRoots,
+            .dailyTime,
+            .weeklyDay,
+            .weeklyTime,
             .s3Bucket,
             .s3Region,
             .s3Prefix,
@@ -319,6 +370,10 @@ final class BaxterSettingsModel: ObservableObject {
     private func backupRootIssues(for roots: [String]) -> [String: String] {
         var issues: [String: String] = [:]
         for root in roots {
+            if !root.hasPrefix("/") {
+                issues[root] = "Folder path must be absolute."
+                continue
+            }
             var isDirectory: ObjCBool = false
             let exists = FileManager.default.fileExists(atPath: root, isDirectory: &isDirectory)
             if !exists {
@@ -334,6 +389,14 @@ final class BaxterSettingsModel: ObservableObject {
             }
         }
         return issues
+    }
+
+    private func isValidTime(_ value: String) -> Bool {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return false }
+        guard parts[0].count == 2, parts[1].count == 2 else { return false }
+        guard let hour = Int(parts[0]), let minute = Int(parts[1]) else { return false }
+        return (0...23).contains(hour) && (0...59).contains(minute)
     }
 
     private func decodeConfig(from text: String) -> BaxterConfig {
@@ -382,6 +445,12 @@ final class BaxterSettingsModel: ObservableObject {
             switch (section, key) {
             case ("", "schedule"):
                 config.schedule = BackupSchedule(rawValue: value) ?? .daily
+            case ("", "daily_time"):
+                config.dailyTime = value
+            case ("", "weekly_day"):
+                config.weeklyDay = WeekdayOption(rawValue: value.lowercased()) ?? .sunday
+            case ("", "weekly_time"):
+                config.weeklyTime = value
             case ("s3", "endpoint"):
                 config.s3Endpoint = value
             case ("s3", "region"):
@@ -405,6 +474,12 @@ final class BaxterSettingsModel: ObservableObject {
         if !config.s3Prefix.hasSuffix("/") {
             config.s3Prefix += "/"
         }
+        if config.dailyTime.isEmpty {
+            config.dailyTime = "09:00"
+        }
+        if config.weeklyTime.isEmpty {
+            config.weeklyTime = "09:00"
+        }
 
         return config
     }
@@ -418,6 +493,9 @@ final class BaxterSettingsModel: ObservableObject {
         lines.append("]")
         lines.append("")
         lines.append("schedule = \"\(config.schedule.rawValue)\"")
+        lines.append("daily_time = \"\(escapeTomlString(config.dailyTime))\"")
+        lines.append("weekly_day = \"\(config.weeklyDay.rawValue)\"")
+        lines.append("weekly_time = \"\(escapeTomlString(config.weeklyTime))\"")
         lines.append("")
         lines.append("[s3]")
         lines.append("endpoint = \"\(escapeTomlString(config.s3Endpoint))\"")

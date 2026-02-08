@@ -80,7 +80,44 @@ struct BaxterSettingsView: View {
                                 }
                                 .labelsHidden()
                                 .frame(width: 150, alignment: .leading)
+                                .onChange(of: model.schedule) { _, _ in
+                                    model.validateDraft()
+                                }
                                 Spacer()
+                            }
+
+                            if model.schedule == .daily {
+                                SettingRow(label: "Daily Time", error: model.validationMessage(for: .dailyTime)) {
+                                    TextField("HH:MM", text: $model.dailyTime)
+                                        .font(.system(.body, design: .monospaced))
+                                        .frame(width: 90, alignment: .leading)
+                                        .onChange(of: model.dailyTime) { _, _ in
+                                            model.validateDraft()
+                                        }
+                                }
+                            }
+
+                            if model.schedule == .weekly {
+                                SettingRow(label: "Weekly Day", error: model.validationMessage(for: .weeklyDay)) {
+                                    Picker("Weekly Day", selection: $model.weeklyDay) {
+                                        ForEach(WeekdayOption.allCases) { day in
+                                            Text(day.rawValue.capitalized).tag(day)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .frame(width: 140, alignment: .leading)
+                                    .onChange(of: model.weeklyDay) { _, _ in
+                                        model.validateDraft()
+                                    }
+                                }
+                                SettingRow(label: "Weekly Time", error: model.validationMessage(for: .weeklyTime)) {
+                                    TextField("HH:MM", text: $model.weeklyTime)
+                                        .font(.system(.body, design: .monospaced))
+                                        .frame(width: 90, alignment: .leading)
+                                        .onChange(of: model.weeklyTime) { _, _ in
+                                            model.validateDraft()
+                                        }
+                                }
                             }
                         }
                     }

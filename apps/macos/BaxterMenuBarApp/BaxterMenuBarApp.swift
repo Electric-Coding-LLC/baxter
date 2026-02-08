@@ -79,7 +79,7 @@ final class BackupStatusModel: ObservableObject {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/backup/run"))
                 request.httpMethod = "POST"
 
-                let (_, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await URLSession.shared.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
                     throw IPCError.badResponse
                 }
@@ -92,7 +92,7 @@ final class BackupStatusModel: ObservableObject {
                     lastError = nil
                     return
                 }
-                throw IPCError.badStatus(http.statusCode)
+                throw decodeDaemonError(data: data, statusCode: http.statusCode)
             } catch {
                 state = .failed
                 lastError = "run failed: \(error.localizedDescription)"
@@ -136,7 +136,7 @@ final class BackupStatusModel: ObservableObject {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/config/reload"))
                 request.httpMethod = "POST"
 
-                let (_, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await URLSession.shared.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
                     throw IPCError.badResponse
                 }
@@ -149,7 +149,7 @@ final class BackupStatusModel: ObservableObject {
                 if http.statusCode == 404 || http.statusCode == 405 {
                     throw IPCError.reloadUnavailable
                 }
-                throw IPCError.badStatus(http.statusCode)
+                throw decodeDaemonError(data: data, statusCode: http.statusCode)
             } catch IPCError.reloadUnavailable {
                 do {
                     lifecycleMessage = "Reload unavailable; restarting daemon..."
@@ -186,8 +186,11 @@ final class BackupStatusModel: ObservableObject {
                     throw IPCError.badResponse
                 }
                 let (data, response) = try await URLSession.shared.data(from: url)
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                guard let http = response as? HTTPURLResponse else {
                     throw IPCError.badResponse
+                }
+                guard http.statusCode == 200 else {
+                    throw decodeDaemonError(data: data, statusCode: http.statusCode)
                 }
                 let decoded = try JSONDecoder().decode(RestoreListPayload.self, from: data)
                 restorePaths = decoded.paths
@@ -225,7 +228,7 @@ final class BackupStatusModel: ObservableObject {
                     throw IPCError.badResponse
                 }
                 guard http.statusCode == 200 else {
-                    throw IPCError.badStatus(http.statusCode)
+                    throw decodeDaemonError(data: data, statusCode: http.statusCode)
                 }
                 let decoded = try JSONDecoder().decode(RestoreDryRunPayload.self, from: data)
                 restorePreviewMessage = "Dry-run: source=\(decoded.sourcePath) target=\(decoded.targetPath) overwrite=\(decoded.overwrite)"
@@ -233,6 +236,13 @@ final class BackupStatusModel: ObservableObject {
                 restorePreviewMessage = "Restore dry-run failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    private func decodeDaemonError(data: Data, statusCode: Int) -> IPCError {
+        if let payload = try? JSONDecoder().decode(DaemonErrorPayload.self, from: data) {
+            return IPCError.server(code: payload.code, message: payload.message, statusCode: statusCode)
+        }
+        return IPCError.badStatus(statusCode)
     }
 
     private func apply(_ status: DaemonStatus) {
@@ -301,10 +311,31 @@ private struct RestoreDryRunPayload: Decodable {
     }
 }
 
+private struct DaemonErrorPayload: Decodable {
+    let code: String
+    let message: String
+}
+
 private enum IPCError: Error {
 	case badResponse
 	case badStatus(Int)
+	case server(code: String, message: String, statusCode: Int)
 	case reloadUnavailable
+}
+
+extension IPCError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .badResponse:
+            return "Unexpected daemon response."
+        case .badStatus(let statusCode):
+            return "Daemon returned HTTP \(statusCode)."
+        case .server(_, let message, _):
+            return message
+        case .reloadUnavailable:
+            return "Reload endpoint unavailable."
+        }
+    }
 }
 
 enum DaemonServiceState: String {
