@@ -59,14 +59,17 @@ type restoreDryRunResponse struct {
 }
 
 type restoreRunRequest struct {
-	Path      string `json:"path"`
-	ToDir     string `json:"to_dir,omitempty"`
-	Overwrite bool   `json:"overwrite,omitempty"`
+	Path       string `json:"path"`
+	ToDir      string `json:"to_dir,omitempty"`
+	Overwrite  bool   `json:"overwrite,omitempty"`
+	VerifyOnly bool   `json:"verify_only,omitempty"`
 }
 
 type restoreRunResponse struct {
 	SourcePath string `json:"source_path"`
 	TargetPath string `json:"target_path"`
+	Verified   bool   `json:"verified"`
+	Wrote      bool   `json:"wrote"`
 }
 
 type errorResponse struct {
@@ -484,6 +487,22 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 		d.writeError(w, http.StatusBadRequest, "decrypt_failed", fmt.Sprintf("decrypt object: %v", err))
 		return
 	}
+	if err := backup.VerifyEntryContent(entry, plain); err != nil {
+		d.setLastRestoreError(err.Error())
+		d.writeError(w, http.StatusBadRequest, "integrity_check_failed", err.Error())
+		return
+	}
+
+	if req.VerifyOnly {
+		d.setRestoreSuccess(entry.Path)
+		d.writeJSON(w, http.StatusOK, restoreRunResponse{
+			SourcePath: entry.Path,
+			TargetPath: targetPath,
+			Verified:   true,
+			Wrote:      false,
+		})
+		return
+	}
 
 	if !req.Overwrite {
 		if _, err := os.Stat(targetPath); err == nil {
@@ -513,6 +532,8 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 	d.writeJSON(w, http.StatusOK, restoreRunResponse{
 		SourcePath: entry.Path,
 		TargetPath: targetPath,
+		Verified:   true,
+		Wrote:      true,
 	})
 }
 

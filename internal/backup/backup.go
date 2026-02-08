@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -163,4 +164,13 @@ func FindEntryByPath(m *Manifest, requestedPath string) (ManifestEntry, error) {
 		}
 	}
 	return ManifestEntry{}, errors.New("path not found in manifest")
+}
+
+func VerifyEntryContent(entry ManifestEntry, content []byte) error {
+	sum := sha256.Sum256(content)
+	got := hex.EncodeToString(sum[:])
+	if got != entry.SHA256 {
+		return fmt.Errorf("checksum mismatch for %s: got %s want %s", entry.Path, got, entry.SHA256)
+	}
+	return nil
 }

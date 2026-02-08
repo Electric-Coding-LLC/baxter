@@ -1,8 +1,11 @@
 package backup
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -42,5 +45,23 @@ func TestFindEntryByPathCleansInput(t *testing.T) {
 	}
 	if got.Path != entry.Path {
 		t.Fatalf("path mismatch: got %s want %s", got.Path, entry.Path)
+	}
+}
+
+func TestVerifyEntryContent(t *testing.T) {
+	content := []byte("verify me")
+	sum := sha256.Sum256(content)
+	entry := ManifestEntry{
+		Path:   "/tmp/file.txt",
+		SHA256: hex.EncodeToString(sum[:]),
+	}
+
+	if err := VerifyEntryContent(entry, content); err != nil {
+		t.Fatalf("expected checksum match, got error: %v", err)
+	}
+
+	entry.SHA256 = strings.Repeat("0", 64)
+	if err := VerifyEntryContent(entry, content); err == nil {
+		t.Fatal("expected checksum mismatch error")
 	}
 }

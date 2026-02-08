@@ -11,6 +11,7 @@ import (
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
+	"baxter/internal/state"
 )
 
 func TestParseRestoreArgs(t *testing.T) {
@@ -29,6 +30,12 @@ func TestParseRestoreArgs(t *testing.T) {
 func TestParseRestoreArgsRequiresPath(t *testing.T) {
 	if _, _, err := parseRestoreArgs([]string{"--dry-run"}); err == nil {
 		t.Fatal("expected usage error for missing path")
+	}
+}
+
+func TestParseRestoreArgsRejectsDryRunAndVerifyOnly(t *testing.T) {
+	if _, _, err := parseRestoreArgs([]string{"--dry-run", "--verify-only", "/src/file.txt"}); err == nil {
+		t.Fatal("expected error for mutually exclusive flags")
 	}
 }
 
@@ -265,6 +272,108 @@ func TestRunBackupAndRestoreNestedPaths(t *testing.T) {
 	}
 	if !bytes.Equal(restoredUpdated, updated) {
 		t.Fatalf("overwritten nested text mismatch: got %q want %q", string(restoredUpdated), string(updated))
+	}
+}
+
+func TestRestorePathVerifyOnlyDoesNotWrite(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	sourceContent := []byte("verify-only payload")
+	if err := os.WriteFile(sourcePath, sourceContent, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "verify-only-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("run backup failed: %v", err)
+	}
+	if err := restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot, VerifyOnly: true}); err != nil {
+		t.Fatalf("verify-only restore failed: %v", err)
+	}
+
+	trimmed := strings.TrimPrefix(filepath.Clean(sourcePath), string(filepath.Separator))
+	target := filepath.Join(restoreRoot, trimmed)
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("verify-only should not write target, stat err=%v", err)
+	}
+}
+
+func TestRestorePathChecksumMismatchDoesNotOverwriteTarget(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	sourceContent := []byte("checksum payload")
+	if err := os.WriteFile(sourcePath, sourceContent, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "checksum-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("run backup failed: %v", err)
+	}
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	manifest, err := backup.LoadManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	for i := range manifest.Entries {
+		if manifest.Entries[i].Path == sourcePath {
+			manifest.Entries[i].SHA256 = strings.Repeat("0", 64)
+		}
+	}
+	if err := backup.SaveManifest(manifestPath, manifest); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	trimmed := strings.TrimPrefix(filepath.Clean(sourcePath), string(filepath.Separator))
+	target := filepath.Join(restoreRoot, trimmed)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	initial := []byte("existing")
+	if err := os.WriteFile(target, initial, 0o600); err != nil {
+		t.Fatalf("write existing target: %v", err)
+	}
+
+	if err := restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot, Overwrite: true}); err == nil {
+		t.Fatal("expected checksum mismatch restore to fail")
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if !bytes.Equal(got, initial) {
+		t.Fatalf("target changed on checksum failure: got %q want %q", string(got), string(initial))
 	}
 }
 
