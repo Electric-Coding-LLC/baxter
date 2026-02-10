@@ -15,11 +15,11 @@ import (
 )
 
 func TestParseRestoreArgs(t *testing.T) {
-	opts, path, err := parseRestoreArgs([]string{"--dry-run", "--to", "/tmp/out", "--overwrite", "/src/file.txt"})
+	opts, path, err := parseRestoreArgs([]string{"--dry-run", "--to", "/tmp/out", "--overwrite", "--snapshot", "latest", "/src/file.txt"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !opts.DryRun || !opts.Overwrite || opts.ToDir != "/tmp/out" {
+	if !opts.DryRun || !opts.Overwrite || opts.ToDir != "/tmp/out" || opts.Snapshot != "latest" {
 		t.Fatalf("unexpected opts: %+v", opts)
 	}
 	if path != "/src/file.txt" {
@@ -40,11 +40,11 @@ func TestParseRestoreArgsRejectsDryRunAndVerifyOnly(t *testing.T) {
 }
 
 func TestParseRestoreListArgs(t *testing.T) {
-	opts, err := parseRestoreListArgs([]string{"--prefix", "/Users/me", "--contains", "report"})
+	opts, err := parseRestoreListArgs([]string{"--snapshot", "2026-01-01T00:00:00Z", "--prefix", "/Users/me", "--contains", "report"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if opts.Prefix != "/Users/me" || opts.Contains != "report" {
+	if opts.Prefix != "/Users/me" || opts.Contains != "report" || opts.Snapshot != "2026-01-01T00:00:00Z" {
 		t.Fatalf("unexpected opts: %+v", opts)
 	}
 }
@@ -52,6 +52,22 @@ func TestParseRestoreListArgs(t *testing.T) {
 func TestParseRestoreListArgsRejectsPositionalArgs(t *testing.T) {
 	if _, err := parseRestoreListArgs([]string{"extra"}); err == nil {
 		t.Fatal("expected usage error for extra args")
+	}
+}
+
+func TestParseSnapshotListArgs(t *testing.T) {
+	opts, err := parseSnapshotListArgs([]string{"--limit", "5"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Limit != 5 {
+		t.Fatalf("unexpected limit: %d", opts.Limit)
+	}
+}
+
+func TestParseSnapshotListArgsRejectsNegativeLimit(t *testing.T) {
+	if _, err := parseSnapshotListArgs([]string{"--limit", "-1"}); err == nil {
+		t.Fatal("expected negative limit to be rejected")
 	}
 }
 
@@ -272,6 +288,72 @@ func TestRunBackupAndRestoreNestedPaths(t *testing.T) {
 	}
 	if !bytes.Equal(restoredUpdated, updated) {
 		t.Fatalf("overwritten nested text mismatch: got %q want %q", string(restoredUpdated), string(updated))
+	}
+}
+
+func TestRestorePathFromOlderSnapshotAfterDeletion(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	sourceContent := []byte("snapshot restore payload")
+	if err := os.WriteFile(sourcePath, sourceContent, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "test-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+	cfg.S3.Bucket = ""
+
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("initial run backup failed: %v", err)
+	}
+
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("resolve snapshot dir: %v", err)
+	}
+	snapshots, err := backup.ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(snapshots) == 0 {
+		t.Fatal("expected at least one snapshot")
+	}
+	oldestSnapshotID := snapshots[len(snapshots)-1].ID
+
+	if err := os.Remove(sourcePath); err != nil {
+		t.Fatalf("remove source file: %v", err)
+	}
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("second run backup failed: %v", err)
+	}
+
+	if err := restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot}); err == nil {
+		t.Fatal("expected latest restore to fail for deleted file")
+	}
+
+	if err := restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot, Snapshot: oldestSnapshotID}); err != nil {
+		t.Fatalf("restore from old snapshot failed: %v", err)
+	}
+
+	trimmed := strings.TrimPrefix(filepath.Clean(sourcePath), string(filepath.Separator))
+	restoredPath := filepath.Join(restoreRoot, trimmed)
+	restoredContent, err := os.ReadFile(restoredPath)
+	if err != nil {
+		t.Fatalf("read restored content: %v", err)
+	}
+	if !bytes.Equal(restoredContent, sourceContent) {
+		t.Fatalf("restored content mismatch: got %q want %q", string(restoredContent), string(sourceContent))
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,7 @@ type restoreDryRunRequest struct {
 	Path      string `json:"path"`
 	ToDir     string `json:"to_dir,omitempty"`
 	Overwrite bool   `json:"overwrite,omitempty"`
+	Snapshot  string `json:"snapshot,omitempty"`
 }
 
 type restoreDryRunResponse struct {
@@ -63,6 +65,7 @@ type restoreRunRequest struct {
 	ToDir      string `json:"to_dir,omitempty"`
 	Overwrite  bool   `json:"overwrite,omitempty"`
 	VerifyOnly bool   `json:"verify_only,omitempty"`
+	Snapshot   string `json:"snapshot,omitempty"`
 }
 
 type restoreRunResponse struct {
@@ -82,6 +85,16 @@ type scheduleConfig struct {
 	DailyTime  string
 	WeeklyDay  string
 	WeeklyTime string
+}
+
+type snapshotSummary struct {
+	ID        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	Entries   int    `json:"entries"`
+}
+
+type snapshotsResponse struct {
+	Snapshots []snapshotSummary `json:"snapshots"`
 }
 
 type Daemon struct {
@@ -331,6 +344,7 @@ func (d *Daemon) newHandler() http.Handler {
 	mux.HandleFunc("/v1/status", d.handleStatus)
 	mux.HandleFunc("/v1/backup/run", d.handleRunBackup)
 	mux.HandleFunc("/v1/config/reload", d.handleReloadConfig)
+	mux.HandleFunc("/v1/snapshots", d.handleSnapshots)
 	mux.HandleFunc("/v1/restore/list", d.handleRestoreList)
 	mux.HandleFunc("/v1/restore/dry-run", d.handleRestoreDryRun)
 	mux.HandleFunc("/v1/restore/run", d.handleRestoreRun)
@@ -387,13 +401,8 @@ func (d *Daemon) handleRestoreList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	manifestPath, err := state.ManifestPath()
-	if err != nil {
-		d.writeError(w, http.StatusInternalServerError, "state_path_failed", err.Error())
-		return
-	}
-
-	m, err := backup.LoadManifest(manifestPath)
+	snapshotSelector := strings.TrimSpace(r.URL.Query().Get("snapshot"))
+	m, err := d.loadManifestForRestore(snapshotSelector)
 	if err != nil {
 		d.writeError(w, http.StatusBadRequest, "manifest_load_failed", fmt.Sprintf("load manifest: %v", err))
 		return
@@ -403,6 +412,50 @@ func (d *Daemon) handleRestoreList(w http.ResponseWriter, r *http.Request) {
 	contains := strings.TrimSpace(r.URL.Query().Get("contains"))
 	paths := filterRestorePaths(m.Entries, prefix, contains)
 	d.writeJSON(w, http.StatusOK, restoreListResponse{Paths: paths})
+}
+
+func (d *Daemon) handleSnapshots(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		d.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+
+	limit := 20
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 0 {
+			d.writeError(w, http.StatusBadRequest, "invalid_request", "limit must be >= 0")
+			return
+		}
+		limit = parsed
+	}
+
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		d.writeError(w, http.StatusInternalServerError, "state_path_failed", err.Error())
+		return
+	}
+	snapshots, err := backup.ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		d.writeError(w, http.StatusBadRequest, "snapshot_list_failed", fmt.Sprintf("list snapshots: %v", err))
+		return
+	}
+
+	if limit > 0 && limit < len(snapshots) {
+		snapshots = snapshots[:limit]
+	}
+
+	resp := snapshotsResponse{
+		Snapshots: make([]snapshotSummary, 0, len(snapshots)),
+	}
+	for _, snapshot := range snapshots {
+		resp.Snapshots = append(resp.Snapshots, snapshotSummary{
+			ID:        snapshot.ID,
+			CreatedAt: snapshot.CreatedAt.Format(time.RFC3339),
+			Entries:   snapshot.Entries,
+		})
+	}
+	d.writeJSON(w, http.StatusOK, resp)
 }
 
 func (d *Daemon) handleRestoreDryRun(w http.ResponseWriter, r *http.Request) {
@@ -422,7 +475,7 @@ func (d *Daemon) handleRestoreDryRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, targetPath, err := d.resolveRestoreTarget(requestedPath, req.ToDir)
+	entry, targetPath, err := d.resolveRestoreTarget(requestedPath, req.ToDir, req.Snapshot)
 	if err != nil {
 		d.writeRestoreError(w, err)
 		return
@@ -452,7 +505,7 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, targetPath, err := d.resolveRestoreTarget(requestedPath, req.ToDir)
+	entry, targetPath, err := d.resolveRestoreTarget(requestedPath, req.ToDir, req.Snapshot)
 	if err != nil {
 		d.setLastRestoreError(err.Error())
 		d.writeRestoreError(w, err)
@@ -551,18 +604,13 @@ func (d *Daemon) writeError(w http.ResponseWriter, status int, code string, mess
 }
 
 var (
-	errRestoreStatePath     = errors.New("state path failed")
 	errRestoreManifestLoad  = errors.New("manifest load failed")
 	errRestorePathLookup    = errors.New("path lookup failed")
 	errRestoreTargetInvalid = errors.New("invalid restore target")
 )
 
-func (d *Daemon) resolveRestoreTarget(requestedPath string, toDir string) (backup.ManifestEntry, string, error) {
-	manifestPath, err := state.ManifestPath()
-	if err != nil {
-		return backup.ManifestEntry{}, "", fmt.Errorf("%w: %v", errRestoreStatePath, err)
-	}
-	m, err := backup.LoadManifest(manifestPath)
+func (d *Daemon) resolveRestoreTarget(requestedPath string, toDir string, snapshotSelector string) (backup.ManifestEntry, string, error) {
+	m, err := d.loadManifestForRestore(snapshotSelector)
 	if err != nil {
 		return backup.ManifestEntry{}, "", fmt.Errorf("%w: load manifest: %v", errRestoreManifestLoad, err)
 	}
@@ -588,8 +636,6 @@ func (d *Daemon) resolveRestoreTarget(requestedPath string, toDir string) (backu
 
 func (d *Daemon) writeRestoreError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, errRestoreStatePath):
-		d.writeError(w, http.StatusInternalServerError, "state_path_failed", err.Error())
 	case errors.Is(err, errRestoreManifestLoad):
 		d.writeError(w, http.StatusBadRequest, "manifest_load_failed", err.Error())
 	case errors.Is(err, errRestorePathLookup):
@@ -641,6 +687,10 @@ func (d *Daemon) performBackup(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		return err
+	}
 
 	store, err := d.objectStore(cfg)
 	if err != nil {
@@ -652,9 +702,11 @@ func (d *Daemon) performBackup(ctx context.Context, cfg *config.Config) error {
 	}
 
 	result, err := backup.Run(cfg, backup.RunOptions{
-		ManifestPath:  manifestPath,
-		EncryptionKey: key,
-		Store:         store,
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: cfg.Retention.ManifestSnapshots,
+		EncryptionKey:     key,
+		Store:             store,
 	})
 	if err != nil {
 		return err
@@ -789,6 +841,18 @@ func resolvedRestorePath(sourcePath string, toDir string) (string, error) {
 	}
 
 	return targetPath, nil
+}
+
+func (d *Daemon) loadManifestForRestore(snapshotSelector string) (*backup.Manifest, error) {
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		return nil, err
+	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		return nil, err
+	}
+	return backup.LoadManifestForRestore(manifestPath, snapshotDir, snapshotSelector)
 }
 
 func (d *Daemon) reloadConfig() (*config.Config, error) {

@@ -35,6 +35,14 @@ func ManifestPath() (string, error) {
 	return filepath.Join(dir, "manifest.json"), nil
 }
 
+func ManifestSnapshotsDir() (string, error) {
+	dir, err := AppDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "manifests"), nil
+}
+
 func ObjectStoreDir() (string, error) {
 	dir, err := AppDir()
 	if err != nil {
