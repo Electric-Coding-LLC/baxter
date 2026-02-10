@@ -40,6 +40,13 @@ type gcOptions struct {
 	DryRun bool
 }
 
+type verifyOptions struct {
+	Snapshot string
+	Prefix   string
+	Limit    int
+	Sample   int
+}
+
 func Run(args []string) error {
 	fs := flag.NewFlagSet("baxter", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -106,13 +113,19 @@ func Run(args []string) error {
 			return err
 		}
 		return runGC(cfg, opts)
+	case "verify":
+		opts, err := parseVerifyArgs(rest[1:])
+		if err != nil {
+			return err
+		}
+		return runVerify(cfg, opts)
 	default:
 		return usageError()
 	}
 }
 
 func usageError() error {
-	return errors.New("usage: baxter [-config path] backup run|status | snapshot list [--limit n] | gc [--dry-run] | restore list [--snapshot latest|id|RFC3339] [--prefix path] [--contains text] | restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|id|RFC3339] <path>")
+	return errors.New("usage: baxter [-config path] backup run|status | snapshot list [--limit n] | gc [--dry-run] | verify [--snapshot latest|id|RFC3339] [--prefix path] [--limit n] [--sample n] | restore list [--snapshot latest|id|RFC3339] [--prefix path] [--contains text] | restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|id|RFC3339] <path>")
 }
 
 func runBackup(cfg *config.Config) error {
@@ -432,6 +445,126 @@ func runGC(cfg *config.Config, opts gcOptions) error {
 		result.RetainedObjects,
 	)
 	return nil
+}
+
+func parseVerifyArgs(args []string) (verifyOptions, error) {
+	verifyFS := flag.NewFlagSet("verify", flag.ContinueOnError)
+	verifyFS.SetOutput(os.Stderr)
+
+	var opts verifyOptions
+	verifyFS.StringVar(&opts.Snapshot, "snapshot", "", "verify from snapshot selector (latest, snapshot id, or RFC3339 timestamp)")
+	verifyFS.StringVar(&opts.Prefix, "prefix", "", "verify only paths with this prefix")
+	verifyFS.IntVar(&opts.Limit, "limit", 0, "maximum entries to verify after filtering (0 for all)")
+	verifyFS.IntVar(&opts.Sample, "sample", 0, "sample size before limit is applied (0 for all)")
+
+	if err := verifyFS.Parse(args); err != nil {
+		return verifyOptions{}, err
+	}
+	if len(verifyFS.Args()) != 0 {
+		return verifyOptions{}, errors.New("usage: baxter verify [--snapshot latest|id|RFC3339] [--prefix path] [--limit n] [--sample n]")
+	}
+	if opts.Limit < 0 {
+		return verifyOptions{}, errors.New("limit must be >= 0")
+	}
+	if opts.Sample < 0 {
+		return verifyOptions{}, errors.New("sample must be >= 0")
+	}
+	return opts, nil
+}
+
+func runVerify(cfg *config.Config, opts verifyOptions) error {
+	manifest, err := loadRestoreManifest(opts.Snapshot)
+	if err != nil {
+		return err
+	}
+
+	entries := filterManifestEntriesByPrefix(manifest.Entries, opts.Prefix)
+	totalCandidates := len(entries)
+	if opts.Sample > 0 {
+		entries = sampleManifestEntries(entries, opts.Sample)
+	}
+	if opts.Limit > 0 && opts.Limit < len(entries) {
+		entries = entries[:opts.Limit]
+	}
+
+	key, err := encryptionKey(cfg)
+	if err != nil {
+		return err
+	}
+	store, err := objectStoreFromConfig(cfg)
+	if err != nil {
+		return err
+	}
+
+	result, err := backup.VerifyManifestEntries(entries, key, store)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf(
+		"verify complete: total=%d checked=%d ok=%d missing=%d read_errors=%d decrypt_errors=%d checksum_errors=%d\n",
+		totalCandidates,
+		result.Checked,
+		result.OK,
+		result.Missing,
+		result.ReadErrors,
+		result.DecryptErrors,
+		result.ChecksumErrors,
+	)
+
+	if result.HasFailures() {
+		return fmt.Errorf(
+			"verify failed: missing=%d read_errors=%d decrypt_errors=%d checksum_errors=%d",
+			result.Missing,
+			result.ReadErrors,
+			result.DecryptErrors,
+			result.ChecksumErrors,
+		)
+	}
+	return nil
+}
+
+func filterManifestEntriesByPrefix(entries []backup.ManifestEntry, prefix string) []backup.ManifestEntry {
+	cleanPrefix := filepath.Clean(strings.TrimSpace(prefix))
+	if cleanPrefix == "." {
+		cleanPrefix = ""
+	}
+	if cleanPrefix == "" {
+		return append([]backup.ManifestEntry(nil), entries...)
+	}
+
+	filtered := make([]backup.ManifestEntry, 0, len(entries))
+	for _, entry := range entries {
+		if strings.HasPrefix(filepath.Clean(entry.Path), cleanPrefix) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func sampleManifestEntries(entries []backup.ManifestEntry, sample int) []backup.ManifestEntry {
+	if sample <= 0 || sample >= len(entries) {
+		return entries
+	}
+	if sample == 1 {
+		return []backup.ManifestEntry{entries[0]}
+	}
+
+	out := make([]backup.ManifestEntry, 0, sample)
+	last := -1
+	step := float64(len(entries)-1) / float64(sample-1)
+	for i := 0; i < sample; i++ {
+		idx := int(float64(i) * step)
+		if idx <= last {
+			idx = last + 1
+		}
+		if idx >= len(entries) {
+			idx = len(entries) - 1
+		}
+		out = append(out, entries[idx])
+		last = idx
+	}
+	return out
 }
 
 func filterRestorePaths(entries []backup.ManifestEntry, opts restoreListOptions) []string {
