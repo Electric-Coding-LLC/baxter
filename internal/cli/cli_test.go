@@ -71,6 +71,22 @@ func TestParseSnapshotListArgsRejectsNegativeLimit(t *testing.T) {
 	}
 }
 
+func TestParseGCArgs(t *testing.T) {
+	opts, err := parseGCArgs([]string{"--dry-run"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !opts.DryRun {
+		t.Fatal("expected dry-run=true")
+	}
+}
+
+func TestParseGCArgsRejectsPositionalArgs(t *testing.T) {
+	if _, err := parseGCArgs([]string{"extra"}); err == nil {
+		t.Fatal("expected usage error for extra args")
+	}
+}
+
 func TestResolvedRestorePath(t *testing.T) {
 	got, err := resolvedRestorePath("/Users/me/file.txt", "/restore")
 	if err != nil {
@@ -553,6 +569,61 @@ func TestRunBackupAndRestoreEdgeFilenames(t *testing.T) {
 	}
 	if !bytes.Equal(gotUpdated, updated) {
 		t.Fatalf("overwrite mismatch: got %q want %q", string(gotUpdated), string(updated))
+	}
+}
+
+func TestRunGCDryRunAndDelete(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	cfg := config.DefaultConfig()
+	cfg.S3.Bucket = ""
+
+	referencedPath := "/Users/me/Documents/keep.txt"
+	referencedKey := backup.ObjectKeyForPath(referencedPath)
+	orphanPath := "/Users/me/Documents/orphan.txt"
+	orphanKey := backup.ObjectKeyForPath(orphanPath)
+
+	store, err := objectStoreFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("object store: %v", err)
+	}
+	if err := store.PutObject(referencedKey, []byte("keep")); err != nil {
+		t.Fatalf("put referenced object: %v", err)
+	}
+	if err := store.PutObject(orphanKey, []byte("orphan")); err != nil {
+		t.Fatalf("put orphan object: %v", err)
+	}
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	if err := backup.SaveManifest(manifestPath, &backup.Manifest{
+		Entries: []backup.ManifestEntry{{Path: referencedPath}},
+	}); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	if err := runGC(cfg, gcOptions{DryRun: true}); err != nil {
+		t.Fatalf("run gc dry-run: %v", err)
+	}
+	if _, err := store.GetObject(referencedKey); err != nil {
+		t.Fatalf("referenced key should remain after dry-run: %v", err)
+	}
+	if _, err := store.GetObject(orphanKey); err != nil {
+		t.Fatalf("orphan key should remain after dry-run: %v", err)
+	}
+
+	if err := runGC(cfg, gcOptions{}); err != nil {
+		t.Fatalf("run gc delete: %v", err)
+	}
+	if _, err := store.GetObject(referencedKey); err != nil {
+		t.Fatalf("referenced key should remain after gc: %v", err)
+	}
+	if _, err := store.GetObject(orphanKey); !os.IsNotExist(err) {
+		t.Fatalf("orphan key should be deleted, err=%v", err)
 	}
 }
 

@@ -36,6 +36,10 @@ type snapshotListOptions struct {
 	Limit int
 }
 
+type gcOptions struct {
+	DryRun bool
+}
+
 func Run(args []string) error {
 	fs := flag.NewFlagSet("baxter", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -96,13 +100,19 @@ func Run(args []string) error {
 			return err
 		}
 		return snapshotList(opts)
+	case "gc":
+		opts, err := parseGCArgs(rest[1:])
+		if err != nil {
+			return err
+		}
+		return runGC(cfg, opts)
 	default:
 		return usageError()
 	}
 }
 
 func usageError() error {
-	return errors.New("usage: baxter [-config path] backup run|status | snapshot list [--limit n] | restore list [--snapshot latest|id|RFC3339] [--prefix path] [--contains text] | restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|id|RFC3339] <path>")
+	return errors.New("usage: baxter [-config path] backup run|status | snapshot list [--limit n] | gc [--dry-run] | restore list [--snapshot latest|id|RFC3339] [--prefix path] [--contains text] | restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|id|RFC3339] <path>")
 }
 
 func runBackup(cfg *config.Config) error {
@@ -350,6 +360,77 @@ func snapshotList(opts snapshotListOptions) error {
 		s := snapshots[i]
 		fmt.Printf("%s %s entries=%d\n", s.ID, s.CreatedAt.Format(time.RFC3339), s.Entries)
 	}
+	return nil
+}
+
+func parseGCArgs(args []string) (gcOptions, error) {
+	gcFS := flag.NewFlagSet("gc", flag.ContinueOnError)
+	gcFS.SetOutput(os.Stderr)
+
+	var opts gcOptions
+	gcFS.BoolVar(&opts.DryRun, "dry-run", false, "show object deletions without deleting")
+
+	if err := gcFS.Parse(args); err != nil {
+		return gcOptions{}, err
+	}
+	if len(gcFS.Args()) != 0 {
+		return gcOptions{}, errors.New("usage: baxter gc [--dry-run]")
+	}
+	return opts, nil
+}
+
+func runGC(cfg *config.Config, opts gcOptions) error {
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		return err
+	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		return err
+	}
+	store, err := objectStoreFromConfig(cfg)
+	if err != nil {
+		return err
+	}
+
+	result, err := backup.GarbageCollectObjects(backup.GCOptions{
+		LatestManifestPath: manifestPath,
+		SnapshotDir:        snapshotDir,
+		Store:              store,
+		DryRun:             opts.DryRun,
+	})
+	if err != nil {
+		return err
+	}
+
+	if result.Skipped {
+		fmt.Printf(
+			"gc skipped: no manifest sources found (existing=%d retained=%d)\n",
+			result.ExistingObjects,
+			result.RetainedObjects,
+		)
+		return nil
+	}
+	if opts.DryRun {
+		fmt.Printf(
+			"gc dry-run: manifests=%d referenced=%d existing=%d would_delete=%d retained=%d\n",
+			result.SourceManifests,
+			result.ReferencedObjects,
+			result.ExistingObjects,
+			result.CandidateDeletes,
+			result.RetainedObjects,
+		)
+		return nil
+	}
+
+	fmt.Printf(
+		"gc complete: manifests=%d referenced=%d existing=%d deleted=%d retained=%d\n",
+		result.SourceManifests,
+		result.ReferencedObjects,
+		result.ExistingObjects,
+		result.DeletedObjects,
+		result.RetainedObjects,
+	)
 	return nil
 }
 
