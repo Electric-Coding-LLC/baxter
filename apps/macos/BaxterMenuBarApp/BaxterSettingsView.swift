@@ -4,11 +4,6 @@ struct BaxterSettingsView: View {
     @ObservedObject var model: BaxterSettingsModel
     @ObservedObject var statusModel: BackupStatusModel
     @State private var showApplyNow = false
-    @State private var restorePrefix = ""
-    @State private var restoreContains = ""
-    @State private var restorePath = ""
-    @State private var restoreToDir = ""
-    @State private var restoreOverwrite = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -172,92 +167,6 @@ struct BaxterSettingsView: View {
                         }
                     }
 
-                    SettingsCard(title: "Restore (Preview)", subtitle: "Find paths and preview restore destination without writing files.") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
-                                TextField("Filter prefix (optional)", text: $restorePrefix)
-                                TextField("Contains text (optional)", text: $restoreContains)
-                                Button("Search") {
-                                    statusModel.fetchRestoreList(prefix: restorePrefix, contains: restoreContains)
-                                }
-                                .disabled(statusModel.isRestoreBusy)
-                            }
-
-                            if !statusModel.restorePaths.isEmpty {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    ForEach(Array(statusModel.restorePaths.prefix(8)), id: \.self) { path in
-                                        Button(path) {
-                                            restorePath = path
-                                        }
-                                        .buttonStyle(.plain)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                        .font(.caption.monospaced())
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                    if statusModel.restorePaths.count > 8 {
-                                        Text("Showing first 8 of \(statusModel.restorePaths.count) paths.")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .padding(8)
-                                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                            }
-
-                            TextField("Path to restore", text: $restorePath)
-                                .font(.system(.body, design: .monospaced))
-                            TextField("Destination root (optional)", text: $restoreToDir)
-                            Toggle("Overwrite", isOn: $restoreOverwrite)
-                                .font(.caption)
-
-                            HStack {
-                                Button("Dry Run Restore") {
-                                    statusModel.previewRestore(path: restorePath, toDir: restoreToDir, overwrite: restoreOverwrite)
-                                }
-                                .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                Button("Run Restore") {
-                                    statusModel.runRestore(path: restorePath, toDir: restoreToDir, overwrite: restoreOverwrite)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                                if statusModel.isRestoreBusy {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                }
-                            }
-
-                            if let message = statusModel.restorePreviewMessage {
-                                Text(message)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            if let lastRestoreAt = statusModel.lastRestoreAt {
-                                Text("Last restore: \(lastRestoreAt.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            if let lastRestorePath = statusModel.lastRestorePath {
-                                Text("Last restored path: \(lastRestorePath)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            if let lastRestoreError = statusModel.lastRestoreError {
-                                Text("Last restore error: \(lastRestoreError)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.red)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
                 }
             }
             .frame(maxHeight: .infinity)
@@ -317,6 +226,125 @@ struct BaxterSettingsView: View {
                 showApplyNow = false
             }
         }
+    }
+}
+
+struct BaxterRestoreView: View {
+    @ObservedObject var statusModel: BackupStatusModel
+    @State private var restorePrefix = ""
+    @State private var restoreContains = ""
+    @State private var restorePath = ""
+    @State private var restoreToDir = ""
+    @State private var restoreOverwrite = false
+    @State private var restoreVerifyOnly = false
+    @State private var restoreSnapshot = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Restore")
+                .font(.title2.weight(.semibold))
+
+            SettingsCard(title: "Restore", subtitle: "Find paths, dry-run, or restore from the latest or a specific snapshot.") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        TextField("Filter prefix (optional)", text: $restorePrefix)
+                        TextField("Contains text (optional)", text: $restoreContains)
+                        TextField("Snapshot (optional)", text: $restoreSnapshot)
+                            .font(.system(.body, design: .monospaced))
+                        Button("Search") {
+                            statusModel.fetchRestoreList(prefix: restorePrefix, contains: restoreContains, snapshot: restoreSnapshot)
+                        }
+                        .disabled(statusModel.isRestoreBusy)
+                    }
+
+                    if !statusModel.restorePaths.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(statusModel.restorePaths.prefix(8)), id: \.self) { path in
+                                Button(path) {
+                                    restorePath = path
+                                }
+                                .buttonStyle(.plain)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .font(.caption.monospaced())
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if statusModel.restorePaths.count > 8 {
+                                Text("Showing first 8 of \(statusModel.restorePaths.count) paths.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(8)
+                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    TextField("Path to restore", text: $restorePath)
+                        .font(.system(.body, design: .monospaced))
+                    TextField("Destination root (optional)", text: $restoreToDir)
+                    Toggle("Overwrite", isOn: $restoreOverwrite)
+                        .font(.caption)
+                    Toggle("Verify Only (no writes)", isOn: $restoreVerifyOnly)
+                        .font(.caption)
+
+                    HStack {
+                        Button("Dry Run Restore") {
+                            statusModel.previewRestore(path: restorePath, toDir: restoreToDir, overwrite: restoreOverwrite, snapshot: restoreSnapshot)
+                        }
+                        .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("Run Restore") {
+                            statusModel.runRestore(
+                                path: restorePath,
+                                toDir: restoreToDir,
+                                overwrite: restoreOverwrite,
+                                verifyOnly: restoreVerifyOnly,
+                                snapshot: restoreSnapshot
+                            )
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        if statusModel.isRestoreBusy {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+
+                    if let message = statusModel.restorePreviewMessage {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    if let lastRestoreAt = statusModel.lastRestoreAt {
+                        Text("Last restore: \(lastRestoreAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let lastRestorePath = statusModel.lastRestorePath {
+                        Text("Last restored path: \(lastRestorePath)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if let lastRestoreError = statusModel.lastRestoreError {
+                        Text("Last restore error: \(lastRestoreError)")
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding()
+        .frame(minWidth: 720, minHeight: 480)
     }
 }
 
