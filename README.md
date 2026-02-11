@@ -53,6 +53,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - `baxter backup status`: show manifest/object counts.
 - `baxter snapshot list [--limit n]`: list available manifest snapshots (newest first).
 - `baxter gc [--dry-run]`: delete objects not referenced by latest/retained manifest sources.
+- `baxter verify [--snapshot latest|<id>|<RFC3339>] [--prefix path] [--limit n] [--sample n]`: verify object presence, decryption, and checksum integrity.
 - `baxter restore list [--snapshot latest|<id>|<RFC3339>] [--prefix path] [--contains text]`: browse/search restoreable paths from the selected restore point.
 - `baxter restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|<id>|<RFC3339>] <path>`: restore one path from latest or point-in-time snapshot.
 - Restore safety defaults:

@@ -87,6 +87,25 @@ func TestParseGCArgsRejectsPositionalArgs(t *testing.T) {
 	}
 }
 
+func TestParseVerifyArgs(t *testing.T) {
+	opts, err := parseVerifyArgs([]string{"--snapshot", "latest", "--prefix", "/Users/me", "--limit", "10", "--sample", "5"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Snapshot != "latest" || opts.Prefix != "/Users/me" || opts.Limit != 10 || opts.Sample != 5 {
+		t.Fatalf("unexpected opts: %+v", opts)
+	}
+}
+
+func TestParseVerifyArgsRejectsInvalidValues(t *testing.T) {
+	if _, err := parseVerifyArgs([]string{"--limit", "-1"}); err == nil {
+		t.Fatal("expected negative limit to be rejected")
+	}
+	if _, err := parseVerifyArgs([]string{"--sample", "-1"}); err == nil {
+		t.Fatal("expected negative sample to be rejected")
+	}
+}
+
 func TestResolvedRestorePath(t *testing.T) {
 	got, err := resolvedRestorePath("/Users/me/file.txt", "/restore")
 	if err != nil {
@@ -126,6 +145,24 @@ func TestFilterRestorePaths(t *testing.T) {
 	})
 	if len(got) != 1 || got[0] != "/Users/me/Documents/report.txt" {
 		t.Fatalf("unexpected filter result: %+v", got)
+	}
+}
+
+func TestSampleManifestEntries(t *testing.T) {
+	entries := []backup.ManifestEntry{
+		{Path: "/a"},
+		{Path: "/b"},
+		{Path: "/c"},
+		{Path: "/d"},
+		{Path: "/e"},
+	}
+
+	got := sampleManifestEntries(entries, 3)
+	if len(got) != 3 {
+		t.Fatalf("unexpected sample size: %d", len(got))
+	}
+	if got[0].Path != "/a" || got[1].Path != "/c" || got[2].Path != "/e" {
+		t.Fatalf("unexpected sample entries: %+v", got)
 	}
 }
 
@@ -624,6 +661,44 @@ func TestRunGCDryRunAndDelete(t *testing.T) {
 	}
 	if _, err := store.GetObject(orphanKey); !os.IsNotExist(err) {
 		t.Fatalf("orphan key should be deleted, err=%v", err)
+	}
+}
+
+func TestRunVerifyDetectsMissingObjects(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	if err := os.WriteFile(sourcePath, []byte("verify test payload"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "verify-test-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+	cfg.S3.Bucket = ""
+
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("run backup failed: %v", err)
+	}
+
+	store, err := objectStoreFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("object store: %v", err)
+	}
+	if err := store.DeleteObject(backup.ObjectKeyForPath(sourcePath)); err != nil {
+		t.Fatalf("delete object: %v", err)
+	}
+
+	if err := runVerify(cfg, verifyOptions{}); err == nil {
+		t.Fatal("expected verify to fail for missing object")
 	}
 }
 
