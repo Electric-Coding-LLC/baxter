@@ -122,3 +122,198 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertEqual(model.validationMessage(for: .backupRoots), "Fix invalid backup folders before saving.")
     }
 }
+
+@MainActor
+final class BackupStatusModelRestoreTests: XCTestCase {
+    override func tearDown() {
+        MockURLProtocol.reset()
+        super.tearDown()
+    }
+
+    func testFetchRestoreListIncludesSnapshotQueryItem() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"paths\":[]}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            autoStartPolling: false
+        )
+
+        model.fetchRestoreList(prefix: "docs", contains: "notes", snapshot: "snap-123")
+        await waitUntil("restore list completion") { model.restorePreviewMessage != nil }
+
+        let request = try XCTUnwrap(
+            MockURLProtocol.requests().first { $0.url?.path == "/v1/restore/list" }
+        )
+        let queryItems = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first(where: { $0.name == "prefix" })?.value, "docs")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "contains" })?.value, "notes")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "snapshot" })?.value, "snap-123")
+    }
+
+    func testPreviewRestoreSendsSnapshotInRequestBody() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"source_path\":\"a.txt\",\"target_path\":\"/tmp/a.txt\",\"overwrite\":false}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            autoStartPolling: false
+        )
+
+        model.previewRestore(path: "a.txt", toDir: "", overwrite: false, snapshot: "snap-456")
+        await waitUntil("restore dry-run completion") { model.restorePreviewMessage?.contains("Dry-run:") == true }
+
+        let request = try XCTUnwrap(
+            MockURLProtocol.requests().first { $0.url?.path == "/v1/restore/dry-run" }
+        )
+        let body = try XCTUnwrap(requestBodyData(request))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+
+        XCTAssertEqual(payload["path"] as? String, "a.txt")
+        XCTAssertEqual(payload["overwrite"] as? Bool, false)
+        XCTAssertEqual(payload["snapshot"] as? String, "snap-456")
+        XCTAssertNil(payload["to_dir"])
+        XCTAssertNil(payload["verify_only"])
+    }
+
+    func testRunRestoreFormatsDaemonErrorWithCode() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"code\":\"restore_conflict\",\"message\":\"restore already running\"}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            autoStartPolling: false
+        )
+
+        model.runRestore(path: "a.txt", toDir: "/tmp", overwrite: true, verifyOnly: true, snapshot: "snap-789")
+        await waitUntil("restore run error") { model.restorePreviewMessage != nil }
+
+        let request = try XCTUnwrap(
+            MockURLProtocol.requests().first { $0.url?.path == "/v1/restore/run" }
+        )
+        let body = try XCTUnwrap(requestBodyData(request))
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+
+        XCTAssertEqual(payload["path"] as? String, "a.txt")
+        XCTAssertEqual(payload["to_dir"] as? String, "/tmp")
+        XCTAssertEqual(payload["overwrite"] as? Bool, true)
+        XCTAssertEqual(payload["verify_only"] as? Bool, true)
+        XCTAssertEqual(payload["snapshot"] as? String, "snap-789")
+        XCTAssertEqual(model.restorePreviewMessage, "Restore failed [restore_conflict]: restore already running")
+    }
+}
+
+private func makeMockURLSession() -> URLSession {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [MockURLProtocol.self]
+    return URLSession(configuration: configuration)
+}
+
+private func waitUntil(_ label: String, timeout: TimeInterval = 1.5, condition: @escaping () -> Bool) async {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() {
+            return
+        }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTFail("Timed out waiting for \(label)")
+}
+
+private func requestBodyData(_ request: URLRequest) -> Data? {
+    if let body = request.httpBody {
+        return body
+    }
+
+    guard let stream = request.httpBodyStream else {
+        return nil
+    }
+
+    stream.open()
+    defer { stream.close() }
+
+    var data = Data()
+    let bufferSize = 1024
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+    defer { buffer.deallocate() }
+
+    while stream.hasBytesAvailable {
+        let readCount = stream.read(buffer, maxLength: bufferSize)
+        if readCount <= 0 {
+            break
+        }
+        data.append(buffer, count: readCount)
+    }
+
+    return data
+}
+
+private final class MockURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    private static let lock = NSLock()
+    private static var observedRequests: [URLRequest] = []
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+        Self.lock.lock()
+        Self.observedRequests.append(request)
+        handler = Self.requestHandler
+        Self.lock.unlock()
+
+        guard let handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+
+    static func reset() {
+        lock.lock()
+        requestHandler = nil
+        observedRequests = []
+        lock.unlock()
+    }
+
+    static func requests() -> [URLRequest] {
+        lock.lock()
+        let value = observedRequests
+        lock.unlock()
+        return value
+    }
+}

@@ -26,12 +26,21 @@ final class BackupStatusModel: ObservableObject {
     @Published var lastRestorePath: String?
     @Published var lastRestoreError: String?
 
-    private let baseURL = URL(string: "http://127.0.0.1:41820")!
+    private let baseURL: URL
+    private let urlSession: URLSession
     private var timer: Timer?
     private let iso8601 = ISO8601DateFormatter()
 
-    init() {
-        startPolling()
+    init(
+        baseURL: URL = URL(string: "http://127.0.0.1:41820")!,
+        urlSession: URLSession = .shared,
+        autoStartPolling: Bool = true
+    ) {
+        self.baseURL = baseURL
+        self.urlSession = urlSession
+        if autoStartPolling {
+            startPolling()
+        }
     }
 
     deinit {
@@ -55,7 +64,7 @@ final class BackupStatusModel: ObservableObject {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/status"))
                 request.httpMethod = "GET"
 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
                     throw IPCError.badResponse
                 }
@@ -82,7 +91,7 @@ final class BackupStatusModel: ObservableObject {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/backup/run"))
                 request.httpMethod = "POST"
 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
                     throw IPCError.badResponse
                 }
@@ -139,7 +148,7 @@ final class BackupStatusModel: ObservableObject {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/config/reload"))
                 request.httpMethod = "POST"
 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
                     throw IPCError.badResponse
                 }
@@ -168,7 +177,7 @@ final class BackupStatusModel: ObservableObject {
         }
     }
 
-    func fetchRestoreList(prefix: String, contains: String) {
+    func fetchRestoreList(prefix: String, contains: String, snapshot: String) {
         Task {
             isRestoreBusy = true
             defer { isRestoreBusy = false }
@@ -183,12 +192,16 @@ final class BackupStatusModel: ObservableObject {
                 if !trimmedContains.isEmpty {
                     queryItems.append(URLQueryItem(name: "contains", value: trimmedContains))
                 }
+                let trimmedSnapshot = snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmedSnapshot.isEmpty {
+                    queryItems.append(URLQueryItem(name: "snapshot", value: trimmedSnapshot))
+                }
                 components?.queryItems = queryItems.isEmpty ? nil : queryItems
 
                 guard let url = components?.url else {
                     throw IPCError.badResponse
                 }
-                let (data, response) = try await URLSession.shared.data(from: url)
+                let (data, response) = try await urlSession.data(from: url)
                 guard let http = response as? HTTPURLResponse else {
                     throw IPCError.badResponse
                 }
@@ -204,7 +217,7 @@ final class BackupStatusModel: ObservableObject {
         }
     }
 
-    func previewRestore(path: String, toDir: String, overwrite: Bool) {
+    func previewRestore(path: String, toDir: String, overwrite: Bool, snapshot: String) {
         Task {
             isRestoreBusy = true
             defer { isRestoreBusy = false }
@@ -219,14 +232,15 @@ final class BackupStatusModel: ObservableObject {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/restore/dry-run"))
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                let payload = RestoreDryRunRequest(
+                let payload = RestoreActionRequest(
                     path: trimmedPath,
                     toDir: toDir.trimmingCharacters(in: .whitespacesAndNewlines),
-                    overwrite: overwrite
+                    overwrite: overwrite,
+                    snapshot: snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
                 request.httpBody = try JSONEncoder().encode(payload)
 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
                     throw IPCError.badResponse
                 }
@@ -236,12 +250,12 @@ final class BackupStatusModel: ObservableObject {
                 let decoded = try JSONDecoder().decode(RestoreDryRunPayload.self, from: data)
                 restorePreviewMessage = "Dry-run: source=\(decoded.sourcePath) target=\(decoded.targetPath) overwrite=\(decoded.overwrite)"
             } catch {
-                restorePreviewMessage = "Restore dry-run failed: \(error.localizedDescription)"
+                restorePreviewMessage = formatRestoreError(prefix: "Restore dry-run", error: error)
             }
         }
     }
 
-    func runRestore(path: String, toDir: String, overwrite: Bool) {
+    func runRestore(path: String, toDir: String, overwrite: Bool, verifyOnly: Bool, snapshot: String) {
         Task {
             isRestoreBusy = true
             defer { isRestoreBusy = false }
@@ -256,27 +270,42 @@ final class BackupStatusModel: ObservableObject {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/restore/run"))
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                let payload = RestoreDryRunRequest(
+                let payload = RestoreActionRequest(
                     path: trimmedPath,
                     toDir: toDir.trimmingCharacters(in: .whitespacesAndNewlines),
-                    overwrite: overwrite
+                    overwrite: overwrite,
+                    verifyOnly: verifyOnly,
+                    snapshot: snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
                 request.httpBody = try JSONEncoder().encode(payload)
 
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
                     throw IPCError.badResponse
                 }
                 guard http.statusCode == 200 else {
                     throw decodeDaemonError(data: data, statusCode: http.statusCode)
                 }
-                let decoded = try JSONDecoder().decode(RestoreDryRunPayload.self, from: data)
-                restorePreviewMessage = "Restore complete: source=\(decoded.sourcePath) target=\(decoded.targetPath)"
+                let decoded = try JSONDecoder().decode(RestoreRunPayload.self, from: data)
+                if decoded.wrote {
+                    restorePreviewMessage = "Restore complete: source=\(decoded.sourcePath) target=\(decoded.targetPath)"
+                } else if decoded.verified {
+                    restorePreviewMessage = "Restore verify-only complete: source=\(decoded.sourcePath) target=\(decoded.targetPath)"
+                } else {
+                    restorePreviewMessage = "Restore response received for source=\(decoded.sourcePath)"
+                }
                 refreshStatus()
             } catch {
-                restorePreviewMessage = "Restore failed: \(error.localizedDescription)"
+                restorePreviewMessage = formatRestoreError(prefix: "Restore", error: error)
             }
         }
+    }
+
+    private func formatRestoreError(prefix: String, error: Error) -> String {
+        if case IPCError.server(let code, let message, _) = error {
+            return "\(prefix) failed [\(code)]: \(message)"
+        }
+        return "\(prefix) failed: \(error.localizedDescription)"
     }
 
     private func decodeDaemonError(data: Data, statusCode: Int) -> IPCError {
@@ -341,15 +370,27 @@ private struct RestoreListPayload: Decodable {
     let paths: [String]
 }
 
-private struct RestoreDryRunRequest: Encodable {
+private struct RestoreActionRequest: Encodable {
     let path: String
-    let toDir: String
+    let toDir: String?
     let overwrite: Bool
+    let verifyOnly: Bool?
+    let snapshot: String?
 
     enum CodingKeys: String, CodingKey {
         case path
         case toDir = "to_dir"
         case overwrite
+        case verifyOnly = "verify_only"
+        case snapshot
+    }
+
+    init(path: String, toDir: String, overwrite: Bool, verifyOnly: Bool? = nil, snapshot: String) {
+        self.path = path
+        self.toDir = toDir.isEmpty ? nil : toDir
+        self.overwrite = overwrite
+        self.verifyOnly = verifyOnly
+        self.snapshot = snapshot.isEmpty ? nil : snapshot
     }
 }
 
@@ -362,6 +403,20 @@ private struct RestoreDryRunPayload: Decodable {
         case sourcePath = "source_path"
         case targetPath = "target_path"
         case overwrite
+    }
+}
+
+private struct RestoreRunPayload: Decodable {
+    let sourcePath: String
+    let targetPath: String
+    let verified: Bool
+    let wrote: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case sourcePath = "source_path"
+        case targetPath = "target_path"
+        case verified
+        case wrote
     }
 }
 
@@ -528,6 +583,7 @@ private enum LaunchdError: LocalizedError {
 @main
 struct BaxterMenuBarApp: App {
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @StateObject private var model = BackupStatusModel()
     @StateObject private var settingsModel = BaxterSettingsModel()
 
@@ -631,36 +687,46 @@ struct BaxterMenuBarApp: App {
                     .disabled(model.isLifecycleBusy || model.daemonServiceState == .stopped)
                 }
 
-                HStack(spacing: 8) {
-                    Button {
-                        model.refreshStatus()
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Button {
+                            model.refreshStatus()
+                        } label: {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
 
                     Button {
-                        openSettings()
-                        DispatchQueue.main.async {
-                            NSApplication.shared.activate(ignoringOtherApps: true)
-                        }
+                        openSettingsWindow()
                     } label: {
                         Label("Settings", systemImage: "gearshape")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+                    }
 
+                    HStack(spacing: 8) {
                     Button {
-                        NSApplication.shared.terminate(nil)
+                        openRestoreWindow()
                     } label: {
-                        Label("Quit", systemImage: "xmark")
+                        Label("Restore", systemImage: "arrow.uturn.backward.square")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+
+                        Button {
+                            NSApplication.shared.terminate(nil)
+                        } label: {
+                            Label("Quit", systemImage: "xmark")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+                    }
                 }
             }
             .padding(14)
@@ -671,10 +737,48 @@ struct BaxterMenuBarApp: App {
         Settings {
             BaxterSettingsView(model: settingsModel, statusModel: model)
         }
+
+        Window("Restore", id: "restore") {
+            BaxterRestoreView(statusModel: model)
+        }
     }
 
     private var iconName: String {
         model.state == .running ? "arrow.triangle.2.circlepath.circle.fill" : "externaldrive"
+    }
+
+    private func openSettingsWindow() {
+        closeMenuBarPanel()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            openSettings()
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
+    }
+
+    private func openRestoreWindow() {
+        closeMenuBarPanel()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            openWindow(id: "restore")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
+    }
+
+    private func closeMenuBarPanel() {
+        if let keyWindow = NSApplication.shared.keyWindow, isMenuBarPanelWindow(keyWindow) {
+            keyWindow.orderOut(nil)
+        }
+        _ = NSApplication.shared.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+    }
+
+    private func isMenuBarPanelWindow(_ window: NSWindow) -> Bool {
+        let className = NSStringFromClass(type(of: window))
+        if className.contains("MenuBarExtra") {
+            return true
+        }
+        if window.level == .statusBar || window.level == .popUpMenu {
+            return true
+        }
+        return className.contains("Panel")
     }
 
     private var lastBackupText: String {
