@@ -10,6 +10,10 @@
 		A00000000000000000000011 /* BaxterMenuBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* BaxterMenuBarApp.swift */; };
 		A00000000000000000000014 /* SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* SettingsModel.swift */; };
 		A00000000000000000000015 /* BaxterSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* BaxterSettingsView.swift */; };
+		A00000000000000000000016 /* BackupStatusModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* BackupStatusModel.swift */; };
+		A00000000000000000000017 /* LaunchdController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000005 /* LaunchdController.swift */; };
+		A00000000000000000000018 /* SettingsTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* SettingsTypes.swift */; };
+		A00000000000000000000019 /* SettingsToml.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* SettingsToml.swift */; };
 		A00000000000000000000061 /* SettingsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000071 /* SettingsModelTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -27,6 +31,10 @@
 		A00000000000000000000001 /* BaxterMenuBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BaxterMenuBarApp.swift; sourceTree = "<group>"; };
 		A00000000000000000000002 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsModel.swift; sourceTree = "<group>"; };
 		A00000000000000000000003 /* BaxterSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BaxterSettingsView.swift; sourceTree = "<group>"; };
+		A00000000000000000000004 /* BackupStatusModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BackupStatusModel.swift; sourceTree = "<group>"; };
+		A00000000000000000000005 /* LaunchdController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/LaunchdController.swift; sourceTree = "<group>"; };
+		A00000000000000000000006 /* SettingsTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsTypes.swift; sourceTree = "<group>"; };
+		A00000000000000000000007 /* SettingsToml.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsToml.swift; sourceTree = "<group>"; };
 		A00000000000000000000021 /* BaxterMenuBarApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaxterMenuBarApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000071 /* SettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarAppTests/SettingsModelTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000072 /* BaxterMenuBarAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaxterMenuBarAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -65,6 +73,10 @@
 				A00000000000000000000001 /* BaxterMenuBarApp.swift */,
 				A00000000000000000000002 /* SettingsModel.swift */,
 				A00000000000000000000003 /* BaxterSettingsView.swift */,
+				A00000000000000000000004 /* BackupStatusModel.swift */,
+				A00000000000000000000005 /* LaunchdController.swift */,
+				A00000000000000000000006 /* SettingsTypes.swift */,
+				A00000000000000000000007 /* SettingsToml.swift */,
 			);
 			path = .;
 			sourceTree = SOURCE_ROOT;
@@ -168,6 +180,10 @@
 				A00000000000000000000011 /* BaxterMenuBarApp.swift in Sources */,
 				A00000000000000000000014 /* SettingsModel.swift in Sources */,
 				A00000000000000000000015 /* BaxterSettingsView.swift in Sources */,
+				A00000000000000000000016 /* BackupStatusModel.swift in Sources */,
+				A00000000000000000000017 /* LaunchdController.swift in Sources */,
+				A00000000000000000000018 /* SettingsTypes.swift in Sources */,
+				A00000000000000000000019 /* SettingsToml.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
