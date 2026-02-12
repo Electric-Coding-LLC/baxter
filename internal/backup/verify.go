@@ -23,11 +23,26 @@ func (r VerifyResult) HasFailures() bool {
 }
 
 func VerifyManifestEntries(entries []ManifestEntry, key []byte, store storage.ObjectStore) (VerifyResult, error) {
-	if len(key) == 0 {
-		return VerifyResult{}, fmt.Errorf("encryption key is required")
+	return VerifyManifestEntriesWithKeys(entries, [][]byte{key}, store)
+}
+
+func VerifyManifestEntriesWithKeys(entries []ManifestEntry, keys [][]byte, store storage.ObjectStore) (VerifyResult, error) {
+	if len(keys) == 0 {
+		return VerifyResult{}, fmt.Errorf("at least one encryption key is required")
 	}
 	if store == nil {
 		return VerifyResult{}, fmt.Errorf("object store is required")
+	}
+
+	validKeys := make([][]byte, 0, len(keys))
+	for _, key := range keys {
+		if len(key) == 0 {
+			continue
+		}
+		validKeys = append(validKeys, key)
+	}
+	if len(validKeys) == 0 {
+		return VerifyResult{}, fmt.Errorf("at least one non-empty encryption key is required")
 	}
 
 	result := VerifyResult{Checked: len(entries)}
@@ -42,7 +57,7 @@ func VerifyManifestEntries(entries []ManifestEntry, key []byte, store storage.Ob
 			continue
 		}
 
-		plain, err := crypto.DecryptBytes(key, payload)
+		plain, err := crypto.DecryptBytesWithAnyKey(validKeys, payload)
 		if err != nil {
 			result.DecryptErrors++
 			continue

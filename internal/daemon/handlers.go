@@ -16,15 +16,17 @@ import (
 	"baxter/internal/state"
 )
 
+const maxJSONRequestBodyBytes = 1 << 20
+
 func (d *Daemon) newHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/status", d.handleStatus)
-	mux.HandleFunc("/v1/backup/run", d.handleRunBackup)
-	mux.HandleFunc("/v1/config/reload", d.handleReloadConfig)
+	mux.HandleFunc("/v1/backup/run", d.requireIPCWriteAuth(d.handleRunBackup))
+	mux.HandleFunc("/v1/config/reload", d.requireIPCWriteAuth(d.handleReloadConfig))
 	mux.HandleFunc("/v1/snapshots", d.handleSnapshots)
 	mux.HandleFunc("/v1/restore/list", d.handleRestoreList)
 	mux.HandleFunc("/v1/restore/dry-run", d.handleRestoreDryRun)
-	mux.HandleFunc("/v1/restore/run", d.handleRestoreRun)
+	mux.HandleFunc("/v1/restore/run", d.requireIPCWriteAuth(d.handleRestoreRun))
 	return mux
 }
 
@@ -142,7 +144,7 @@ func (d *Daemon) handleRestoreDryRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req restoreDryRunRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONRequest(w, r, &req); err != nil {
 		d.writeError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("decode request: %v", err))
 		return
 	}
@@ -172,7 +174,7 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req restoreRunRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONRequest(w, r, &req); err != nil {
 		d.writeError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("decode request: %v", err))
 		return
 	}
@@ -197,7 +199,7 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, err := encryptionKey(cfg)
+	keys, err := encryptionKeys(cfg)
 	if err != nil {
 		d.setLastRestoreError(err.Error())
 		d.writeError(w, http.StatusBadRequest, "restore_key_unavailable", err.Error())
@@ -211,7 +213,7 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plain, err := crypto.DecryptBytes(key, payload)
+	plain, err := crypto.DecryptBytesWithAnyKey(keys.candidates, payload)
 	if err != nil {
 		d.setLastRestoreError(err.Error())
 		d.writeError(w, http.StatusBadRequest, "decrypt_failed", fmt.Sprintf("decrypt object: %v", err))
@@ -265,6 +267,11 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 		Verified:   true,
 		Wrote:      true,
 	})
+}
+
+func decodeJSONRequest(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONRequestBodyBytes)
+	return json.NewDecoder(r.Body).Decode(dst)
 }
 
 func (d *Daemon) writeJSON(w http.ResponseWriter, status int, v any) {

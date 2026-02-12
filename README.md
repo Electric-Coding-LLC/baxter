@@ -12,7 +12,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - Service (daemon): schedules backups, scans files, encrypts, compresses, and uploads to S3.
 - Menu bar app: shows status, last backup, errors, and lets you trigger/configure backups.
 - Storage: S3-compatible backend (AWS S3 or compatible providers).
-- Security (current): passphrase-derived key via Argon2id (`BAXTER_PASSPHRASE` or Keychain passphrase).
+- Security (current): passphrase-derived key via Argon2id (`BAXTER_PASSPHRASE` or Keychain passphrase) with a per-install persisted KDF salt.
 - IPC: local HTTP daemon API at `127.0.0.1:41820` for UI status and run triggers.
 
 ## Initial Scope (MVP)
@@ -41,6 +41,8 @@ A simple, secure macOS backup utility with an S3 backend.
 - Encryption key resolution order:
 - `BAXTER_PASSPHRASE` (env override)
 - macOS Keychain item from `[encryption]` (`keychain_service` + `keychain_account`)
+- KDF salt state:
+- `~/Library/Application Support/baxter/kdf_salt.bin` stores a random per-install salt used for passphrase key derivation.
 - Storage backend selection:
 - `s3.bucket` empty -> local object storage at `~/Library/Application Support/baxter/objects`
 - `s3.bucket` set -> S3 object storage (requires `s3.region`)
@@ -67,6 +69,8 @@ A simple, secure macOS backup utility with an S3 backend.
 
 ## Daemon (current)
 - `baxterd` runs IPC server on `127.0.0.1:41820` by default.
+- `baxterd` rejects non-loopback `--ipc-addr` values unless `--allow-remote-ipc` is set.
+- If `--allow-remote-ipc` is enabled, `--ipc-token` (or `BAXTER_IPC_TOKEN`) is required and must be sent as `X-Baxter-Token` on state-changing requests.
 - Daemon scheduler behavior (from `schedule` in config):
 - `manual`: no automatic runs
 - `daily`: runs at the same local wall-clock time each day while daemon is running
@@ -83,6 +87,9 @@ A simple, secure macOS backup utility with an S3 backend.
 - `POST /v1/restore/dry-run` (supports optional `snapshot` field)
 - `POST /v1/restore/run`
   - supports `path`, optional `to_dir`, optional `overwrite`, optional `verify_only`, optional `snapshot`
+- State-changing endpoints (`POST /v1/backup/run`, `POST /v1/config/reload`, `POST /v1/restore/run`) enforce `X-Baxter-Token` when an IPC token is configured.
+- Restore JSON request bodies are capped at 1 MiB.
+- IPC HTTP server applies explicit timeout/header limits (`ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `MaxHeaderBytes`) for DoS hardening.
 - Error responses use JSON: `{"code":"...", "message":"..."}`.
 
 ## Compatibility Note

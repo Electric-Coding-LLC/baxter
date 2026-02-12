@@ -14,17 +14,55 @@ const (
 	payloadVersion   byte = 2
 	nonceSize             = 12
 	derivedKeyLength      = 32
+	kdfSaltLength         = 16
 )
 
 var (
-	kdfSalt       = []byte("baxter/argon2id/v1")
+	legacyKDFSalt        = []byte("baxter/argon2id/v1")
 	kdfIterations uint32 = 3
 	kdfMemoryKiB  uint32 = 64 * 1024
 	kdfThreads    uint8  = 4
 )
 
 func KeyFromPassphrase(passphrase string) []byte {
-	return argon2.IDKey([]byte(passphrase), kdfSalt, kdfIterations, kdfMemoryKiB, kdfThreads, derivedKeyLength)
+	return KeyFromPassphraseWithSalt(passphrase, legacyKDFSalt)
+}
+
+func KeyFromPassphraseWithSalt(passphrase string, salt []byte) []byte {
+	return argon2.IDKey([]byte(passphrase), salt, kdfIterations, kdfMemoryKiB, kdfThreads, derivedKeyLength)
+}
+
+func NewKDFSalt() ([]byte, error) {
+	salt := make([]byte, kdfSaltLength)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return nil, err
+	}
+	return salt, nil
+}
+
+func ValidateKDFSalt(salt []byte) error {
+	if len(salt) != kdfSaltLength {
+		return errors.New("invalid KDF salt length")
+	}
+	return nil
+}
+
+func DecryptBytesWithAnyKey(keys [][]byte, payload []byte) ([]byte, error) {
+	var lastErr error
+	for _, key := range keys {
+		if len(key) == 0 {
+			continue
+		}
+		plain, err := DecryptBytes(key, payload)
+		if err == nil {
+			return plain, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, errors.New("no encryption keys provided")
 }
 
 func EncryptBytes(key []byte, plaintext []byte) ([]byte, error) {
