@@ -10,6 +10,7 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - `GET /v1/snapshots`
 - `GET /v1/restore/list`
 - `POST /v1/restore/dry-run`
+- If `BAXTER_IPC_TOKEN` is set in the app environment, requests include `X-Baxter-Token`.
 - The menu includes daemon lifecycle controls (`Start Daemon`, `Stop Daemon`) using launchd (`com.electriccoding.baxterd`).
 - Recommended local daemon setup uses launchd via:
 - `./scripts/install-launchd.sh`

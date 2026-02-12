@@ -45,7 +45,7 @@ func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) 
 		return nil
 	}
 
-	key, err := encryptionKey(cfg)
+	keys, err := encryptionKeys(cfg)
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) 
 		return fmt.Errorf("read object: %w", err)
 	}
 
-	plain, err := crypto.DecryptBytes(key, payload)
+	plain, err := crypto.DecryptBytesWithAnyKey(keys.candidates, payload)
 	if err != nil {
 		return fmt.Errorf("decrypt object: %w", err)
 	}

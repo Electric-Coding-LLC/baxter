@@ -78,7 +78,7 @@ func runVerify(cfg *config.Config, opts verifyOptions) error {
 		entries = entries[:opts.Limit]
 	}
 
-	key, err := encryptionKey(cfg)
+	keys, err := encryptionKeys(cfg)
 	if err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func runVerify(cfg *config.Config, opts verifyOptions) error {
 		return err
 	}
 
-	result, err := backup.VerifyManifestEntries(entries, key, store)
+	result, err := backup.VerifyManifestEntriesWithKeys(entries, keys.candidates, store)
 	if err != nil {
 		return err
 	}

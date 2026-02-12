@@ -95,6 +95,27 @@ keychain_account = "default"
 	}
 }
 
+func TestAllowRemoteIPCRequiresToken(t *testing.T) {
+	homeDir := t.TempDir()
+	goModCache := goEnv(t, "GOMODCACHE")
+	goCache := goEnv(t, "GOCACHE")
+
+	cmd := exec.Command("go", "run", ".", "--allow-remote-ipc", "--ipc-addr", "0.0.0.0:41820")
+	cmd.Env = append(os.Environ(),
+		"HOME="+homeDir,
+		"XDG_CONFIG_HOME="+homeDir,
+		"GOMODCACHE="+goModCache,
+		"GOCACHE="+goCache,
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected baxterd remote IPC startup without token to fail, output:\n%s", string(out))
+	}
+	if !strings.Contains(string(out), "ipc token error") {
+		t.Fatalf("expected ipc token error, output:\n%s", string(out))
+	}
+}
+
 func goEnv(t *testing.T, key string) string {
 	t.Helper()
 

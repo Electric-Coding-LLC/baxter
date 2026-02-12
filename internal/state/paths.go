@@ -50,3 +50,11 @@ func ObjectStoreDir() (string, error) {
 	}
 	return filepath.Join(dir, "objects"), nil
 }
+
+func KDFSaltPath() (string, error) {
+	dir, err := AppDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "kdf_salt.bin"), nil
+}

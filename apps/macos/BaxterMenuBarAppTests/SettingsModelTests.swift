@@ -219,6 +219,31 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         XCTAssertEqual(payload["snapshot"] as? String, "snap-789")
         XCTAssertEqual(model.restorePreviewMessage, "Restore failed [restore_conflict]: restore already running")
     }
+
+    func testRunRestoreIncludesIPCAuthHeaderWhenTokenConfigured() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"source_path\":\"a.txt\",\"target_path\":\"/tmp/a.txt\",\"verified\":true,\"wrote\":false}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            ipcToken: "token-123",
+            autoStartPolling: false
+        )
+
+        model.runRestore(path: "a.txt", toDir: "/tmp", overwrite: false, verifyOnly: true, snapshot: "")
+        await waitUntil("restore run success") { model.restorePreviewMessage?.contains("verify-only") == true }
+
+        let request = try XCTUnwrap(
+            MockURLProtocol.requests().first { $0.url?.path == "/v1/restore/run" }
+        )
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
+    }
 }
 
 private func makeMockURLSession() -> URLSession {

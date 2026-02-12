@@ -88,6 +88,38 @@ func TestRunBackupEndpointRejectsNonPost(t *testing.T) {
 	}
 }
 
+func TestRunBackupEndpointRejectsMissingTokenWhenConfigured(t *testing.T) {
+	d := New(config.DefaultConfig())
+	d.SetIPCAuthToken("secret-token")
+	req := httptest.NewRequest(http.MethodPost, "/v1/backup/run", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusUnauthorized)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "unauthorized" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestRunBackupEndpointAcceptsValidTokenWhenConfigured(t *testing.T) {
+	d := New(config.DefaultConfig())
+	d.SetIPCAuthToken("secret-token")
+	d.backupRunner = func(context.Context, *config.Config) error { return nil }
+	req := httptest.NewRequest(http.MethodPost, "/v1/backup/run", nil)
+	req.Header.Set(ipcTokenHeader, "secret-token")
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusAccepted)
+	}
+}
+
 func TestReloadConfigEndpointRejectsNonPost(t *testing.T) {
 	d := New(config.DefaultConfig())
 	req := httptest.NewRequest(http.MethodGet, "/v1/config/reload", nil)
@@ -100,6 +132,23 @@ func TestReloadConfigEndpointRejectsNonPost(t *testing.T) {
 	}
 	errResp := decodeErrorResponse(t, rr)
 	if errResp.Code != "method_not_allowed" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestReloadConfigEndpointRejectsMissingTokenWhenConfigured(t *testing.T) {
+	d := New(config.DefaultConfig())
+	d.SetIPCAuthToken("secret-token")
+	req := httptest.NewRequest(http.MethodPost, "/v1/config/reload", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusUnauthorized)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "unauthorized" {
 		t.Fatalf("unexpected error code: got %q", errResp.Code)
 	}
 }
@@ -325,6 +374,30 @@ func TestRestoreDryRunEndpointRequiresPath(t *testing.T) {
 	errResp := decodeErrorResponse(t, rr)
 	if errResp.Code != "invalid_request" {
 		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestRestoreDryRunEndpointRejectsOversizedJSONBody(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	tooLargePath := strings.Repeat("a", maxJSONRequestBodyBytes+1)
+	body := bytes.NewBufferString(`{"path":"` + tooLargePath + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/dry-run", body)
+	rr := httptest.NewRecorder()
+
+	d := New(config.DefaultConfig())
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusBadRequest)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "invalid_request" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+	if !strings.Contains(errResp.Message, "request body too large") {
+		t.Fatalf("unexpected error message: %q", errResp.Message)
 	}
 }
 

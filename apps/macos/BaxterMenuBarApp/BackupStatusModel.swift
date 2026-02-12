@@ -28,16 +28,19 @@ final class BackupStatusModel: ObservableObject {
 
     private let baseURL: URL
     private let urlSession: URLSession
+    private let ipcToken: String?
     private var timer: Timer?
     private let iso8601 = ISO8601DateFormatter()
 
     init(
         baseURL: URL = URL(string: "http://127.0.0.1:41820")!,
         urlSession: URLSession = .shared,
+        ipcToken: String? = ProcessInfo.processInfo.environment["BAXTER_IPC_TOKEN"],
         autoStartPolling: Bool = true
     ) {
         self.baseURL = baseURL
         self.urlSession = urlSession
+        self.ipcToken = ipcToken?.trimmingCharacters(in: .whitespacesAndNewlines)
         if autoStartPolling {
             startPolling()
         }
@@ -63,6 +66,7 @@ final class BackupStatusModel: ObservableObject {
             do {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/status"))
                 request.httpMethod = "GET"
+                applyIPCAuthHeader(to: &request)
 
                 let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
@@ -90,6 +94,7 @@ final class BackupStatusModel: ObservableObject {
             do {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/backup/run"))
                 request.httpMethod = "POST"
+                applyIPCAuthHeader(to: &request)
 
                 let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
@@ -147,6 +152,7 @@ final class BackupStatusModel: ObservableObject {
             do {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/config/reload"))
                 request.httpMethod = "POST"
+                applyIPCAuthHeader(to: &request)
 
                 let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
@@ -201,7 +207,10 @@ final class BackupStatusModel: ObservableObject {
                 guard let url = components?.url else {
                     throw IPCError.badResponse
                 }
-                let (data, response) = try await urlSession.data(from: url)
+                var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+                applyIPCAuthHeader(to: &request)
+                let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse else {
                     throw IPCError.badResponse
                 }
@@ -232,6 +241,7 @@ final class BackupStatusModel: ObservableObject {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/restore/dry-run"))
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                applyIPCAuthHeader(to: &request)
                 let payload = RestoreActionRequest(
                     path: trimmedPath,
                     toDir: toDir.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -270,6 +280,7 @@ final class BackupStatusModel: ObservableObject {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/restore/run"))
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                applyIPCAuthHeader(to: &request)
                 let payload = RestoreActionRequest(
                     path: trimmedPath,
                     toDir: toDir.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -313,6 +324,13 @@ final class BackupStatusModel: ObservableObject {
             return IPCError.server(code: payload.code, message: payload.message, statusCode: statusCode)
         }
         return IPCError.badStatus(statusCode)
+    }
+
+    private func applyIPCAuthHeader(to request: inout URLRequest) {
+        guard let token = ipcToken, !token.isEmpty else {
+            return
+        }
+        request.setValue(token, forHTTPHeaderField: "X-Baxter-Token")
     }
 
     private func apply(_ status: DaemonStatus) {

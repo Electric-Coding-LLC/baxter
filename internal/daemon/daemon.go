@@ -11,9 +11,18 @@ import (
 	"baxter/internal/config"
 )
 
+const (
+	serverReadHeaderTimeout = 5 * time.Second
+	serverReadTimeout       = 10 * time.Second
+	serverWriteTimeout      = 30 * time.Second
+	serverIdleTimeout       = 60 * time.Second
+	serverMaxHeaderBytes    = 1 << 20
+)
+
 type Daemon struct {
 	cfg             *config.Config
 	configPath      string
+	ipcAuthToken    string
 	configLoader    func(string) (*config.Config, error)
 	clockNow        func() time.Time
 	timerAfter      func(time.Duration) <-chan time.Time
@@ -57,6 +66,12 @@ func (d *Daemon) SetConfigPath(path string) {
 	d.configPath = path
 }
 
+func (d *Daemon) SetIPCAuthToken(token string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.ipcAuthToken = token
+}
+
 func (d *Daemon) Handler() http.Handler {
 	return d.handler
 }
@@ -64,10 +79,7 @@ func (d *Daemon) Handler() http.Handler {
 func (d *Daemon) Run(ctx context.Context) error {
 	fmt.Printf("baxterd listening on %s\n", d.ipcAddr)
 
-	srv := &http.Server{
-		Addr:    d.ipcAddr,
-		Handler: d.Handler(),
-	}
+	srv := d.newHTTPServer()
 
 	go func() {
 		<-ctx.Done()
@@ -83,6 +95,18 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (d *Daemon) newHTTPServer() *http.Server {
+	return &http.Server{
+		Addr:              d.ipcAddr,
+		Handler:           d.Handler(),
+		ReadHeaderTimeout: serverReadHeaderTimeout,
+		ReadTimeout:       serverReadTimeout,
+		WriteTimeout:      serverWriteTimeout,
+		IdleTimeout:       serverIdleTimeout,
+		MaxHeaderBytes:    serverMaxHeaderBytes,
+	}
 }
 
 func (d *Daemon) RunOnce(ctx context.Context) error {
