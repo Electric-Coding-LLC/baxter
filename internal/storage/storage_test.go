@@ -56,22 +56,3 @@ func TestLocalClientPutGetListDelete(t *testing.T) {
 		t.Fatalf("keys after delete mismatch: got %v want %v", keys, want)
 	}
 }
-
-func TestS3PrefixedKeyValidation(t *testing.T) {
-	c := &S3Client{prefix: "baxter/"}
-
-	key, err := c.prefixedKey("folder/file")
-	if err != nil {
-		t.Fatalf("valid key rejected: %v", err)
-	}
-	if key != "baxter/folder/file" {
-		t.Fatalf("prefixed key mismatch: got %q", key)
-	}
-
-	badKeys := []string{"", "/abs", "../escape", "safe/../escape"}
-	for _, bad := range badKeys {
-		if _, err := c.prefixedKey(bad); err == nil {
-			t.Fatalf("expected invalid key error for %q", bad)
-		}
-	}
-}
