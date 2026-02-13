@@ -81,7 +81,8 @@ A simple, secure macOS backup utility with an S3 backend.
 ## Daemon (current)
 - `baxterd` runs IPC server on `127.0.0.1:41820` by default.
 - `baxterd` rejects non-loopback `--ipc-addr` values unless `--allow-remote-ipc` is set.
-- If `--allow-remote-ipc` is enabled, `--ipc-token` (or `BAXTER_IPC_TOKEN`) is required and must be sent as `X-Baxter-Token` on state-changing requests.
+- If `--allow-remote-ipc` is enabled, `--ipc-token` (or `BAXTER_IPC_TOKEN`) is required and must be sent as `X-Baxter-Token` on all `/v1/*` requests.
+- `--ipc-token` and `BAXTER_IPC_TOKEN` accept comma-separated values to support token rotation windows (for example: `current-token,next-token`).
 - Daemon scheduler behavior (from `schedule` in config):
 - `manual`: no automatic runs
 - `daily`: runs at the same local wall-clock time each day while daemon is running
@@ -104,7 +105,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - `POST /v1/restore/dry-run` (supports optional `snapshot` field)
 - `POST /v1/restore/run`
   - supports `path`, optional `to_dir`, optional `overwrite`, optional `verify_only`, optional `snapshot`
-- State-changing endpoints (`POST /v1/backup/run`, `POST /v1/verify/run`, `POST /v1/config/reload`, `POST /v1/restore/run`) enforce `X-Baxter-Token` when an IPC token is configured.
+- All `/v1/*` endpoints enforce `X-Baxter-Token` when an IPC token is configured.
 - Restore JSON request bodies are capped at 1 MiB.
 - IPC HTTP server applies explicit timeout/header limits (`ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `MaxHeaderBytes`) for DoS hardening.
 - Error responses use JSON: `{"code":"...", "message":"..."}`.

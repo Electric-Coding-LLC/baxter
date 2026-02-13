@@ -28,7 +28,7 @@ func main() {
 	flag.BoolVar(&runOnce, "once", false, "run one backup pass and exit")
 	flag.StringVar(&ipcAddr, "ipc-addr", daemon.DefaultIPCAddress, "daemon IPC listen address")
 	flag.BoolVar(&allowRemoteIPC, "allow-remote-ipc", false, "allow non-loopback IPC listeners (disabled by default for safety)")
-	flag.StringVar(&ipcToken, "ipc-token", "", "shared secret token required by state-changing IPC endpoints")
+	flag.StringVar(&ipcToken, "ipc-token", "", "shared secret token(s) for /v1/* endpoints (comma-separated values supported for rotation)")
 	flag.Parse()
 
 	ipcAddr, err = daemon.ValidateIPCAddress(ipcAddr, allowRemoteIPC)
@@ -40,7 +40,7 @@ func main() {
 	if ipcToken == "" {
 		ipcToken = strings.TrimSpace(os.Getenv("BAXTER_IPC_TOKEN"))
 	}
-	if allowRemoteIPC && ipcToken == "" {
+	if allowRemoteIPC && !hasAnyIPCToken(ipcToken) {
 		fmt.Fprintln(os.Stderr, "ipc token error: --allow-remote-ipc requires --ipc-token or BAXTER_IPC_TOKEN")
 		os.Exit(1)
 	}
@@ -66,4 +66,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "daemon error: %v\n", runErr)
 		os.Exit(1)
 	}
+}
+
+func hasAnyIPCToken(raw string) bool {
+	for _, part := range strings.Split(raw, ",") {
+		if strings.TrimSpace(part) != "" {
+			return true
+		}
+	}
+	return false
 }
