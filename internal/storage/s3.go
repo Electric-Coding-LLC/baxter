@@ -12,13 +12,20 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+const (
+	defaultUploadPartSize    int64 = 8 * 1024 * 1024
+	defaultUploadConcurrency       = 4
+)
+
 type S3Client struct {
-	client *s3.Client
-	bucket string
-	prefix string
+	client          *s3.Client
+	transferManager *transfermanager.Client
+	bucket          string
+	prefix          string
 }
 
 func NewFromConfig(cfg appconfig.S3Config, localRootDir string) (ObjectStore, error) {
@@ -58,10 +65,17 @@ func NewS3Client(cfg appconfig.S3Config) (*S3Client, error) {
 		}
 	}
 
+	client := s3.NewFromConfig(awsCfg, s3Opts)
+	tm := transfermanager.New(client, func(o *transfermanager.Options) {
+		o.PartSizeBytes = defaultUploadPartSize
+		o.Concurrency = defaultUploadConcurrency
+	})
+
 	return &S3Client{
-		client: s3.NewFromConfig(awsCfg, s3Opts),
-		bucket: cfg.Bucket,
-		prefix: cfg.Prefix,
+		client:          client,
+		transferManager: tm,
+		bucket:          cfg.Bucket,
+		prefix:          cfg.Prefix,
 	}, nil
 }
 
@@ -70,11 +84,16 @@ func (c *S3Client) PutObject(key string, data []byte) error {
 	if err != nil {
 		return err
 	}
+	if c.transferManager == nil {
+		return errors.New("s3 transfer manager is not configured")
+	}
 
-	_, err = c.client.PutObject(context.Background(), &s3.PutObjectInput{
-		Bucket: &c.bucket,
-		Key:    &objectKey,
-		Body:   bytes.NewReader(data),
+	contentLength := int64(len(data))
+	_, err = c.transferManager.UploadObject(context.Background(), &transfermanager.UploadObjectInput{
+		Bucket:        &c.bucket,
+		Key:           &objectKey,
+		Body:          bytes.NewReader(data),
+		ContentLength: &contentLength,
 	})
 	if err != nil {
 		return fmt.Errorf("put object: %w", err)

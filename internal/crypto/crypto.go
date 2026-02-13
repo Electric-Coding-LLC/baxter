@@ -1,6 +1,8 @@
 package crypto
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -11,7 +13,10 @@ import (
 )
 
 const (
-	payloadVersion   byte = 2
+	payloadVersionV2 byte = 2
+	payloadVersionV3 byte = 3
+	compressionNone  byte = 0
+	compressionGzip  byte = 1
 	nonceSize             = 12
 	derivedKeyLength      = 32
 	kdfSaltLength         = 16
@@ -66,39 +71,113 @@ func DecryptBytesWithAnyKey(keys [][]byte, payload []byte) ([]byte, error) {
 }
 
 func EncryptBytes(key []byte, plaintext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
+	prepared, compression, err := maybeCompressForEncryption(plaintext)
 	if err != nil {
 		return nil, err
 	}
 
-	nonce := make([]byte, nonceSize)
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+	nonce, ciphertext, err := encryptPayload(key, prepared)
+	if err != nil {
 		return nil, err
 	}
 
-	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
-	payload := make([]byte, 1+nonceSize+len(ciphertext))
-	payload[0] = payloadVersion
-	copy(payload[1:1+nonceSize], nonce)
-	copy(payload[1+nonceSize:], ciphertext)
+	payload := make([]byte, 2+nonceSize+len(ciphertext))
+	payload[0] = payloadVersionV3
+	payload[1] = compression
+	copy(payload[2:2+nonceSize], nonce)
+	copy(payload[2+nonceSize:], ciphertext)
 	return payload, nil
 }
 
 func DecryptBytes(key []byte, payload []byte) ([]byte, error) {
-	if len(payload) < 1+nonceSize {
+	if len(payload) < 1 {
 		return nil, errors.New("payload too short")
 	}
-	if payload[0] != payloadVersion {
+
+	switch payload[0] {
+	case payloadVersionV2:
+		if len(payload) < 1+nonceSize {
+			return nil, errors.New("payload too short")
+		}
+		return decryptPayload(key, payload[1:1+nonceSize], payload[1+nonceSize:])
+	case payloadVersionV3:
+		if len(payload) < 2+nonceSize {
+			return nil, errors.New("payload too short")
+		}
+		plain, err := decryptPayload(key, payload[2:2+nonceSize], payload[2+nonceSize:])
+		if err != nil {
+			return nil, err
+		}
+		return decompressAfterDecryption(payload[1], plain)
+	default:
 		return nil, errors.New("unsupported payload version")
 	}
+}
 
-	nonce := payload[1 : 1+nonceSize]
-	ciphertext := payload[1+nonceSize:]
+func maybeCompressForEncryption(plaintext []byte) ([]byte, byte, error) {
+	compressed, err := gzipCompress(plaintext)
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(compressed) >= len(plaintext) {
+		return plaintext, compressionNone, nil
+	}
+	return compressed, compressionGzip, nil
+}
 
+func decompressAfterDecryption(compression byte, plaintext []byte) ([]byte, error) {
+	switch compression {
+	case compressionNone:
+		return plaintext, nil
+	case compressionGzip:
+		return gzipDecompress(plaintext)
+	default:
+		return nil, errors.New("unsupported compression algorithm")
+	}
+}
+
+func gzipCompress(plaintext []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write(plaintext); err != nil {
+		_ = gz.Close()
+		return nil, err
+	}
+	if err := gz.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func gzipDecompress(compressed []byte) ([]byte, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return nil, err
+	}
+	defer gz.Close()
+	return io.ReadAll(gz)
+}
+
+func encryptPayload(key []byte, plaintext []byte) ([]byte, []byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	nonce := make([]byte, nonceSize)
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, nil, err
+	}
+
+	ciphertext := gcm.Seal(nil, nonce, plaintext, nil)
+	return nonce, ciphertext, nil
+}
+
+func decryptPayload(key []byte, nonce []byte, ciphertext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err

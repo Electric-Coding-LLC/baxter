@@ -93,8 +93,9 @@ A simple, secure macOS backup utility with an S3 backend.
 - Error responses use JSON: `{"code":"...", "message":"..."}`.
 
 ## Compatibility Note
-- Encryption payload format is currently version 2 (Argon2id-derived key path).
-- This is a breaking change from older payload version 1 data; old encrypted payloads are not decryptable on current `main`.
+- Encryption payload format now writes version 3 objects (compression metadata + encrypted payload).
+- Decryption supports payload versions 2 and 3.
+- Payload version 1 remains unsupported on current `main`.
 
 ## Daemon Autostart (macOS)
 - Install and start launchd agent:
@@ -155,6 +156,12 @@ A simple, secure macOS backup utility with an S3 backend.
 - Save settings with `daily_time`/`weekly_day`/`weekly_time` from the Settings UI.
 - Verify invalid schedule entries show inline validation and cannot be saved.
 - Confirm daemon error alerts display server-provided error messages.
+
+## Performance Benchmarks
+- Backup upload pipeline compression impact:
+- `go test ./internal/backup -bench BenchmarkUploadPipelineCompressionImpact -benchmem`
+- Encryption metadata overhead sanity check:
+- `go test ./internal/backup -bench BenchmarkEncryptBytesV3MetadataOverhead -benchmem`
 
 ## First Week Plan
 1. Implement config parsing + validation; design TOML schema.

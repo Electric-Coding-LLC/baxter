@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,33 @@ import (
 	"baxter/internal/config"
 	"baxter/internal/storage"
 )
+
+type flakyStore struct {
+	inner        storage.ObjectStore
+	failPuts     int
+	putCallCount int
+}
+
+func (s *flakyStore) PutObject(key string, data []byte) error {
+	s.putCallCount++
+	if s.failPuts > 0 {
+		s.failPuts--
+		return errors.New("transient upload error")
+	}
+	return s.inner.PutObject(key, data)
+}
+
+func (s *flakyStore) GetObject(key string) ([]byte, error) {
+	return s.inner.GetObject(key)
+}
+
+func (s *flakyStore) DeleteObject(key string) error {
+	return s.inner.DeleteObject(key)
+}
+
+func (s *flakyStore) ListKeys() ([]string, error) {
+	return s.inner.ListKeys()
+}
 
 func TestRunUploadsAndSavesManifest(t *testing.T) {
 	root := t.TempDir()
@@ -159,5 +187,128 @@ func TestRunPrunesSnapshotsByRetention(t *testing.T) {
 	}
 	if len(snapshots) != 2 {
 		t.Fatalf("expected 2 snapshots after retention prune, got %d", len(snapshots))
+	}
+}
+
+func TestRunRetriesTransientPutFailures(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	snapshotDir := filepath.Join(t.TempDir(), "manifests")
+	objectsDir := filepath.Join(t.TempDir(), "objects")
+	key := []byte("01234567890123456789012345678901")
+
+	filePath := filepath.Join(root, "doc.txt")
+	if err := os.WriteFile(filePath, []byte("retry-me"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	cfg := &config.Config{
+		BackupRoots: []string{root},
+		S3:          config.S3Config{},
+		Encryption:  config.EncryptionConfig{},
+	}
+
+	store := &flakyStore{
+		inner:    storage.NewLocalClient(objectsDir),
+		failPuts: 2,
+	}
+
+	if _, err := Run(cfg, RunOptions{
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: 30,
+		EncryptionKey:     key,
+		Store:             store,
+	}); err != nil {
+		t.Fatalf("run backup with retries: %v", err)
+	}
+
+	if store.putCallCount != 3 {
+		t.Fatalf("unexpected put call count: got %d want 3", store.putCallCount)
+	}
+}
+
+func TestRunFailsWhenPutRetriesExhausted(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	snapshotDir := filepath.Join(t.TempDir(), "manifests")
+	objectsDir := filepath.Join(t.TempDir(), "objects")
+	key := []byte("01234567890123456789012345678901")
+
+	filePath := filepath.Join(root, "doc.txt")
+	if err := os.WriteFile(filePath, []byte("retry-me"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	cfg := &config.Config{
+		BackupRoots: []string{root},
+		S3:          config.S3Config{},
+		Encryption:  config.EncryptionConfig{},
+	}
+
+	store := &flakyStore{
+		inner:    storage.NewLocalClient(objectsDir),
+		failPuts: 3,
+	}
+
+	_, err := Run(cfg, RunOptions{
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: 30,
+		UploadMaxAttempts: 2,
+		EncryptionKey:     key,
+		Store:             store,
+	})
+	if err == nil {
+		t.Fatal("expected backup run to fail when retries are exhausted")
+	}
+}
+
+func TestRunStoresVersionedCompressedPayload(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	snapshotDir := filepath.Join(t.TempDir(), "manifests")
+	objectsDir := filepath.Join(t.TempDir(), "objects")
+	key := []byte("01234567890123456789012345678901")
+
+	filePath := filepath.Join(root, "compressible.txt")
+	content := []byte("baxter-compressible-content-baxter-compressible-content-baxter-compressible-content")
+	repeated := make([]byte, 0, len(content)*256)
+	for i := 0; i < 256; i++ {
+		repeated = append(repeated, content...)
+	}
+	if err := os.WriteFile(filePath, repeated, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	cfg := &config.Config{
+		BackupRoots: []string{root},
+		S3:          config.S3Config{},
+		Encryption:  config.EncryptionConfig{},
+	}
+	store := storage.NewLocalClient(objectsDir)
+
+	if _, err := Run(cfg, RunOptions{
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: 30,
+		EncryptionKey:     key,
+		Store:             store,
+	}); err != nil {
+		t.Fatalf("run backup: %v", err)
+	}
+
+	payload, err := store.GetObject(ObjectKeyForPath(filePath))
+	if err != nil {
+		t.Fatalf("read stored object: %v", err)
+	}
+	if len(payload) < 2 {
+		t.Fatalf("payload too short: %d", len(payload))
+	}
+	if payload[0] != 3 {
+		t.Fatalf("unexpected payload version: got %d want 3", payload[0])
+	}
+	if payload[1] != 1 {
+		t.Fatalf("unexpected compression marker: got %d want 1", payload[1])
 	}
 }
