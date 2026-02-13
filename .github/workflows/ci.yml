@@ -20,7 +20,7 @@ jobs:
       - run: go test ./...
 
   macos-app-test:
-    runs-on: [self-hosted, macOS]
+    runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
     steps:
       - uses: actions/checkout@v4
       - name: Run macOS app tests
