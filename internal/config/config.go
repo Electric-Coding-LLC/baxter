@@ -19,6 +19,7 @@ type Config struct {
 	S3          S3Config         `toml:"s3"`
 	Encryption  EncryptionConfig `toml:"encryption"`
 	Retention   RetentionConfig  `toml:"retention"`
+	Verify      VerifyConfig     `toml:"verify"`
 }
 
 type S3Config struct {
@@ -35,6 +36,16 @@ type EncryptionConfig struct {
 
 type RetentionConfig struct {
 	ManifestSnapshots int `toml:"manifest_snapshots"`
+}
+
+type VerifyConfig struct {
+	Schedule   string `toml:"schedule"`
+	DailyTime  string `toml:"daily_time"`
+	WeeklyDay  string `toml:"weekly_day"`
+	WeeklyTime string `toml:"weekly_time"`
+	Prefix     string `toml:"prefix"`
+	Limit      int    `toml:"limit"`
+	Sample     int    `toml:"sample"`
 }
 
 func DefaultConfig() *Config {
@@ -56,6 +67,15 @@ func DefaultConfig() *Config {
 		},
 		Retention: RetentionConfig{
 			ManifestSnapshots: 30,
+		},
+		Verify: VerifyConfig{
+			Schedule:   "manual",
+			DailyTime:  "09:00",
+			WeeklyDay:  "sunday",
+			WeeklyTime: "09:00",
+			Prefix:     "",
+			Limit:      0,
+			Sample:     0,
 		},
 	}
 }
@@ -108,9 +128,22 @@ func (c *Config) ApplyDefaults() {
 	if c.Encryption.KeychainAccount == "" {
 		c.Encryption.KeychainAccount = "default"
 	}
+	if c.Verify.Schedule == "" {
+		c.Verify.Schedule = "manual"
+	}
+	if c.Verify.DailyTime == "" {
+		c.Verify.DailyTime = "09:00"
+	}
+	if c.Verify.WeeklyDay == "" {
+		c.Verify.WeeklyDay = "sunday"
+	}
+	if c.Verify.WeeklyTime == "" {
+		c.Verify.WeeklyTime = "09:00"
+	}
 }
 
 func (c *Config) Normalize() {
+	c.Schedule = strings.ToLower(strings.TrimSpace(c.Schedule))
 	c.DailyTime = strings.TrimSpace(c.DailyTime)
 	c.WeeklyDay = strings.ToLower(strings.TrimSpace(c.WeeklyDay))
 	c.WeeklyTime = strings.TrimSpace(c.WeeklyTime)
@@ -127,6 +160,12 @@ func (c *Config) Normalize() {
 	if c.S3.Prefix != "" && !strings.HasSuffix(c.S3.Prefix, "/") {
 		c.S3.Prefix += "/"
 	}
+
+	c.Verify.Schedule = strings.ToLower(strings.TrimSpace(c.Verify.Schedule))
+	c.Verify.DailyTime = strings.TrimSpace(c.Verify.DailyTime)
+	c.Verify.WeeklyDay = strings.ToLower(strings.TrimSpace(c.Verify.WeeklyDay))
+	c.Verify.WeeklyTime = strings.TrimSpace(c.Verify.WeeklyTime)
+	c.Verify.Prefix = strings.TrimSpace(c.Verify.Prefix)
 }
 
 func (c *Config) Validate() error {
@@ -192,6 +231,40 @@ func (c *Config) Validate() error {
 	}
 	if c.Retention.ManifestSnapshots < 0 {
 		return errors.New("retention.manifest_snapshots must be >= 0")
+	}
+	switch c.Verify.Schedule {
+	case "", "daily", "weekly", "manual":
+		// valid
+	default:
+		return errors.New("verify.schedule must be daily, weekly, or manual")
+	}
+	if c.Verify.Schedule == "daily" {
+		if c.Verify.DailyTime == "" {
+			return errors.New("verify.daily_time is required when verify.schedule is daily")
+		}
+		if !isValidHHMM(c.Verify.DailyTime) {
+			return errors.New("verify.daily_time must be in HH:MM (24-hour) format")
+		}
+	}
+	if c.Verify.Schedule == "weekly" {
+		if c.Verify.WeeklyDay == "" {
+			return errors.New("verify.weekly_day is required when verify.schedule is weekly")
+		}
+		if !isValidWeekday(c.Verify.WeeklyDay) {
+			return errors.New("verify.weekly_day must be one of: sunday,monday,tuesday,wednesday,thursday,friday,saturday")
+		}
+		if c.Verify.WeeklyTime == "" {
+			return errors.New("verify.weekly_time is required when verify.schedule is weekly")
+		}
+		if !isValidHHMM(c.Verify.WeeklyTime) {
+			return errors.New("verify.weekly_time must be in HH:MM (24-hour) format")
+		}
+	}
+	if c.Verify.Limit < 0 {
+		return errors.New("verify.limit must be >= 0")
+	}
+	if c.Verify.Sample < 0 {
+		return errors.New("verify.sample must be >= 0")
 	}
 	return nil
 }

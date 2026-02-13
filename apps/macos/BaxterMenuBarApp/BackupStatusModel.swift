@@ -11,10 +11,26 @@ final class BackupStatusModel: ObservableObject {
         case failed = "Failed"
     }
 
+    enum VerifyState: String {
+        case idle = "Idle"
+        case running = "Running"
+        case failed = "Failed"
+    }
+
     @Published var state: State = .idle
+    @Published var verifyState: VerifyState = .idle
     @Published var lastBackupAt: Date?
     @Published var nextScheduledAt: Date?
     @Published var lastError: String?
+    @Published var lastVerifyAt: Date?
+    @Published var nextVerifyAt: Date?
+    @Published var lastVerifyError: String?
+    @Published var lastVerifyChecked: Int = 0
+    @Published var lastVerifyOK: Int = 0
+    @Published var lastVerifyMissing: Int = 0
+    @Published var lastVerifyReadErrors: Int = 0
+    @Published var lastVerifyDecryptErrors: Int = 0
+    @Published var lastVerifyChecksumErrors: Int = 0
     @Published var isDaemonReachable: Bool = true
     @Published var daemonServiceState: DaemonServiceState = .unknown
     @Published var lifecycleMessage: String?
@@ -113,6 +129,34 @@ final class BackupStatusModel: ObservableObject {
             } catch {
                 state = .failed
                 lastError = "run failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func runVerify() {
+        Task {
+            do {
+                var request = URLRequest(url: baseURL.appendingPathComponent("v1/verify/run"))
+                request.httpMethod = "POST"
+                applyIPCAuthHeader(to: &request)
+
+                let (data, response) = try await urlSession.data(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw IPCError.badResponse
+                }
+                if http.statusCode == 202 {
+                    refreshStatus()
+                    return
+                }
+                if http.statusCode == 409 {
+                    verifyState = .running
+                    lastVerifyError = nil
+                    return
+                }
+                throw decodeDaemonError(data: data, statusCode: http.statusCode)
+            } catch {
+                verifyState = .failed
+                lastVerifyError = "verify failed: \(error.localizedDescription)"
             }
         }
     }
@@ -342,6 +386,14 @@ final class BackupStatusModel: ObservableObject {
         default:
             state = .idle
         }
+        switch (status.verifyState ?? "idle").lowercased() {
+        case "running":
+            verifyState = .running
+        case "failed":
+            verifyState = .failed
+        default:
+            verifyState = .idle
+        }
 
         if let raw = status.lastBackupAt {
             lastBackupAt = iso8601.date(from: raw)
@@ -358,109 +410,25 @@ final class BackupStatusModel: ObservableObject {
         } else {
             lastRestoreAt = nil
         }
+        if let raw = status.lastVerifyAt {
+            lastVerifyAt = iso8601.date(from: raw)
+        } else {
+            lastVerifyAt = nil
+        }
+        if let raw = status.nextVerifyAt {
+            nextVerifyAt = iso8601.date(from: raw)
+        } else {
+            nextVerifyAt = nil
+        }
         lastRestorePath = status.lastRestorePath
         lastRestoreError = status.lastRestoreError
+        lastVerifyError = status.lastVerifyError
+        lastVerifyChecked = status.lastVerifyChecked ?? 0
+        lastVerifyOK = status.lastVerifyOK ?? 0
+        lastVerifyMissing = status.lastVerifyMissing ?? 0
+        lastVerifyReadErrors = status.lastVerifyReadErrors ?? 0
+        lastVerifyDecryptErrors = status.lastVerifyDecryptErrors ?? 0
+        lastVerifyChecksumErrors = status.lastVerifyChecksumErrors ?? 0
         lastError = status.lastError
-    }
-}
-
-private struct DaemonStatus: Decodable {
-    let state: String
-    let lastBackupAt: String?
-    let nextScheduledAt: String?
-    let lastError: String?
-    let lastRestoreAt: String?
-    let lastRestorePath: String?
-    let lastRestoreError: String?
-
-    enum CodingKeys: String, CodingKey {
-        case state
-        case lastBackupAt = "last_backup_at"
-        case nextScheduledAt = "next_scheduled_at"
-        case lastError = "last_error"
-        case lastRestoreAt = "last_restore_at"
-        case lastRestorePath = "last_restore_path"
-        case lastRestoreError = "last_restore_error"
-    }
-}
-
-private struct RestoreListPayload: Decodable {
-    let paths: [String]
-}
-
-private struct RestoreActionRequest: Encodable {
-    let path: String
-    let toDir: String?
-    let overwrite: Bool
-    let verifyOnly: Bool?
-    let snapshot: String?
-
-    enum CodingKeys: String, CodingKey {
-        case path
-        case toDir = "to_dir"
-        case overwrite
-        case verifyOnly = "verify_only"
-        case snapshot
-    }
-
-    init(path: String, toDir: String, overwrite: Bool, verifyOnly: Bool? = nil, snapshot: String) {
-        self.path = path
-        self.toDir = toDir.isEmpty ? nil : toDir
-        self.overwrite = overwrite
-        self.verifyOnly = verifyOnly
-        self.snapshot = snapshot.isEmpty ? nil : snapshot
-    }
-}
-
-private struct RestoreDryRunPayload: Decodable {
-    let sourcePath: String
-    let targetPath: String
-    let overwrite: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case sourcePath = "source_path"
-        case targetPath = "target_path"
-        case overwrite
-    }
-}
-
-private struct RestoreRunPayload: Decodable {
-    let sourcePath: String
-    let targetPath: String
-    let verified: Bool
-    let wrote: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case sourcePath = "source_path"
-        case targetPath = "target_path"
-        case verified
-        case wrote
-    }
-}
-
-private struct DaemonErrorPayload: Decodable {
-    let code: String
-    let message: String
-}
-
-private enum IPCError: Error {
-	case badResponse
-	case badStatus(Int)
-	case server(code: String, message: String, statusCode: Int)
-	case reloadUnavailable
-}
-
-extension IPCError: LocalizedError {
-    var errorDescription: String? {
-        switch self {
-        case .badResponse:
-            return "Unexpected daemon response."
-        case .badStatus(let statusCode):
-            return "Daemon returned HTTP \(statusCode)."
-        case .server(_, let message, _):
-            return message
-        case .reloadUnavailable:
-            return "Reload endpoint unavailable."
-        }
     }
 }

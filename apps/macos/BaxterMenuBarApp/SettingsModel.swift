@@ -14,6 +14,13 @@ final class BaxterSettingsModel: ObservableObject {
     @Published var s3Prefix: String = "baxter/"
     @Published var keychainService: String = "baxter"
     @Published var keychainAccount: String = "default"
+    @Published var verifySchedule: BackupSchedule = .manual
+    @Published var verifyDailyTime: String = "09:00"
+    @Published var verifyWeeklyDay: WeekdayOption = .sunday
+    @Published var verifyWeeklyTime: String = "09:00"
+    @Published var verifyPrefix: String = ""
+    @Published var verifyLimit: String = "0"
+    @Published var verifySample: String = "0"
     @Published var statusMessage: String?
     @Published var errorMessage: String?
     @Published private(set) var validationErrors: [SettingsField: String] = [:]
@@ -159,6 +166,13 @@ final class BaxterSettingsModel: ObservableObject {
         s3Prefix = config.s3Prefix
         keychainService = config.keychainService
         keychainAccount = config.keychainAccount
+        verifySchedule = config.verifySchedule
+        verifyDailyTime = config.verifyDailyTime
+        verifyWeeklyDay = config.verifyWeeklyDay
+        verifyWeeklyTime = config.verifyWeeklyTime
+        verifyPrefix = config.verifyPrefix
+        verifyLimit = String(config.verifyLimit)
+        verifySample = String(config.verifySample)
     }
 
     private func buildConfigForSave() throws -> BaxterConfig {
@@ -214,7 +228,14 @@ final class BaxterSettingsModel: ObservableObject {
             s3Bucket: s3Bucket.trimmingCharacters(in: .whitespacesAndNewlines),
             s3Prefix: s3Prefix.trimmingCharacters(in: .whitespacesAndNewlines),
             keychainService: keychainService.trimmingCharacters(in: .whitespacesAndNewlines),
-            keychainAccount: keychainAccount.trimmingCharacters(in: .whitespacesAndNewlines)
+            keychainAccount: keychainAccount.trimmingCharacters(in: .whitespacesAndNewlines),
+            verifySchedule: verifySchedule,
+            verifyDailyTime: verifyDailyTime.trimmingCharacters(in: .whitespacesAndNewlines),
+            verifyWeeklyDay: verifyWeeklyDay,
+            verifyWeeklyTime: verifyWeeklyTime.trimmingCharacters(in: .whitespacesAndNewlines),
+            verifyPrefix: verifyPrefix.trimmingCharacters(in: .whitespacesAndNewlines),
+            verifyLimit: nonNegativeInt(from: verifyLimit.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0,
+            verifySample: nonNegativeInt(from: verifySample.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         )
 
         if config.s3Prefix.isEmpty {
@@ -228,6 +249,12 @@ final class BaxterSettingsModel: ObservableObject {
         }
         if config.weeklyTime.isEmpty {
             config.weeklyTime = "09:00"
+        }
+        if config.verifyDailyTime.isEmpty {
+            config.verifyDailyTime = "09:00"
+        }
+        if config.verifyWeeklyTime.isEmpty {
+            config.verifyWeeklyTime = "09:00"
         }
 
         return config
@@ -250,6 +277,25 @@ final class BaxterSettingsModel: ObservableObject {
             }
         case .manual:
             break
+        }
+        switch config.verifySchedule {
+        case .daily:
+            if !isValidTime(config.verifyDailyTime) {
+                errors[.verifyDailyTime] = "Verify daily time must be HH:MM (24-hour)."
+            }
+        case .weekly:
+            if !isValidTime(config.verifyWeeklyTime) {
+                errors[.verifyWeeklyTime] = "Verify weekly time must be HH:MM (24-hour)."
+            }
+        case .manual:
+            break
+        }
+
+        if nonNegativeInt(from: verifyLimit.trimmingCharacters(in: .whitespacesAndNewlines)) == nil {
+            errors[.verifyLimit] = "Verify limit must be a non-negative integer."
+        }
+        if nonNegativeInt(from: verifySample.trimmingCharacters(in: .whitespacesAndNewlines)) == nil {
+            errors[.verifySample] = "Verify sample must be a non-negative integer."
         }
 
         if config.s3Bucket.isEmpty {
@@ -291,6 +337,11 @@ final class BaxterSettingsModel: ObservableObject {
             .dailyTime,
             .weeklyDay,
             .weeklyTime,
+            .verifyDailyTime,
+            .verifyWeeklyDay,
+            .verifyWeeklyTime,
+            .verifyLimit,
+            .verifySample,
             .s3Bucket,
             .s3Region,
             .s3Prefix,
@@ -336,6 +387,13 @@ final class BaxterSettingsModel: ObservableObject {
         guard parts[0].count == 2, parts[1].count == 2 else { return false }
         guard let hour = Int(parts[0]), let minute = Int(parts[1]) else { return false }
         return (0...23).contains(hour) && (0...59).contains(minute)
+    }
+
+    private func nonNegativeInt(from value: String) -> Int? {
+        guard let parsed = Int(value), parsed >= 0 else {
+            return nil
+        }
+        return parsed
     }
 
 }

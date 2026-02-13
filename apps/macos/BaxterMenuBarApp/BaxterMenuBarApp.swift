@@ -19,6 +19,11 @@ struct BaxterMenuBarApp: App {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(statusTint.opacity(0.18), in: Capsule())
+                    Label("Verify \(model.verifyState.rawValue)", systemImage: verifyStateSymbol)
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(verifyStateTint.opacity(0.18), in: Capsule())
                     Label("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol)
                         .font(.caption.weight(.semibold))
                         .padding(.horizontal, 8)
@@ -48,6 +53,23 @@ struct BaxterMenuBarApp: App {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Last verify")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(lastVerifyText)
+                        .font(.body.weight(.medium))
+                    Text(nextVerifyText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    if model.lastVerifyChecked > 0 || model.lastVerifyMissing > 0 || model.lastVerifyReadErrors > 0 || model.lastVerifyDecryptErrors > 0 || model.lastVerifyChecksumErrors > 0 {
+                        Text(verifySummaryText)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
                 if let lastError = model.lastError {
                     Label(lastError, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
@@ -55,6 +77,14 @@ struct BaxterMenuBarApp: App {
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                }
+                if let lastVerifyError = model.lastVerifyError, !lastVerifyError.isEmpty {
+                    Label(lastVerifyError, systemImage: "checkmark.shield.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                 }
 
                 if !model.isDaemonReachable {
@@ -87,6 +117,15 @@ struct BaxterMenuBarApp: App {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.state == .running || model.isLifecycleBusy || model.daemonServiceState != .running)
+
+                Button {
+                    model.runVerify()
+                } label: {
+                    Label("Run Verify", systemImage: "checkmark.shield")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.verifyState == .running || model.isLifecycleBusy || model.daemonServiceState != .running)
 
                 HStack(spacing: 8) {
                     Button {
@@ -227,6 +266,46 @@ struct BaxterMenuBarApp: App {
         case .failed:
             return "xmark.octagon.fill"
         }
+    }
+
+    private var verifyStateSymbol: String {
+        switch model.verifyState {
+        case .idle:
+            return "checkmark.shield"
+        case .running:
+            return "arrow.triangle.2.circlepath"
+        case .failed:
+            return "exclamationmark.shield"
+        }
+    }
+
+    private var verifyStateTint: Color {
+        switch model.verifyState {
+        case .idle:
+            return .green
+        case .running:
+            return .blue
+        case .failed:
+            return .orange
+        }
+    }
+
+    private var lastVerifyText: String {
+        if let lastVerifyAt = model.lastVerifyAt {
+            return lastVerifyAt.formatted(date: .abbreviated, time: .shortened)
+        }
+        return "Never"
+    }
+
+    private var verifySummaryText: String {
+        "checked \(model.lastVerifyChecked), ok \(model.lastVerifyOK), missing \(model.lastVerifyMissing), read \(model.lastVerifyReadErrors), decrypt \(model.lastVerifyDecryptErrors), checksum \(model.lastVerifyChecksumErrors)"
+    }
+
+    private var nextVerifyText: String {
+        if let nextVerifyAt = model.nextVerifyAt {
+            return "Next verify \(nextVerifyAt.formatted(date: .abbreviated, time: .shortened))"
+        }
+        return "Verify schedule manual"
     }
 
     private var statusTint: Color {

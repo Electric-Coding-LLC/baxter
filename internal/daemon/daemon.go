@@ -20,31 +20,35 @@ const (
 )
 
 type Daemon struct {
-	cfg             *config.Config
-	configPath      string
-	ipcAuthToken    string
-	configLoader    func(string) (*config.Config, error)
-	clockNow        func() time.Time
-	timerAfter      func(time.Duration) <-chan time.Time
-	backupRunner    func(context.Context, *config.Config) error
-	scheduleChanged chan struct{}
-	ipcAddr         string
-	mu              sync.Mutex
-	running         bool
-	status          daemonStatus
-	handler         http.Handler
+	cfg                   *config.Config
+	configPath            string
+	ipcAuthToken          string
+	configLoader          func(string) (*config.Config, error)
+	clockNow              func() time.Time
+	timerAfter            func(time.Duration) <-chan time.Time
+	backupRunner          func(context.Context, *config.Config) error
+	scheduleChanged       chan struct{}
+	verifyScheduleChanged chan struct{}
+	ipcAddr               string
+	mu                    sync.Mutex
+	running               bool
+	verifyRunning         bool
+	status                daemonStatus
+	handler               http.Handler
 }
 
 func New(cfg *config.Config) *Daemon {
 	d := &Daemon{
-		cfg:             cfg,
-		configLoader:    config.Load,
-		clockNow:        time.Now,
-		timerAfter:      time.After,
-		scheduleChanged: make(chan struct{}, 1),
-		ipcAddr:         DefaultIPCAddress,
+		cfg:                   cfg,
+		configLoader:          config.Load,
+		clockNow:              time.Now,
+		timerAfter:            time.After,
+		scheduleChanged:       make(chan struct{}, 1),
+		verifyScheduleChanged: make(chan struct{}, 1),
+		ipcAddr:               DefaultIPCAddress,
 		status: daemonStatus{
-			State: "idle",
+			State:       "idle",
+			VerifyState: "idle",
 		},
 	}
 	d.backupRunner = d.performBackup
@@ -89,6 +93,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}()
 
 	go d.runScheduler(ctx)
+	go d.runVerifyScheduler(ctx)
 
 	err := srv.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {

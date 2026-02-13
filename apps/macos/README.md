@@ -7,6 +7,7 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - Implemented endpoints:
 - `GET /v1/status`
 - `POST /v1/backup/run`
+- `POST /v1/verify/run`
 - `GET /v1/snapshots`
 - `GET /v1/restore/list`
 - `POST /v1/restore/dry-run`
@@ -28,4 +29,5 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - Validate Settings flow:
 - verify folder picker for backup roots
 - verify schedule fields (`daily_time`, `weekly_day`, `weekly_time`) save to config
+- verify `[verify]` fields (`schedule`, `daily_time`, `weekly_day`, `weekly_time`, `prefix`, `limit`, `sample`) save to config
 - verify inline validation prevents invalid time formats

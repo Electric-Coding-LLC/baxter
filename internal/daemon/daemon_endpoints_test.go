@@ -88,6 +88,79 @@ func TestRunBackupEndpointRejectsNonPost(t *testing.T) {
 	}
 }
 
+func TestRunVerifyEndpointReturnsConflictWhenAlreadyRunning(t *testing.T) {
+	d := New(config.DefaultConfig())
+	d.mu.Lock()
+	d.verifyRunning = true
+	d.status.VerifyState = "running"
+	d.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/verify/run", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusConflict)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "verify_running" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestRunVerifyEndpointRejectsNonPost(t *testing.T) {
+	d := New(config.DefaultConfig())
+	req := httptest.NewRequest(http.MethodGet, "/v1/verify/run", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusMethodNotAllowed)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "method_not_allowed" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestRunVerifyEndpointRejectsMissingTokenWhenConfigured(t *testing.T) {
+	d := New(config.DefaultConfig())
+	d.SetIPCAuthToken("secret-token")
+	req := httptest.NewRequest(http.MethodPost, "/v1/verify/run", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusUnauthorized)
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "unauthorized" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestRunVerifyEndpointAcceptsValidTokenWhenConfigured(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "verify-test-passphrase")
+
+	d := New(config.DefaultConfig())
+	d.SetIPCAuthToken("secret-token")
+	req := httptest.NewRequest(http.MethodPost, "/v1/verify/run", nil)
+	req.Header.Set(ipcTokenHeader, "secret-token")
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status code: got %d want %d", rr.Code, http.StatusAccepted)
+	}
+}
+
 func TestRunBackupEndpointRejectsMissingTokenWhenConfigured(t *testing.T) {
 	d := New(config.DefaultConfig())
 	d.SetIPCAuthToken("secret-token")

@@ -39,6 +39,18 @@ func decodeBaxterConfig(from text: String) -> BaxterConfig {
             continue
         }
 
+        if section == "verify", let (intKey, intValue) = parseIntegerAssignment(from: trimmed) {
+            switch intKey {
+            case "limit":
+                config.verifyLimit = max(0, intValue)
+            case "sample":
+                config.verifySample = max(0, intValue)
+            default:
+                break
+            }
+            continue
+        }
+
         guard let (key, value) = parseQuotedAssignment(from: trimmed) else {
             continue
         }
@@ -64,9 +76,20 @@ func decodeBaxterConfig(from text: String) -> BaxterConfig {
             config.keychainService = value
         case ("encryption", "keychain_account"):
             config.keychainAccount = value
+        case ("verify", "schedule"):
+            config.verifySchedule = BackupSchedule(rawValue: value) ?? .manual
+        case ("verify", "daily_time"):
+            config.verifyDailyTime = value
+        case ("verify", "weekly_day"):
+            config.verifyWeeklyDay = WeekdayOption(rawValue: value.lowercased()) ?? .sunday
+        case ("verify", "weekly_time"):
+            config.verifyWeeklyTime = value
+        case ("verify", "prefix"):
+            config.verifyPrefix = value
         default:
             break
         }
+
     }
 
     if config.s3Prefix.isEmpty {
@@ -80,6 +103,12 @@ func decodeBaxterConfig(from text: String) -> BaxterConfig {
     }
     if config.weeklyTime.isEmpty {
         config.weeklyTime = "09:00"
+    }
+    if config.verifyDailyTime.isEmpty {
+        config.verifyDailyTime = "09:00"
+    }
+    if config.verifyWeeklyTime.isEmpty {
+        config.verifyWeeklyTime = "09:00"
     }
 
     return config
@@ -107,6 +136,15 @@ func encodeBaxterConfig(_ config: BaxterConfig) -> String {
     lines.append("[encryption]")
     lines.append("keychain_service = \"\(escapeTomlString(config.keychainService))\"")
     lines.append("keychain_account = \"\(escapeTomlString(config.keychainAccount))\"")
+    lines.append("")
+    lines.append("[verify]")
+    lines.append("schedule = \"\(config.verifySchedule.rawValue)\"")
+    lines.append("daily_time = \"\(escapeTomlString(config.verifyDailyTime))\"")
+    lines.append("weekly_day = \"\(config.verifyWeeklyDay.rawValue)\"")
+    lines.append("weekly_time = \"\(escapeTomlString(config.verifyWeeklyTime))\"")
+    lines.append("prefix = \"\(escapeTomlString(config.verifyPrefix))\"")
+    lines.append("limit = \(max(0, config.verifyLimit))")
+    lines.append("sample = \(max(0, config.verifySample))")
     lines.append("")
     return lines.joined(separator: "\n")
 }
@@ -169,6 +207,15 @@ private func parseQuotedAssignment(from line: String) -> (String, String)? {
     }
 
     return nil
+}
+
+private func parseIntegerAssignment(from line: String) -> (String, Int)? {
+    guard let equalsIndex = line.firstIndex(of: "=") else { return nil }
+    let key = line[..<equalsIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+    let valuePart = line[line.index(after: equalsIndex)...]
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let value = Int(valuePart) else { return nil }
+    return (key, value)
 }
 
 private func unescapeTomlCharacter(_ character: Character) -> Character {

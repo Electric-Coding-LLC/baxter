@@ -36,6 +36,18 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if cfg.Encryption.KeychainAccount != "default" {
 		t.Fatalf("unexpected keychain account: got %q want %q", cfg.Encryption.KeychainAccount, "default")
 	}
+	if cfg.Verify.Schedule != "manual" {
+		t.Fatalf("unexpected default verify schedule: got %q want %q", cfg.Verify.Schedule, "manual")
+	}
+	if cfg.Verify.DailyTime != "09:00" {
+		t.Fatalf("unexpected default verify daily_time: got %q want %q", cfg.Verify.DailyTime, "09:00")
+	}
+	if cfg.Verify.WeeklyDay != "sunday" {
+		t.Fatalf("unexpected default verify weekly_day: got %q want %q", cfg.Verify.WeeklyDay, "sunday")
+	}
+	if cfg.Verify.WeeklyTime != "09:00" {
+		t.Fatalf("unexpected default verify weekly_time: got %q want %q", cfg.Verify.WeeklyTime, "09:00")
+	}
 }
 
 func TestLoadAppliesDefaultsAndNormalizes(t *testing.T) {
@@ -56,6 +68,14 @@ func TestLoadAppliesDefaultsAndNormalizes(t *testing.T) {
 		"[encryption]",
 		"keychain_service = \"\"",
 		"keychain_account = \"\"",
+		"",
+		"[verify]",
+		"schedule = \" WEEKLY \"",
+		"weekly_day = \" MONDAY \"",
+		"weekly_time = \" 06:45 \"",
+		"prefix = \" /Users/test/Documents \"",
+		"limit = 25",
+		"sample = 5",
 	}, "\n")
 
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -87,6 +107,24 @@ func TestLoadAppliesDefaultsAndNormalizes(t *testing.T) {
 	}
 	if cfg.Encryption.KeychainAccount != "default" {
 		t.Fatalf("expected default keychain account: got %q want %q", cfg.Encryption.KeychainAccount, "default")
+	}
+	if cfg.Verify.Schedule != "weekly" {
+		t.Fatalf("expected normalized verify.schedule: got %q", cfg.Verify.Schedule)
+	}
+	if cfg.Verify.WeeklyDay != "monday" {
+		t.Fatalf("expected normalized verify.weekly_day: got %q", cfg.Verify.WeeklyDay)
+	}
+	if cfg.Verify.WeeklyTime != "06:45" {
+		t.Fatalf("expected normalized verify.weekly_time: got %q", cfg.Verify.WeeklyTime)
+	}
+	if cfg.Verify.Prefix != "/Users/test/Documents" {
+		t.Fatalf("expected normalized verify.prefix: got %q", cfg.Verify.Prefix)
+	}
+	if cfg.Verify.Limit != 25 {
+		t.Fatalf("expected verify.limit=25, got %d", cfg.Verify.Limit)
+	}
+	if cfg.Verify.Sample != 5 {
+		t.Fatalf("expected verify.sample=5, got %d", cfg.Verify.Sample)
 	}
 }
 
@@ -387,4 +425,79 @@ func TestValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateVerifyConfig(t *testing.T) {
+	base := Config{
+		BackupRoots: []string{"/Users/me/Documents"},
+		Schedule:    "manual",
+		DailyTime:   "09:00",
+		WeeklyDay:   "sunday",
+		WeeklyTime:  "09:00",
+		S3: S3Config{
+			Prefix: "baxter/",
+		},
+		Encryption: EncryptionConfig{
+			KeychainService: "svc",
+			KeychainAccount: "acct",
+		},
+	}
+
+	t.Run("reject invalid verify schedule", func(t *testing.T) {
+		cfg := base
+		cfg.Verify.Schedule = "hourly"
+		if err := cfg.Validate(); err == nil || err.Error() != "verify.schedule must be daily, weekly, or manual" {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("reject invalid verify weekly day", func(t *testing.T) {
+		cfg := base
+		cfg.Verify.Schedule = "weekly"
+		cfg.Verify.WeeklyDay = "funday"
+		cfg.Verify.WeeklyTime = "09:00"
+		if err := cfg.Validate(); err == nil || err.Error() != "verify.weekly_day must be one of: sunday,monday,tuesday,wednesday,thursday,friday,saturday" {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("reject invalid verify weekly time", func(t *testing.T) {
+		cfg := base
+		cfg.Verify.Schedule = "weekly"
+		cfg.Verify.WeeklyDay = "monday"
+		cfg.Verify.WeeklyTime = "24:00"
+		if err := cfg.Validate(); err == nil || err.Error() != "verify.weekly_time must be in HH:MM (24-hour) format" {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("reject negative verify limit", func(t *testing.T) {
+		cfg := base
+		cfg.Verify.Schedule = "manual"
+		cfg.Verify.Limit = -1
+		if err := cfg.Validate(); err == nil || err.Error() != "verify.limit must be >= 0" {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("reject negative verify sample", func(t *testing.T) {
+		cfg := base
+		cfg.Verify.Schedule = "manual"
+		cfg.Verify.Sample = -1
+		if err := cfg.Validate(); err == nil || err.Error() != "verify.sample must be >= 0" {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("accept valid verify settings", func(t *testing.T) {
+		cfg := base
+		cfg.Verify.Schedule = "daily"
+		cfg.Verify.DailyTime = "08:30"
+		cfg.Verify.Prefix = "/Users/me/Documents"
+		cfg.Verify.Limit = 100
+		cfg.Verify.Sample = 10
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("validate returned unexpected error: %v", err)
+		}
+	})
 }

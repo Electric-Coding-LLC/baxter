@@ -22,6 +22,7 @@ func (d *Daemon) newHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/status", d.handleStatus)
 	mux.HandleFunc("/v1/backup/run", d.requireIPCWriteAuth(d.handleRunBackup))
+	mux.HandleFunc("/v1/verify/run", d.requireIPCWriteAuth(d.handleRunVerify))
 	mux.HandleFunc("/v1/config/reload", d.requireIPCWriteAuth(d.handleReloadConfig))
 	mux.HandleFunc("/v1/snapshots", d.handleSnapshots)
 	mux.HandleFunc("/v1/restore/list", d.handleRestoreList)
@@ -50,6 +51,24 @@ func (d *Daemon) handleRunBackup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		d.writeError(w, http.StatusBadRequest, "backup_start_failed", err.Error())
+		return
+	}
+
+	d.writeJSON(w, http.StatusAccepted, map[string]string{"status": "started"})
+}
+
+func (d *Daemon) handleRunVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		d.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+		return
+	}
+
+	if err := d.triggerVerify(); err != nil {
+		if errors.Is(err, errVerifyAlreadyRunning) {
+			d.writeError(w, http.StatusConflict, "verify_running", err.Error())
+			return
+		}
+		d.writeError(w, http.StatusBadRequest, "verify_start_failed", err.Error())
 		return
 	}
 
