@@ -6,15 +6,17 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"baxter/internal/backup"
 )
 
 func (d *Daemon) runScheduler(ctx context.Context) {
 	for {
 		now := d.now()
-		schedule := d.scheduleConfig()
+		schedule := d.backupScheduleConfig()
 		nextRun, enabled := nextScheduledRun(schedule, now)
 		if !enabled {
-			fmt.Printf("scheduler disabled: schedule=%s\n", schedule.Schedule)
+			fmt.Printf("backup scheduler disabled: schedule=%s\n", schedule.Schedule)
 			d.setNextScheduledAt(time.Time{})
 			select {
 			case <-ctx.Done():
@@ -29,13 +31,13 @@ func (d *Daemon) runScheduler(ctx context.Context) {
 		if wait < 0 {
 			wait = 0
 		}
-		fmt.Printf("scheduler next run: schedule=%s next=%s wait=%s\n", schedule.Schedule, nextRun.Format(time.RFC3339), wait)
+		fmt.Printf("backup scheduler next run: schedule=%s next=%s wait=%s\n", schedule.Schedule, nextRun.Format(time.RFC3339), wait)
 
 		select {
 		case <-ctx.Done():
 			return
 		case <-d.scheduleChanged:
-			fmt.Printf("scheduler config changed: recomputing next run\n")
+			fmt.Printf("backup scheduler config changed: recomputing next run\n")
 			continue
 		case <-d.timerAfter(wait):
 			if err := d.triggerBackup(); err != nil && !errors.Is(err, errBackupAlreadyRunning) {
@@ -45,11 +47,48 @@ func (d *Daemon) runScheduler(ctx context.Context) {
 	}
 }
 
+func (d *Daemon) runVerifyScheduler(ctx context.Context) {
+	for {
+		now := d.now()
+		schedule := d.verifyScheduleConfig()
+		nextRun, enabled := nextScheduledRun(schedule, now)
+		if !enabled {
+			fmt.Printf("verify scheduler disabled: schedule=%s\n", schedule.Schedule)
+			d.setNextVerifyAt(time.Time{})
+			select {
+			case <-ctx.Done():
+				return
+			case <-d.verifyScheduleChanged:
+				continue
+			}
+		}
+
+		d.setNextVerifyAt(nextRun)
+		wait := time.Until(nextRun)
+		if wait < 0 {
+			wait = 0
+		}
+		fmt.Printf("verify scheduler next run: schedule=%s next=%s wait=%s\n", schedule.Schedule, nextRun.Format(time.RFC3339), wait)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.verifyScheduleChanged:
+			fmt.Printf("verify scheduler config changed: recomputing next run\n")
+			continue
+		case <-d.timerAfter(wait):
+			if err := d.triggerVerify(); err != nil && !errors.Is(err, errVerifyAlreadyRunning) {
+				d.setVerifyFailed(err, backup.VerifyResult{})
+			}
+		}
+	}
+}
+
 func (d *Daemon) now() time.Time {
 	return d.clockNow()
 }
 
-func (d *Daemon) scheduleConfig() scheduleConfig {
+func (d *Daemon) backupScheduleConfig() scheduleConfig {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return scheduleConfig{
@@ -57,6 +96,17 @@ func (d *Daemon) scheduleConfig() scheduleConfig {
 		DailyTime:  d.cfg.DailyTime,
 		WeeklyDay:  d.cfg.WeeklyDay,
 		WeeklyTime: d.cfg.WeeklyTime,
+	}
+}
+
+func (d *Daemon) verifyScheduleConfig() scheduleConfig {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return scheduleConfig{
+		Schedule:   d.cfg.Verify.Schedule,
+		DailyTime:  d.cfg.Verify.DailyTime,
+		WeeklyDay:  d.cfg.Verify.WeeklyDay,
+		WeeklyTime: d.cfg.Verify.WeeklyTime,
 	}
 }
 

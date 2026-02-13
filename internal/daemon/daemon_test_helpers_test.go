@@ -33,6 +33,21 @@ func waitForNextScheduledAt(t *testing.T, d *Daemon, want string) {
 	}
 }
 
+func waitForNextVerifyAt(t *testing.T, d *Daemon, want string) {
+	t.Helper()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		got := d.snapshot().NextVerifyAt
+		if got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("next_verify_at mismatch: got %q want %q", got, want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func testManifestPath(t *testing.T) string {
 	t.Helper()
 	path, err := state.ManifestPath()

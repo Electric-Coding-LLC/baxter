@@ -19,6 +19,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - Configure backup roots.
 - Run manual backup.
 - Scheduled backups (daily/weekly).
+- Scheduled integrity verify runs.
 - Incremental upload using a local manifest.
 - End-to-end encryption.
 - Restore a file or folder.
@@ -38,6 +39,14 @@ A simple, secure macOS backup utility with an S3 backend.
 - `schedule = "daily"` requires `daily_time` in `HH:MM` (24-hour local time)
 - `schedule = "weekly"` requires `weekly_day` (`sunday`..`saturday`) and `weekly_time` in `HH:MM`
 - `schedule = "manual"` disables automatic runs
+- Verify schedule fields:
+- `[verify].schedule = "daily"` requires `[verify].daily_time` in `HH:MM`
+- `[verify].schedule = "weekly"` requires `[verify].weekly_day` and `[verify].weekly_time`
+- `[verify].schedule = "manual"` disables automatic verify runs
+- Verify scope controls:
+- `[verify].prefix` restricts verification to matching manifest paths
+- `[verify].limit` caps entries checked after filtering (`0` = all)
+- `[verify].sample` evenly samples filtered entries before limit (`0` = all)
 - Encryption key resolution order:
 - `BAXTER_PASSPHRASE` (env override)
 - macOS Keychain item from `[encryption]` (`keychain_service` + `keychain_account`)
@@ -75,19 +84,25 @@ A simple, secure macOS backup utility with an S3 backend.
 - `manual`: no automatic runs
 - `daily`: runs at the same local wall-clock time each day while daemon is running
 - `weekly`: runs at the same local weekday/time each week while daemon is running
+- Verify scheduler behavior (from `[verify]` config):
+- `manual`: no automatic verify runs
+- `daily`: verify runs at configured local daily time
+- `weekly`: verify runs at configured local weekday/time
 - `baxterd --once` runs a single backup pass and exits.
 - Run once now example:
 - `go run ./cmd/baxterd --once`
 - Endpoints:
 - `GET /v1/status`
-  - includes `state`, `last_backup_at`, optional `next_scheduled_at`, and `last_error`
+  - includes backup fields (`state`, `last_backup_at`, `next_scheduled_at`, `last_error`)
+  - includes verify fields (`verify_state`, `last_verify_at`, `next_verify_at`, `last_verify_error`, and last verify counters)
 - `POST /v1/backup/run`
+- `POST /v1/verify/run`
 - `GET /v1/snapshots?limit=n`
 - `GET /v1/restore/list?snapshot=latest|<id>|<RFC3339>&prefix=&contains=`
 - `POST /v1/restore/dry-run` (supports optional `snapshot` field)
 - `POST /v1/restore/run`
   - supports `path`, optional `to_dir`, optional `overwrite`, optional `verify_only`, optional `snapshot`
-- State-changing endpoints (`POST /v1/backup/run`, `POST /v1/config/reload`, `POST /v1/restore/run`) enforce `X-Baxter-Token` when an IPC token is configured.
+- State-changing endpoints (`POST /v1/backup/run`, `POST /v1/verify/run`, `POST /v1/config/reload`, `POST /v1/restore/run`) enforce `X-Baxter-Token` when an IPC token is configured.
 - Restore JSON request bodies are capped at 1 MiB.
 - IPC HTTP server applies explicit timeout/header limits (`ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `MaxHeaderBytes`) for DoS hardening.
 - Error responses use JSON: `{"code":"...", "message":"..."}`.
@@ -146,8 +161,10 @@ A simple, secure macOS backup utility with an S3 backend.
 - Daemon API + scheduling contract:
 - `go test ./internal/daemon -run TestDaemonErrorContract -v`
 - `go test ./internal/daemon -run TestReloadConfigEndpointUpdatesNextScheduledAtWithFixedClock -v`
+- `go test ./internal/daemon -run TestReloadConfigEndpointUpdatesNextVerifyAtWithFixedClock -v`
 - `go test ./internal/daemon -run TestDaemonEndToEndReloadScheduledTriggerAndStatus -v`
 - `go test ./internal/daemon -run TestRestoreRunEndpoint -v`
+- `go test ./internal/daemon -run TestRunVerifyEndpointSuccessUpdatesStatus -v`
 - launchd/IPC runtime smoke:
 - `./scripts/smoke-launchd-ipc.sh`
 - macOS app settings:

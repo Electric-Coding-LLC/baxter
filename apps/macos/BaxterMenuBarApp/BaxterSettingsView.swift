@@ -117,6 +117,85 @@ struct BaxterSettingsView: View {
                         }
                     }
 
+                    SettingsCard(title: "Verify", subtitle: "Schedule and scope integrity verification runs.") {
+                        VStack(spacing: 8) {
+                            HStack(alignment: .center, spacing: 12) {
+                                Text("Verify Schedule")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 110, alignment: .leading)
+                                Picker("Verify Schedule", selection: $model.verifySchedule) {
+                                    ForEach(BackupSchedule.allCases) { schedule in
+                                        Text(schedule.rawValue.capitalized).tag(schedule)
+                                    }
+                                }
+                                .labelsHidden()
+                                .frame(width: 150, alignment: .leading)
+                                .onChange(of: model.verifySchedule) { _, _ in
+                                    model.validateDraft()
+                                }
+                                Spacer()
+                            }
+
+                            if model.verifySchedule == .daily {
+                                SettingRow(label: "Daily Time", error: model.validationMessage(for: .verifyDailyTime)) {
+                                    TextField("HH:MM", text: $model.verifyDailyTime)
+                                        .font(.system(.body, design: .monospaced))
+                                        .frame(width: 90, alignment: .leading)
+                                        .onChange(of: model.verifyDailyTime) { _, _ in
+                                            model.validateDraft()
+                                        }
+                                }
+                            }
+
+                            if model.verifySchedule == .weekly {
+                                SettingRow(label: "Weekly Day", error: model.validationMessage(for: .verifyWeeklyDay)) {
+                                    Picker("Weekly Day", selection: $model.verifyWeeklyDay) {
+                                        ForEach(WeekdayOption.allCases) { day in
+                                            Text(day.rawValue.capitalized).tag(day)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .frame(width: 140, alignment: .leading)
+                                    .onChange(of: model.verifyWeeklyDay) { _, _ in
+                                        model.validateDraft()
+                                    }
+                                }
+                                SettingRow(label: "Weekly Time", error: model.validationMessage(for: .verifyWeeklyTime)) {
+                                    TextField("HH:MM", text: $model.verifyWeeklyTime)
+                                        .font(.system(.body, design: .monospaced))
+                                        .frame(width: 90, alignment: .leading)
+                                        .onChange(of: model.verifyWeeklyTime) { _, _ in
+                                            model.validateDraft()
+                                        }
+                                }
+                            }
+
+                            SettingRow(label: "Prefix", error: nil) {
+                                TextField("/Users/you/Documents (optional)", text: $model.verifyPrefix)
+                                    .font(.system(.body, design: .monospaced))
+                                    .onChange(of: model.verifyPrefix) { _, _ in
+                                        model.validateDraft()
+                                    }
+                            }
+                            SettingRow(label: "Limit", error: model.validationMessage(for: .verifyLimit)) {
+                                TextField("0", text: $model.verifyLimit)
+                                    .font(.system(.body, design: .monospaced))
+                                    .frame(width: 100, alignment: .leading)
+                                    .onChange(of: model.verifyLimit) { _, _ in
+                                        model.validateDraft()
+                                    }
+                            }
+                            SettingRow(label: "Sample", error: model.validationMessage(for: .verifySample)) {
+                                TextField("0", text: $model.verifySample)
+                                    .font(.system(.body, design: .monospaced))
+                                    .frame(width: 100, alignment: .leading)
+                                    .onChange(of: model.verifySample) { _, _ in
+                                        model.validateDraft()
+                                    }
+                            }
+                        }
+                    }
+
                     SettingsCard(title: "S3", subtitle: "Leave bucket empty for local object storage.") {
                         VStack(spacing: 8) {
                             SettingRow(label: "Endpoint", error: model.validationMessage(for: .s3Endpoint)) {

@@ -30,3 +30,16 @@ keychain_account = "default"
 [retention]
 # Number of manifest snapshots to keep (0 = keep all).
 manifest_snapshots = 30
+
+[verify]
+# manual | daily | weekly
+schedule = "manual"
+# Used when verify.schedule="daily" (HH:MM local 24-hour time)
+daily_time = "03:00"
+# Used when verify.schedule="weekly"
+weekly_day = "sunday"
+weekly_time = "03:00"
+# Optional filter/limits for verify runs (0 = no limit/no sampling).
+prefix = ""
+limit = 0
+sample = 0

@@ -121,6 +121,27 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertEqual(model.backupRootWarning(for: "relative/path"), "Folder path must be absolute.")
         XCTAssertEqual(model.validationMessage(for: .backupRoots), "Fix invalid backup folders before saving.")
     }
+
+    func testVerifyDailyScheduleRequiresValidTime() {
+        let model = BaxterSettingsModel()
+        model.verifySchedule = .daily
+        model.verifyDailyTime = "9:0"
+
+        model.validateDraft()
+
+        XCTAssertEqual(model.validationMessage(for: .verifyDailyTime), "Verify daily time must be HH:MM (24-hour).")
+        XCTAssertFalse(model.canSave)
+    }
+
+    func testVerifyLimitMustBeNonNegativeInteger() {
+        let model = BaxterSettingsModel()
+        model.verifyLimit = "-1"
+
+        model.validateDraft()
+
+        XCTAssertEqual(model.validationMessage(for: .verifyLimit), "Verify limit must be a non-negative integer.")
+        XCTAssertFalse(model.canSave)
+    }
 }
 
 @MainActor
@@ -241,6 +262,33 @@ final class BackupStatusModelRestoreTests: XCTestCase {
 
         let request = try XCTUnwrap(
             MockURLProtocol.requests().first { $0.url?.path == "/v1/restore/run" }
+        )
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
+    }
+
+    func testRunVerifyIncludesIPCAuthHeaderWhenTokenConfigured() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 202, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            ipcToken: "token-123",
+            autoStartPolling: false
+        )
+
+        model.runVerify()
+        await waitUntil("verify run request") {
+            MockURLProtocol.requests().contains(where: { $0.url?.path == "/v1/verify/run" })
+        }
+
+        let request = try XCTUnwrap(
+            MockURLProtocol.requests().first { $0.url?.path == "/v1/verify/run" }
         )
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
     }
