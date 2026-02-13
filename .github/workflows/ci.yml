@@ -27,6 +27,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/.ci/DerivedData
+      RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterMenuBarApp.xcresult
     steps:
       - uses: actions/checkout@v4
       - name: Cache Xcode DerivedData
@@ -37,4 +38,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-
       - name: Run macOS app tests
-        run: xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" test
+        run: |
+          mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
+          xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" test
+      - name: Upload macOS test result bundle (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-xcresult-${{ github.run_id }}
+          path: ${{ env.RESULT_BUNDLE_PATH }}
+          if-no-files-found: warn
