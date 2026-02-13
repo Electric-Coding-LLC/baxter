@@ -48,7 +48,10 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 		return RunResult{}, fmt.Errorf("load manifest: %w", err)
 	}
 
-	current, err := BuildManifest(cfg.BackupRoots)
+	current, err := BuildManifestWithOptions(cfg.BackupRoots, BuildOptions{
+		ExcludePaths: cfg.ExcludePaths,
+		ExcludeGlobs: cfg.ExcludeGlobs,
+	})
 	if err != nil {
 		return RunResult{}, fmt.Errorf("build manifest: %w", err)
 	}

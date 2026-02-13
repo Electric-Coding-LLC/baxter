@@ -64,6 +64,44 @@ struct BaxterSettingsView: View {
                                     .foregroundStyle(.red)
                             }
 
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Exclude Paths (absolute, one per line)")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                                TextEditor(text: $model.excludePathsText)
+                                    .font(.system(.body, design: .monospaced))
+                                    .frame(minHeight: 68, maxHeight: 88)
+                                    .padding(6)
+                                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                                    .onChange(of: model.excludePathsText) { _, _ in
+                                        model.validateDraft()
+                                    }
+                                if let error = model.validationMessage(for: .excludePaths) {
+                                    Text(error)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Exclude Globs (one per line)")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                                TextEditor(text: $model.excludeGlobsText)
+                                    .font(.system(.body, design: .monospaced))
+                                    .frame(minHeight: 68, maxHeight: 88)
+                                    .padding(6)
+                                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                                    .onChange(of: model.excludeGlobsText) { _, _ in
+                                        model.validateDraft()
+                                    }
+                                if let error = model.validationMessage(for: .excludeGlobs) {
+                                    Text(error)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
+                            }
+
                             HStack(alignment: .center, spacing: 12) {
                                 Text("Backup Schedule")
                                     .foregroundStyle(.secondary)

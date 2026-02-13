@@ -146,6 +146,62 @@ func TestRunKeepsRemovedFileObjectsForSnapshotRestore(t *testing.T) {
 	}
 }
 
+func TestRunRespectsExcludePathsAndGlobs(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	snapshotDir := filepath.Join(t.TempDir(), "manifests")
+	objectsDir := filepath.Join(t.TempDir(), "objects")
+	key := []byte("01234567890123456789012345678901")
+
+	includedPath := filepath.Join(root, "notes.txt")
+	excludedDir := filepath.Join(root, "cache")
+	excludedPath := filepath.Join(excludedDir, "ignore.txt")
+	excludedByGlobPath := filepath.Join(root, "debug.log")
+	if err := os.WriteFile(includedPath, []byte("include"), 0o600); err != nil {
+		t.Fatalf("write included source file: %v", err)
+	}
+	if err := os.MkdirAll(excludedDir, 0o755); err != nil {
+		t.Fatalf("mkdir excluded dir: %v", err)
+	}
+	if err := os.WriteFile(excludedPath, []byte("exclude"), 0o600); err != nil {
+		t.Fatalf("write excluded source file: %v", err)
+	}
+	if err := os.WriteFile(excludedByGlobPath, []byte("exclude"), 0o600); err != nil {
+		t.Fatalf("write excluded glob source file: %v", err)
+	}
+
+	cfg := &config.Config{
+		BackupRoots:  []string{root},
+		ExcludePaths: []string{excludedDir},
+		ExcludeGlobs: []string{"*.log"},
+		S3:           config.S3Config{},
+		Encryption:   config.EncryptionConfig{},
+	}
+	store := storage.NewLocalClient(objectsDir)
+
+	result, err := Run(cfg, RunOptions{
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: 30,
+		EncryptionKey:     key,
+		Store:             store,
+	})
+	if err != nil {
+		t.Fatalf("run backup with exclusions: %v", err)
+	}
+	if result.Uploaded != 1 || result.Removed != 0 || result.Total != 1 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+
+	manifest, err := LoadManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	if len(manifest.Entries) != 1 || manifest.Entries[0].Path != includedPath {
+		t.Fatalf("unexpected manifest entries: %#v", manifest.Entries)
+	}
+}
+
 func TestRunPrunesSnapshotsByRetention(t *testing.T) {
 	root := t.TempDir()
 	manifestPath := filepath.Join(t.TempDir(), "manifest.json")

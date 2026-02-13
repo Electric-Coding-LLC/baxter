@@ -122,6 +122,72 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertEqual(model.validationMessage(for: .backupRoots), "Fix invalid backup folders before saving.")
     }
 
+    func testExcludePathsMustBeAbsolute() {
+        let model = BaxterSettingsModel()
+        model.excludePathsText = "relative/path\n/Users/me/Documents/Cache"
+
+        model.validateDraft()
+
+        XCTAssertEqual(model.validationMessage(for: .excludePaths), "Exclude paths must be absolute (one per line).")
+        XCTAssertFalse(model.canSave)
+    }
+
+    func testExcludeGlobPatternValidation() {
+        let model = BaxterSettingsModel()
+        model.excludeGlobsText = "["
+
+        model.validateDraft()
+
+        XCTAssertEqual(model.validationMessage(for: .excludeGlobs), "Exclude glob contains an invalid pattern.")
+        XCTAssertFalse(model.canSave)
+    }
+
+    func testExcludeGlobPatternValidationRejectsUnmatchedClosingBracket() {
+        let model = BaxterSettingsModel()
+        model.excludeGlobsText = "]"
+
+        model.validateDraft()
+
+        XCTAssertEqual(model.validationMessage(for: .excludeGlobs), "Exclude glob contains an invalid pattern.")
+        XCTAssertFalse(model.canSave)
+    }
+
+    func testDecodeConfigParsesMultiLineExcludeGlobsWithBracketClass() {
+        let toml = """
+        backup_roots = [
+          "/Users/me/Documents",
+        ]
+        exclude_paths = []
+        exclude_globs = [
+          "[0-9]*.log",
+          "*.tmp",
+        ]
+        schedule = "manual"
+
+        [s3]
+        endpoint = ""
+        region = ""
+        bucket = ""
+        prefix = "baxter/"
+
+        [encryption]
+        keychain_service = "baxter"
+        keychain_account = "default"
+
+        [verify]
+        schedule = "manual"
+        daily_time = "09:00"
+        weekly_day = "sunday"
+        weekly_time = "09:00"
+        prefix = ""
+        limit = 0
+        sample = 0
+        """
+
+        let config = decodeBaxterConfig(from: toml)
+        XCTAssertEqual(config.excludeGlobs, ["[0-9]*.log", "*.tmp"])
+    }
+
     func testVerifyDailyScheduleRequiresValidTime() {
         let model = BaxterSettingsModel()
         model.verifySchedule = .daily

@@ -23,6 +23,8 @@ enum WeekdayOption: String, CaseIterable, Identifiable {
 
 struct BaxterConfig {
     var backupRoots: [String]
+    var excludePaths: [String]
+    var excludeGlobs: [String]
     var schedule: BackupSchedule
     var dailyTime: String
     var weeklyDay: WeekdayOption
@@ -43,6 +45,8 @@ struct BaxterConfig {
 
     static let `default` = BaxterConfig(
         backupRoots: [],
+        excludePaths: [],
+        excludeGlobs: [],
         schedule: .daily,
         dailyTime: "09:00",
         weeklyDay: .sunday,
@@ -65,6 +69,8 @@ struct BaxterConfig {
 
 enum SettingsField: Hashable {
     case backupRoots
+    case excludePaths
+    case excludeGlobs
     case dailyTime
     case weeklyDay
     case weeklyTime

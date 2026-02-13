@@ -35,6 +35,8 @@ A simple, secure macOS backup utility with an S3 backend.
 - Initialize config with your real backup roots:
 - `./scripts/init-config.sh "/Users/<you>/Documents" "/Users/<you>/Pictures"`
 - `backup_roots` entries must be absolute, non-empty paths.
+- `exclude_paths` entries are optional absolute paths to skip (files/folders).
+- `exclude_globs` entries are optional glob patterns applied to names and absolute paths (for example: `*.tmp`, `.DS_Store`, `node_modules`).
 - Schedule fields:
 - `schedule = "daily"` requires `daily_time` in `HH:MM` (24-hour local time)
 - `schedule = "weekly"` requires `weekly_day` (`sunday`..`saturday`) and `weekly_time` in `HH:MM`
@@ -60,7 +62,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - `0` disables pruning and keeps all snapshots
 
 ## CLI (current)
-- `baxter backup run`: scan configured roots, encrypt changed files, and store objects.
+- `baxter backup run`: scan configured roots, skip configured excludes, encrypt changed files, and store objects.
 - `baxter backup status`: show manifest/object counts.
 - `baxter snapshot list [--limit n]`: list available manifest snapshots (newest first).
 - `baxter gc [--dry-run]`: delete objects not referenced by latest/retained manifest sources.

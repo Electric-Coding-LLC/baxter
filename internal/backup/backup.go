@@ -64,12 +64,29 @@ func SaveManifest(path string, m *Manifest) error {
 }
 
 func BuildManifest(roots []string) (*Manifest, error) {
+	return BuildManifestWithOptions(roots, BuildOptions{})
+}
+
+func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, error) {
 	entries := make([]ManifestEntry, 0)
+	matcher := newExclusionMatcher(opts)
 
 	for _, root := range roots {
+		cleanRoot := filepath.Clean(root)
+		if matcher.isExcluded(cleanRoot) {
+			continue
+		}
+
 		walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
+			}
+			cleanPath := filepath.Clean(path)
+			if matcher.isExcluded(cleanPath) {
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
 			}
 			if d.IsDir() {
 				return nil
@@ -86,7 +103,7 @@ func BuildManifest(roots []string) (*Manifest, error) {
 			}
 
 			entries = append(entries, ManifestEntry{
-				Path:    filepath.Clean(path),
+				Path:    cleanPath,
 				Size:    info.Size(),
 				Mode:    info.Mode(),
 				ModTime: info.ModTime().UTC(),
