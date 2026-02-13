@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   go-test:
@@ -17,3 +18,10 @@ jobs:
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - run: govulncheck ./...
       - run: go test ./...
+
+  macos-app-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run macOS app tests
+        run: xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' test
