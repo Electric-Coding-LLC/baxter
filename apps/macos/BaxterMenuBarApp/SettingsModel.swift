@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 final class BaxterSettingsModel: ObservableObject {
     @Published var backupRoots: [String] = []
+    @Published var excludePathsText: String = ""
+    @Published var excludeGlobsText: String = ""
     @Published var schedule: BackupSchedule = .daily
     @Published var dailyTime: String = "09:00"
     @Published var weeklyDay: WeekdayOption = .sunday
@@ -156,6 +158,8 @@ final class BaxterSettingsModel: ObservableObject {
 
     private func apply(_ config: BaxterConfig) {
         backupRoots = config.backupRoots
+        excludePathsText = config.excludePaths.joined(separator: "\n")
+        excludeGlobsText = config.excludeGlobs.joined(separator: "\n")
         schedule = config.schedule
         dailyTime = config.dailyTime
         weeklyDay = config.weeklyDay
@@ -216,9 +220,13 @@ final class BaxterSettingsModel: ObservableObject {
 
     private func draftConfig() -> BaxterConfig {
         let backupRoots = normalizedBackupRoots(backupRoots)
+        let excludePaths = normalizedLineEntries(excludePathsText)
+        let excludeGlobs = normalizedLineEntries(excludeGlobsText)
 
         var config = BaxterConfig(
             backupRoots: backupRoots,
+            excludePaths: excludePaths,
+            excludeGlobs: excludeGlobs,
             schedule: schedule,
             dailyTime: dailyTime.trimmingCharacters(in: .whitespacesAndNewlines),
             weeklyDay: weeklyDay,
@@ -265,6 +273,12 @@ final class BaxterSettingsModel: ObservableObject {
 
         if !backupRootWarnings.isEmpty {
             errors[.backupRoots] = "Fix invalid backup folders before saving."
+        }
+        if let message = firstInvalidExcludePathMessage(config.excludePaths) {
+            errors[.excludePaths] = message
+        }
+        if let message = firstInvalidExcludeGlobMessage(config.excludeGlobs) {
+            errors[.excludeGlobs] = message
         }
         switch config.schedule {
         case .daily:
@@ -334,6 +348,8 @@ final class BaxterSettingsModel: ObservableObject {
     private func firstValidationMessage(from errors: [SettingsField: String]) -> String? {
         let orderedFields: [SettingsField] = [
             .backupRoots,
+            .excludePaths,
+            .excludeGlobs,
             .dailyTime,
             .weeklyDay,
             .weeklyTime,
@@ -394,6 +410,65 @@ final class BaxterSettingsModel: ObservableObject {
             return nil
         }
         return parsed
+    }
+
+    private func normalizedLineEntries(_ text: String) -> [String] {
+        var seen: Set<String> = []
+        var values: [String] = []
+        for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                continue
+            }
+            if seen.contains(trimmed) {
+                continue
+            }
+            seen.insert(trimmed)
+            values.append(trimmed)
+        }
+        return values
+    }
+
+    private func firstInvalidExcludePathMessage(_ paths: [String]) -> String? {
+        for path in paths where !path.hasPrefix("/") {
+            return "Exclude paths must be absolute (one per line)."
+        }
+        return nil
+    }
+
+    private func firstInvalidExcludeGlobMessage(_ globs: [String]) -> String? {
+        for pattern in globs where !isValidGlobPattern(pattern) {
+            return "Exclude glob contains an invalid pattern."
+        }
+        return nil
+    }
+
+    private func isValidGlobPattern(_ pattern: String) -> Bool {
+        var escaped = false
+        var inClass = false
+
+        for character in pattern {
+            if escaped {
+                escaped = false
+                continue
+            }
+            if character == "\\" {
+                escaped = true
+                continue
+            }
+            if character == "[" {
+                inClass = true
+                continue
+            }
+            if character == "]" {
+                if !inClass {
+                    return false
+                }
+                inClass = false
+            }
+        }
+
+        return !escaped && !inClass
     }
 
 }

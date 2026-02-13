@@ -3,17 +3,27 @@ import Foundation
 func decodeBaxterConfig(from text: String) -> BaxterConfig {
     var config = BaxterConfig.default
     var section = ""
-    var collectingBackupRoots = false
-    var backupRootsBuffer = ""
+    var collectingArrayKey: String?
+    var arrayBuffer = ""
 
     for rawLine in text.components(separatedBy: .newlines) {
         let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if collectingBackupRoots {
-            backupRootsBuffer += "\n" + rawLine
-            if trimmed.contains("]") {
-                config.backupRoots = parseQuotedArray(from: backupRootsBuffer)
-                collectingBackupRoots = false
+        if let currentArrayKey = collectingArrayKey {
+            arrayBuffer += "\n" + rawLine
+            if hasRootArrayClosingBracket(in: rawLine) {
+                let values = parseQuotedArray(from: arrayBuffer)
+                switch currentArrayKey {
+                case "backup_roots":
+                    config.backupRoots = values
+                case "exclude_paths":
+                    config.excludePaths = values
+                case "exclude_globs":
+                    config.excludeGlobs = values
+                default:
+                    break
+                }
+                collectingArrayKey = nil
             }
             continue
         }
@@ -27,14 +37,24 @@ func decodeBaxterConfig(from text: String) -> BaxterConfig {
             continue
         }
 
-        if section.isEmpty, trimmed.hasPrefix("backup_roots") {
+        if section.isEmpty, let arrayKey = parseRootArrayKey(from: rawLine) {
             guard let equalsIndex = rawLine.firstIndex(of: "=") else { continue }
             let rhs = String(rawLine[rawLine.index(after: equalsIndex)...])
-            backupRootsBuffer = rhs
-            if rhs.contains("]") {
-                config.backupRoots = parseQuotedArray(from: backupRootsBuffer)
+            arrayBuffer = rhs
+            if hasRootArrayClosingBracket(in: rhs) {
+                let values = parseQuotedArray(from: arrayBuffer)
+                switch arrayKey {
+                case "backup_roots":
+                    config.backupRoots = values
+                case "exclude_paths":
+                    config.excludePaths = values
+                case "exclude_globs":
+                    config.excludeGlobs = values
+                default:
+                    break
+                }
             } else {
-                collectingBackupRoots = true
+                collectingArrayKey = arrayKey
             }
             continue
         }
@@ -122,6 +142,18 @@ func encodeBaxterConfig(_ config: BaxterConfig) -> String {
     }
     lines.append("]")
     lines.append("")
+    lines.append("exclude_paths = [")
+    for path in config.excludePaths {
+        lines.append("  \"\(escapeTomlString(path))\",")
+    }
+    lines.append("]")
+    lines.append("")
+    lines.append("exclude_globs = [")
+    for glob in config.excludeGlobs {
+        lines.append("  \"\(escapeTomlString(glob))\",")
+    }
+    lines.append("]")
+    lines.append("")
     lines.append("schedule = \"\(config.schedule.rawValue)\"")
     lines.append("daily_time = \"\(escapeTomlString(config.dailyTime))\"")
     lines.append("weekly_day = \"\(config.weeklyDay.rawValue)\"")
@@ -177,6 +209,53 @@ private func parseQuotedArray(from text: String) -> [String] {
     }
 
     return values
+}
+
+private func parseRootArrayKey(from line: String) -> String? {
+    guard let equalsIndex = line.firstIndex(of: "=") else {
+        return nil
+    }
+    let key = line[..<equalsIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+    switch key {
+    case "backup_roots", "exclude_paths", "exclude_globs":
+        return key
+    default:
+        return nil
+    }
+}
+
+private func hasRootArrayClosingBracket(in line: String) -> Bool {
+    var inString = false
+    var escaped = false
+
+    for character in line {
+        if inString {
+            if escaped {
+                escaped = false
+                continue
+            }
+            if character == "\\" {
+                escaped = true
+                continue
+            }
+            if character == "\"" {
+                inString = false
+            }
+            continue
+        }
+
+        if character == "\"" {
+            inString = true
+            continue
+        }
+        if character == "#" {
+            break
+        }
+        if character == "]" {
+            return true
+        }
+    }
+    return false
 }
 
 private func parseQuotedAssignment(from line: String) -> (String, String)? {

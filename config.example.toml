@@ -3,6 +3,13 @@ backup_roots = [
   "/Users/you/Pictures"
 ]
 
+# Absolute paths to skip (files or folders). Paths under these folders are skipped.
+exclude_paths = []
+
+# Glob patterns to skip by file/folder name or absolute path.
+# Examples: "*.tmp", ".DS_Store", "node_modules"
+exclude_globs = []
+
 # daily | weekly | manual
 schedule = "daily"
 # Used when schedule="daily" (HH:MM local 24-hour time)

@@ -11,15 +11,17 @@ import (
 )
 
 type Config struct {
-	BackupRoots []string         `toml:"backup_roots"`
-	Schedule    string           `toml:"schedule"`
-	DailyTime   string           `toml:"daily_time"`
-	WeeklyDay   string           `toml:"weekly_day"`
-	WeeklyTime  string           `toml:"weekly_time"`
-	S3          S3Config         `toml:"s3"`
-	Encryption  EncryptionConfig `toml:"encryption"`
-	Retention   RetentionConfig  `toml:"retention"`
-	Verify      VerifyConfig     `toml:"verify"`
+	BackupRoots  []string         `toml:"backup_roots"`
+	ExcludePaths []string         `toml:"exclude_paths"`
+	ExcludeGlobs []string         `toml:"exclude_globs"`
+	Schedule     string           `toml:"schedule"`
+	DailyTime    string           `toml:"daily_time"`
+	WeeklyDay    string           `toml:"weekly_day"`
+	WeeklyTime   string           `toml:"weekly_time"`
+	S3           S3Config         `toml:"s3"`
+	Encryption   EncryptionConfig `toml:"encryption"`
+	Retention    RetentionConfig  `toml:"retention"`
+	Verify       VerifyConfig     `toml:"verify"`
 }
 
 type S3Config struct {
@@ -50,11 +52,13 @@ type VerifyConfig struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		BackupRoots: []string{},
-		Schedule:    "daily",
-		DailyTime:   "09:00",
-		WeeklyDay:   "sunday",
-		WeeklyTime:  "09:00",
+		BackupRoots:  []string{},
+		ExcludePaths: []string{},
+		ExcludeGlobs: []string{},
+		Schedule:     "daily",
+		DailyTime:    "09:00",
+		WeeklyDay:    "sunday",
+		WeeklyTime:   "09:00",
 		S3: S3Config{
 			Endpoint: "",
 			Region:   "",
@@ -107,6 +111,12 @@ func (c *Config) ApplyDefaults() {
 	if len(c.BackupRoots) == 0 {
 		c.BackupRoots = []string{}
 	}
+	if len(c.ExcludePaths) == 0 {
+		c.ExcludePaths = []string{}
+	}
+	if len(c.ExcludeGlobs) == 0 {
+		c.ExcludeGlobs = []string{}
+	}
 	if c.Schedule == "" {
 		c.Schedule = "daily"
 	}
@@ -157,6 +167,19 @@ func (c *Config) Normalize() {
 		c.BackupRoots[i] = filepath.Clean(trimmed)
 	}
 
+	for i, path := range c.ExcludePaths {
+		trimmed := strings.TrimSpace(path)
+		if trimmed == "" {
+			c.ExcludePaths[i] = ""
+			continue
+		}
+		c.ExcludePaths[i] = filepath.Clean(trimmed)
+	}
+
+	for i, pattern := range c.ExcludeGlobs {
+		c.ExcludeGlobs[i] = strings.TrimSpace(pattern)
+	}
+
 	if c.S3.Prefix != "" && !strings.HasSuffix(c.S3.Prefix, "/") {
 		c.S3.Prefix += "/"
 	}
@@ -204,6 +227,22 @@ func (c *Config) Validate() error {
 		}
 		if !filepath.IsAbs(root) {
 			return fmt.Errorf("backup_roots[%d] must be an absolute path", i)
+		}
+	}
+	for i, path := range c.ExcludePaths {
+		if strings.TrimSpace(path) == "" {
+			return fmt.Errorf("exclude_paths[%d] must not be empty", i)
+		}
+		if !filepath.IsAbs(path) {
+			return fmt.Errorf("exclude_paths[%d] must be an absolute path", i)
+		}
+	}
+	for i, pattern := range c.ExcludeGlobs {
+		if strings.TrimSpace(pattern) == "" {
+			return fmt.Errorf("exclude_globs[%d] must not be empty", i)
+		}
+		if _, err := filepath.Match(pattern, "example"); err != nil {
+			return fmt.Errorf("exclude_globs[%d] invalid pattern: %v", i, err)
 		}
 	}
 

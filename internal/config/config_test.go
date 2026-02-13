@@ -18,6 +18,12 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if cfg.Schedule != "daily" {
 		t.Fatalf("unexpected default schedule: got %q want %q", cfg.Schedule, "daily")
 	}
+	if len(cfg.ExcludePaths) != 0 {
+		t.Fatalf("unexpected default exclude_paths: got %#v want empty", cfg.ExcludePaths)
+	}
+	if len(cfg.ExcludeGlobs) != 0 {
+		t.Fatalf("unexpected default exclude_globs: got %#v want empty", cfg.ExcludeGlobs)
+	}
 	if cfg.DailyTime != "09:00" {
 		t.Fatalf("unexpected default daily_time: got %q want %q", cfg.DailyTime, "09:00")
 	}
@@ -55,6 +61,8 @@ func TestLoadAppliesDefaultsAndNormalizes(t *testing.T) {
 	path := filepath.Join(dir, "config.toml")
 	content := strings.Join([]string{
 		"backup_roots = [\" /Users/test/Documents/../Pictures \"]",
+		"exclude_paths = [\" /Users/test/Documents/Downloads \", \" /Users/test/Documents/Downloads \"]",
+		"exclude_globs = [\" *.tmp \", \" *.tmp \", \" .DS_Store \"]",
 		"schedule = \"manual\"",
 		"daily_time = \" 07:30 \"",
 		"weekly_day = \" MONDAY \"",
@@ -101,6 +109,12 @@ func TestLoadAppliesDefaultsAndNormalizes(t *testing.T) {
 	}
 	if len(cfg.BackupRoots) != 1 || cfg.BackupRoots[0] != "/Users/test/Pictures" {
 		t.Fatalf("expected normalized backup root: got %#v", cfg.BackupRoots)
+	}
+	if len(cfg.ExcludePaths) != 2 || cfg.ExcludePaths[0] != "/Users/test/Documents/Downloads" || cfg.ExcludePaths[1] != "/Users/test/Documents/Downloads" {
+		t.Fatalf("expected normalized exclude_paths: got %#v", cfg.ExcludePaths)
+	}
+	if len(cfg.ExcludeGlobs) != 3 || cfg.ExcludeGlobs[0] != "*.tmp" || cfg.ExcludeGlobs[1] != "*.tmp" || cfg.ExcludeGlobs[2] != ".DS_Store" {
+		t.Fatalf("expected normalized exclude_globs: got %#v", cfg.ExcludeGlobs)
 	}
 	if cfg.Encryption.KeychainService != "baxter" {
 		t.Fatalf("expected default keychain service: got %q want %q", cfg.Encryption.KeychainService, "baxter")
@@ -350,6 +364,82 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			wantErr: "daily_time must be in HH:MM (24-hour) format",
+		},
+		{
+			name: "reject empty exclude path",
+			cfg: Config{
+				BackupRoots:  []string{"/Users/me/Documents"},
+				ExcludePaths: []string{""},
+				Schedule:     "daily",
+				DailyTime:    "09:00",
+				WeeklyDay:    "sunday",
+				WeeklyTime:   "09:00",
+				S3: S3Config{
+					Prefix: "baxter/",
+				},
+				Encryption: EncryptionConfig{
+					KeychainService: "svc",
+					KeychainAccount: "acct",
+				},
+			},
+			wantErr: "exclude_paths[0] must not be empty",
+		},
+		{
+			name: "reject relative exclude path",
+			cfg: Config{
+				BackupRoots:  []string{"/Users/me/Documents"},
+				ExcludePaths: []string{"./Downloads"},
+				Schedule:     "daily",
+				DailyTime:    "09:00",
+				WeeklyDay:    "sunday",
+				WeeklyTime:   "09:00",
+				S3: S3Config{
+					Prefix: "baxter/",
+				},
+				Encryption: EncryptionConfig{
+					KeychainService: "svc",
+					KeychainAccount: "acct",
+				},
+			},
+			wantErr: "exclude_paths[0] must be an absolute path",
+		},
+		{
+			name: "reject empty exclude glob",
+			cfg: Config{
+				BackupRoots:  []string{"/Users/me/Documents"},
+				ExcludeGlobs: []string{" "},
+				Schedule:     "daily",
+				DailyTime:    "09:00",
+				WeeklyDay:    "sunday",
+				WeeklyTime:   "09:00",
+				S3: S3Config{
+					Prefix: "baxter/",
+				},
+				Encryption: EncryptionConfig{
+					KeychainService: "svc",
+					KeychainAccount: "acct",
+				},
+			},
+			wantErr: "exclude_globs[0] must not be empty",
+		},
+		{
+			name: "reject invalid exclude glob pattern",
+			cfg: Config{
+				BackupRoots:  []string{"/Users/me/Documents"},
+				ExcludeGlobs: []string{"["},
+				Schedule:     "daily",
+				DailyTime:    "09:00",
+				WeeklyDay:    "sunday",
+				WeeklyTime:   "09:00",
+				S3: S3Config{
+					Prefix: "baxter/",
+				},
+				Encryption: EncryptionConfig{
+					KeychainService: "svc",
+					KeychainAccount: "acct",
+				},
+			},
+			wantErr: "exclude_globs[0] invalid pattern: syntax error in pattern",
 		},
 		{
 			name: "reject missing weekly day",
