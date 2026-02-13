@@ -9,10 +9,13 @@ import (
 	"baxter/internal/storage"
 )
 
+const defaultUploadMaxAttempts = 3
+
 type RunOptions struct {
 	ManifestPath      string
 	SnapshotDir       string
 	SnapshotRetention int
+	UploadMaxAttempts int
 	EncryptionKey     []byte
 	Store             storage.ObjectStore
 }
@@ -60,7 +63,8 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 		if err != nil {
 			return RunResult{}, fmt.Errorf("encrypt file %s: %w", entry.Path, err)
 		}
-		if err := opts.Store.PutObject(ObjectKeyForPath(entry.Path), encrypted); err != nil {
+		objectKey := ObjectKeyForPath(entry.Path)
+		if err := putObjectWithRetry(opts.Store, objectKey, encrypted, opts.effectiveUploadMaxAttempts()); err != nil {
 			return RunResult{}, fmt.Errorf("store object %s: %w", entry.Path, err)
 		}
 	}
@@ -80,4 +84,27 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 		Removed:  len(plan.RemovedPaths),
 		Total:    len(current.Entries),
 	}, nil
+}
+
+func (o RunOptions) effectiveUploadMaxAttempts() int {
+	if o.UploadMaxAttempts <= 0 {
+		return defaultUploadMaxAttempts
+	}
+	return o.UploadMaxAttempts
+}
+
+func putObjectWithRetry(store storage.ObjectStore, key string, data []byte, maxAttempts int) error {
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := store.PutObject(key, data); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+	}
+	return lastErr
 }
