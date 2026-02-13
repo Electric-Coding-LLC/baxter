@@ -8,9 +8,9 @@ import (
 
 const ipcTokenHeader = "X-Baxter-Token"
 
-func (d *Daemon) requireIPCWriteAuth(next http.HandlerFunc) http.HandlerFunc {
+func (d *Daemon) requireIPCAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !d.authorizeIPCWriteRequest(r) {
+		if !d.authorizeIPCRequest(r) {
 			d.writeError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid IPC token")
 			return
 		}
@@ -18,12 +18,17 @@ func (d *Daemon) requireIPCWriteAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (d *Daemon) authorizeIPCWriteRequest(r *http.Request) bool {
+func (d *Daemon) requireIPCWriteAuth(next http.HandlerFunc) http.HandlerFunc {
+	return d.requireIPCAuth(next)
+}
+
+func (d *Daemon) authorizeIPCRequest(r *http.Request) bool {
 	d.mu.Lock()
-	token := strings.TrimSpace(d.ipcAuthToken)
+	tokenConfig := d.ipcAuthToken
 	d.mu.Unlock()
 
-	if token == "" {
+	tokens := parseIPCAuthTokens(tokenConfig)
+	if len(tokens) == 0 {
 		return true
 	}
 
@@ -32,5 +37,26 @@ func (d *Daemon) authorizeIPCWriteRequest(r *http.Request) bool {
 		return false
 	}
 
-	return subtle.ConstantTimeCompare([]byte(token), []byte(candidate)) == 1
+	matched := 0
+	for _, token := range tokens {
+		matched |= subtle.ConstantTimeCompare([]byte(token), []byte(candidate))
+	}
+	return matched == 1
+}
+
+func (d *Daemon) authorizeIPCWriteRequest(r *http.Request) bool {
+	return d.authorizeIPCRequest(r)
+}
+
+func parseIPCAuthTokens(raw string) []string {
+	parts := strings.Split(raw, ",")
+	tokens := make([]string, 0, len(parts))
+	for _, part := range parts {
+		token := strings.TrimSpace(part)
+		if token == "" {
+			continue
+		}
+		tokens = append(tokens, token)
+	}
+	return tokens
 }
