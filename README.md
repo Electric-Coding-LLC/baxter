@@ -118,10 +118,13 @@ A simple, secure macOS backup utility with an S3 backend.
 ## Daemon Autostart (macOS)
 - Install and start launchd agent:
 - `./scripts/install-launchd.sh`
+- Optional: enable IPC token auth for launchd-managed daemon by setting `BAXTER_IPC_TOKEN` before install.
+- Example: `BAXTER_IPC_TOKEN="current-token,next-token" ./scripts/install-launchd.sh`
 - Uninstall launchd agent:
 - `./scripts/uninstall-launchd.sh`
 - One-command smoke check:
 - `./scripts/smoke-launchd-ipc.sh`
+- If IPC token auth is enabled, set `BAXTER_IPC_TOKEN` before running the smoke check; the script sends `X-Baxter-Token` using the first comma-separated token.
 - Installed paths:
 - LaunchAgent plist: `~/Library/LaunchAgents/com.electriccoding.baxterd.plist`
 - Daemon binary: `~/Library/Application Support/baxter/bin/baxterd`

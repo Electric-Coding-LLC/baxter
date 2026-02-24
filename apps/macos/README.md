@@ -15,8 +15,10 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - The menu includes daemon lifecycle controls (`Start Daemon`, `Stop Daemon`) using launchd (`com.electriccoding.baxterd`).
 - Recommended local daemon setup uses launchd via:
 - `./scripts/install-launchd.sh`
+- Optional: set `BAXTER_IPC_TOKEN` before install to start the daemon with IPC token auth.
 - Operational smoke check:
 - `./scripts/smoke-launchd-ipc.sh`
+- If IPC token auth is enabled, set `BAXTER_IPC_TOKEN` before running the smoke check.
 - The app includes a settings window (via `Open Settings`) that edits `~/Library/Application Support/baxter/config.toml`.
 
 ## Next Steps
