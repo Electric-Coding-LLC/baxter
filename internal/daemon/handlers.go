@@ -20,13 +20,13 @@ const maxJSONRequestBodyBytes = 1 << 20
 
 func (d *Daemon) newHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/status", d.handleStatus)
+	mux.HandleFunc("/v1/status", d.requireIPCAuth(d.handleStatus))
 	mux.HandleFunc("/v1/backup/run", d.requireIPCWriteAuth(d.handleRunBackup))
 	mux.HandleFunc("/v1/verify/run", d.requireIPCWriteAuth(d.handleRunVerify))
 	mux.HandleFunc("/v1/config/reload", d.requireIPCWriteAuth(d.handleReloadConfig))
-	mux.HandleFunc("/v1/snapshots", d.handleSnapshots)
-	mux.HandleFunc("/v1/restore/list", d.handleRestoreList)
-	mux.HandleFunc("/v1/restore/dry-run", d.handleRestoreDryRun)
+	mux.HandleFunc("/v1/snapshots", d.requireIPCAuth(d.handleSnapshots))
+	mux.HandleFunc("/v1/restore/list", d.requireIPCAuth(d.handleRestoreList))
+	mux.HandleFunc("/v1/restore/dry-run", d.requireIPCAuth(d.handleRestoreDryRun))
 	mux.HandleFunc("/v1/restore/run", d.requireIPCWriteAuth(d.handleRestoreRun))
 	return mux
 }

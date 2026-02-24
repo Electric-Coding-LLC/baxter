@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24.x"
+          go-version: "1.24.13"
           cache: true
       - run: go mod download
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -41,6 +41,19 @@ jobs:
         run: |
           mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
           xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" test
+      - name: Run launchd IPC smoke check
+        env:
+          BAXTER_IPC_TOKEN: ci-smoke-current-token,ci-smoke-next-token
+        run: |
+          set -euo pipefail
+          if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+            echo "Skipping launchd smoke check: gui/$(id -u) domain unavailable on runner."
+            exit 0
+          fi
+          trap './scripts/uninstall-launchd.sh' EXIT
+          ./scripts/init-config.sh "$GITHUB_WORKSPACE"
+          ./scripts/install-launchd.sh
+          ./scripts/smoke-launchd-ipc.sh
       - name: Upload macOS test result bundle (on failure)
         if: failure()
         uses: actions/upload-artifact@v4

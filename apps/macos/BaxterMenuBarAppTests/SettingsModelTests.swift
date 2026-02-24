@@ -229,6 +229,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         let model = BackupStatusModel(
             baseURL: URL(string: "http://example.test")!,
             urlSession: makeMockURLSession(),
+            ipcToken: "token-123",
             autoStartPolling: false
         )
 
@@ -242,6 +243,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         XCTAssertEqual(queryItems.first(where: { $0.name == "prefix" })?.value, "docs")
         XCTAssertEqual(queryItems.first(where: { $0.name == "contains" })?.value, "notes")
         XCTAssertEqual(queryItems.first(where: { $0.name == "snapshot" })?.value, "snap-123")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
     }
 
     func testPreviewRestoreSendsSnapshotInRequestBody() async throws {
@@ -355,6 +357,33 @@ final class BackupStatusModelRestoreTests: XCTestCase {
 
         let request = try XCTUnwrap(
             MockURLProtocol.requests().first { $0.url?.path == "/v1/verify/run" }
+        )
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
+    }
+
+    func testRefreshStatusIncludesIPCAuthHeaderWhenTokenConfigured() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"state\":\"idle\"}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            ipcToken: "token-123",
+            autoStartPolling: false
+        )
+
+        model.refreshStatus()
+        await waitUntil("status request") {
+            MockURLProtocol.requests().contains(where: { $0.url?.path == "/v1/status" })
+        }
+
+        let request = try XCTUnwrap(
+            MockURLProtocol.requests().first { $0.url?.path == "/v1/status" }
         )
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
     }

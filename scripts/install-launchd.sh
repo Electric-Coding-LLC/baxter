@@ -13,6 +13,7 @@ IPC_ADDR="127.0.0.1:41820"
 LAUNCH_AGENTS_DIR="$HOME_DIR/Library/LaunchAgents"
 PLIST_PATH="$LAUNCH_AGENTS_DIR/com.electriccoding.baxterd.plist"
 TEMPLATE_PATH="$ROOT_DIR/launchd/com.electriccoding.baxterd.plist.template"
+IPC_TOKEN="${BAXTER_IPC_TOKEN:-}"
 
 mkdir -p "$BIN_DIR"
 mkdir -p "$LAUNCH_AGENTS_DIR"
@@ -34,6 +35,11 @@ sed \
   -e "s|__HOME__|$HOME_DIR|g" \
   "$TEMPLATE_PATH" > "$PLIST_PATH"
 
+if [ -n "$IPC_TOKEN" ]; then
+  /usr/libexec/PlistBuddy -c "Add :ProgramArguments:5 string --ipc-token" "$PLIST_PATH"
+  /usr/libexec/PlistBuddy -c "Add :ProgramArguments:6 string $IPC_TOKEN" "$PLIST_PATH"
+fi
+
 launchctl bootout "gui/$(id -u)/com.electriccoding.baxterd" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
 launchctl enable "gui/$(id -u)/com.electriccoding.baxterd"
@@ -43,3 +49,8 @@ launchctl print "gui/$(id -u)/com.electriccoding.baxterd" >/dev/null
 echo "Installed and started com.electriccoding.baxterd"
 echo "Plist: $PLIST_PATH"
 echo "Binary: $BAXTERD_BIN"
+if [ -n "$IPC_TOKEN" ]; then
+  echo "IPC auth: enabled (token sourced from BAXTER_IPC_TOKEN)"
+else
+  echo "IPC auth: disabled (set BAXTER_IPC_TOKEN before install to enable)"
+fi

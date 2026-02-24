@@ -1,0 +1,46 @@
+name: Launchd Smoke
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launchd-smoke:
+    runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    env:
+      BAXTER_IPC_TOKEN: ci-smoke-current-token,ci-smoke-next-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.13"
+          cache: true
+      - run: go mod download
+      - name: Run launchd IPC smoke check
+        run: |
+          set -euo pipefail
+          if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+            echo "Skipping launchd smoke check: gui/$(id -u) domain unavailable on runner."
+            exit 0
+          fi
+          trap './scripts/uninstall-launchd.sh' EXIT
+          ./scripts/init-config.sh "$GITHUB_WORKSPACE"
+          ./scripts/install-launchd.sh
+          ./scripts/smoke-launchd-ipc.sh
+      - name: Collect launchd logs (on failure)
+        if: failure()
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/launchd-logs
+          cp -f "$HOME/Library/Logs/baxterd.out.log" .ci/launchd-logs/ 2>/dev/null || true
+          cp -f "$HOME/Library/Logs/baxterd.err.log" .ci/launchd-logs/ 2>/dev/null || true
+      - name: Upload launchd logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launchd-smoke-logs-${{ github.run_id }}
+          path: .ci/launchd-logs
+          if-no-files-found: warn

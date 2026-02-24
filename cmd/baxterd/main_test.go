@@ -116,6 +116,28 @@ func TestAllowRemoteIPCRequiresToken(t *testing.T) {
 	}
 }
 
+func TestHasAnyIPCToken(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "single token", raw: "token-1", want: true},
+		{name: "comma-separated tokens", raw: "token-1,token-2", want: true},
+		{name: "whitespace around tokens", raw: " token-1 , token-2 ", want: true},
+		{name: "only separators", raw: " , , ", want: false},
+		{name: "empty", raw: "", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasAnyIPCToken(tc.raw); got != tc.want {
+				t.Fatalf("hasAnyIPCToken(%q) = %v, want %v", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
 func goEnv(t *testing.T, key string) string {
 	t.Helper()
 
