@@ -15,9 +15,9 @@ struct BaxterMenuBarApp: App {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
+                        statusSummaryLine(daemonStatusHeadline, tint: daemonStateTint)
                         statusSummaryLine(backupStatusHeadline, tint: backupChipTint)
                         statusSummaryLine(verifyStatusHeadline, tint: verifyChipTint)
-                        statusSummaryLine(daemonStatusHeadline, tint: daemonStateTint)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
