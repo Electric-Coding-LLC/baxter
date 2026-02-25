@@ -10,6 +10,7 @@ import (
 	"baxter/internal/config"
 	"baxter/internal/crypto"
 	"baxter/internal/state"
+	"baxter/internal/storage"
 )
 
 func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) error {
@@ -52,7 +53,14 @@ func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) 
 
 	payload, err := store.GetObject(backup.ObjectKeyForPath(entry.Path))
 	if err != nil {
-		return fmt.Errorf("read object: %w", err)
+		switch {
+		case storage.IsNotFound(err):
+			return fmt.Errorf("restore object missing for path %s", entry.Path)
+		case storage.IsTransient(err):
+			return fmt.Errorf("restore storage transient failure for %s: %w", entry.Path, err)
+		default:
+			return fmt.Errorf("read object: %w", err)
+		}
 	}
 
 	plain, err := crypto.DecryptBytesWithAnyKey(keys.candidates, payload)

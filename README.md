@@ -106,6 +106,9 @@ A simple, secure macOS backup utility with an S3 backend.
 - `POST /v1/restore/dry-run` (supports optional `snapshot` field)
 - `POST /v1/restore/run`
   - supports `path`, optional `to_dir`, optional `overwrite`, optional `verify_only`, optional `snapshot`
+  - restore object read failures classify as:
+    - `restore_object_missing` (`404`) when the object no longer exists
+    - `restore_storage_transient` (`503`) for retryable/transient storage failures
 - All `/v1/*` endpoints enforce `X-Baxter-Token` when an IPC token is configured.
 - Restore JSON request bodies are capped at 1 MiB.
 - IPC HTTP server applies explicit timeout/header limits (`ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `MaxHeaderBytes`) for DoS hardening.

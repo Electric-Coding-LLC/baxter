@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -19,11 +20,14 @@ import (
 )
 
 const (
-	defaultUploadPartSize    int64 = 8 * 1024 * 1024
-	defaultUploadConcurrency       = 4
-	defaultRetryMaxAttempts        = 2
-	defaultDeleteTimeout           = 30 * time.Second
-	defaultListPageTimeout         = 30 * time.Second
+	defaultUploadPartSize       int64 = 8 * 1024 * 1024
+	defaultUploadConcurrency          = 4
+	defaultRetryMaxAttempts           = 2
+	defaultOperationMaxAttempts       = 4
+	defaultRetryBaseDelay             = 150 * time.Millisecond
+	defaultRetryMaxDelay              = 2 * time.Second
+	defaultDeleteTimeout              = 30 * time.Second
+	defaultListPageTimeout            = 30 * time.Second
 )
 
 type s3API interface {
@@ -64,6 +68,10 @@ type S3Client struct {
 	newListObjectsV2Paginator listObjectsV2PaginatorFactory
 	bucket                    string
 	prefix                    string
+	operationMaxAttempts      int
+	retryBaseDelay            time.Duration
+	retryMaxDelay             time.Duration
+	sleepFn                   func(time.Duration)
 	deleteTimeout             time.Duration
 	listPageTimeout           time.Duration
 }
@@ -131,10 +139,14 @@ func NewS3Client(cfg appconfig.S3Config) (*S3Client, error) {
 		newListObjectsV2Paginator: func(client s3.ListObjectsV2APIClient, params *s3.ListObjectsV2Input) listObjectsV2Paginator {
 			return &awsListObjectsV2Paginator{inner: s3.NewListObjectsV2Paginator(client, params)}
 		},
-		bucket:          bucket,
-		prefix:          prefix,
-		deleteTimeout:   defaultDeleteTimeout,
-		listPageTimeout: defaultListPageTimeout,
+		bucket:               bucket,
+		prefix:               prefix,
+		operationMaxAttempts: defaultOperationMaxAttempts,
+		retryBaseDelay:       defaultRetryBaseDelay,
+		retryMaxDelay:        defaultRetryMaxDelay,
+		sleepFn:              time.Sleep,
+		deleteTimeout:        defaultDeleteTimeout,
+		listPageTimeout:      defaultListPageTimeout,
 	}, nil
 }
 
@@ -155,14 +167,17 @@ func (c *S3Client) PutObject(key string, data []byte) error {
 	}
 
 	contentLength := int64(len(data))
-	_, err = c.uploader.UploadObject(context.Background(), &transfermanager.UploadObjectInput{
-		Bucket:        &c.bucket,
-		Key:           &objectKey,
-		Body:          bytes.NewReader(data),
-		ContentLength: &contentLength,
+	err = c.retryWithBackoff(func() error {
+		_, err := c.uploader.UploadObject(context.Background(), &transfermanager.UploadObjectInput{
+			Bucket:        &c.bucket,
+			Key:           &objectKey,
+			Body:          bytes.NewReader(data),
+			ContentLength: &contentLength,
+		})
+		return err
 	})
 	if err != nil {
-		return fmt.Errorf("put object: %w", err)
+		return wrapStorageOperationError("put object", err)
 	}
 	return nil
 }
@@ -183,20 +198,28 @@ func (c *S3Client) GetObject(key string) ([]byte, error) {
 		return nil, err
 	}
 
-	out, err := c.api.GetObject(context.Background(), &s3.GetObjectInput{
-		Bucket: &c.bucket,
-		Key:    &objectKey,
+	var payload []byte
+	err = c.retryWithBackoff(func() error {
+		out, err := c.api.GetObject(context.Background(), &s3.GetObjectInput{
+			Bucket: &c.bucket,
+			Key:    &objectKey,
+		})
+		if err != nil {
+			return err
+		}
+		defer out.Body.Close()
+
+		buf := new(bytes.Buffer)
+		if _, err := buf.ReadFrom(out.Body); err != nil {
+			return fmt.Errorf("read object body: %w", err)
+		}
+		payload = buf.Bytes()
+		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("get object: %w", err)
+		return nil, wrapStorageOperationError("get object", err)
 	}
-	defer out.Body.Close()
-
-	buf := new(bytes.Buffer)
-	if _, err := buf.ReadFrom(out.Body); err != nil {
-		return nil, fmt.Errorf("read object body: %w", err)
-	}
-	return buf.Bytes(), nil
+	return payload, nil
 }
 
 func (c *S3Client) DeleteObject(key string) error {
@@ -358,4 +381,64 @@ func validateEndpoint(endpoint string) error {
 		return errors.New("s3 endpoint must use http or https")
 	}
 	return nil
+}
+
+func (c *S3Client) retryWithBackoff(op func() error) error {
+	maxAttempts := c.operationMaxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := op()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !IsTransient(err) || attempt == maxAttempts {
+			break
+		}
+		if c.sleepFn != nil {
+			c.sleepFn(c.retryDelay(attempt))
+		}
+	}
+	return lastErr
+}
+
+func (c *S3Client) retryDelay(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	delay := c.retryBaseDelay
+	if delay <= 0 {
+		return 0
+	}
+	maxDelay := c.retryMaxDelay
+	if maxDelay <= 0 {
+		maxDelay = delay
+	}
+	for i := 1; i < attempt; i++ {
+		if delay >= maxDelay/2 {
+			return maxDelay
+		}
+		delay *= 2
+	}
+	if delay > maxDelay {
+		return maxDelay
+	}
+	return delay
+}
+
+func wrapStorageOperationError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if IsNotFound(err) {
+		return fmt.Errorf("%s: %w (%v)", operation, os.ErrNotExist, err)
+	}
+	if IsTransient(err) {
+		return fmt.Errorf("%s: %w (%v)", operation, ErrTransient, err)
+	}
+	return fmt.Errorf("%s: %w", operation, err)
 }

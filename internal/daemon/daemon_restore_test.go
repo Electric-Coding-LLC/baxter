@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -348,6 +349,89 @@ func TestRestoreRunEndpointChecksumMismatchDoesNotOverwrite(t *testing.T) {
 	}
 	if !bytes.Equal(got, initial) {
 		t.Fatalf("target changed on checksum failure: got %q want %q", string(got), string(initial))
+	}
+}
+
+func TestRestoreRunEndpointReturnsObjectMissingCode(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	if err := os.WriteFile(sourcePath, []byte("restore body"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "daemon-restore-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("manifest snapshots dir: %v", err)
+	}
+	objectsDir, err := state.ObjectStoreDir()
+	if err != nil {
+		t.Fatalf("object store dir: %v", err)
+	}
+	store, err := storage.NewFromConfig(cfg.S3, objectsDir)
+	if err != nil {
+		t.Fatalf("new object store: %v", err)
+	}
+	_, err = backup.Run(cfg, backup.RunOptions{
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: cfg.Retention.ManifestSnapshots,
+		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		Store:             store,
+	})
+	if err != nil {
+		t.Fatalf("run backup: %v", err)
+	}
+
+	if err := store.DeleteObject(backup.ObjectKeyForPath(sourcePath)); err != nil {
+		t.Fatalf("delete object: %v", err)
+	}
+
+	d := New(cfg)
+	body := bytes.NewBufferString(`{"path":"` + sourcePath + `","to_dir":"` + restoreRoot + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/run", body)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "restore_object_missing" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func TestClassifyRestoreReadObjectError(t *testing.T) {
+	statusCode, code, _ := classifyRestoreReadObjectError("/Users/me/doc.txt", os.ErrNotExist)
+	if statusCode != http.StatusNotFound || code != "restore_object_missing" {
+		t.Fatalf("unexpected not found classification: status=%d code=%s", statusCode, code)
+	}
+
+	statusCode, code, _ = classifyRestoreReadObjectError("/Users/me/doc.txt", storage.ErrTransient)
+	if statusCode != http.StatusServiceUnavailable || code != "restore_storage_transient" {
+		t.Fatalf("unexpected transient classification: status=%d code=%s", statusCode, code)
+	}
+
+	statusCode, code, _ = classifyRestoreReadObjectError("/Users/me/doc.txt", errors.New("boom"))
+	if statusCode != http.StatusBadRequest || code != "read_object_failed" {
+		t.Fatalf("unexpected fallback classification: status=%d code=%s", statusCode, code)
 	}
 }
 
