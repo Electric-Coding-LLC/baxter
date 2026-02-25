@@ -14,22 +14,18 @@ struct BaxterMenuBarApp: App {
         MenuBarExtra("Baxter", systemImage: iconName) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        statusChip(backupChipTitle, systemImage: backupChipSymbol, tint: backupChipTint, emphasized: true)
-                            .layoutPriority(2)
-                        Spacer(minLength: 4)
-                        Text("Baxter")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        statusChip(backupChipTitle, systemImage: backupChipSymbol, tint: backupChipTint)
+                            .frame(maxWidth: .infinity, minHeight: 34)
+                        statusChip(verifyChipTitle, systemImage: verifyChipSymbol, tint: verifyChipTint)
+                            .frame(maxWidth: .infinity, minHeight: 34)
+                        statusChip("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol, tint: daemonStateTint)
+                            .frame(maxWidth: .infinity, minHeight: 34)
                     }
 
-                    HStack(spacing: 8) {
-                        statusChip(verifyChipTitle, systemImage: verifyChipSymbol, tint: verifyChipTint)
-                            .layoutPriority(1)
-                        statusChip("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol, tint: daemonStateTint)
-                            .layoutPriority(1)
-                        Spacer(minLength: 0)
-                    }
+                    Text("Baxter")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -366,14 +362,16 @@ struct BaxterMenuBarApp: App {
         }
     }
 
-    private func statusChip(_ title: String, systemImage: String, tint: Color, emphasized: Bool = false) -> some View {
+    private func statusChip(_ title: String, systemImage: String, tint: Color) -> some View {
         Label(title, systemImage: systemImage)
-            .font(emphasized ? .headline.weight(.semibold) : .subheadline.weight(.semibold))
+            .font(.caption.weight(.semibold))
+            .imageScale(.small)
             .lineLimit(1)
-            .minimumScaleFactor(0.82)
-            .padding(.horizontal, emphasized ? 11 : 10)
-            .padding(.vertical, emphasized ? 7 : 6)
-            .background(tint.opacity(emphasized ? 0.22 : 0.18), in: Capsule())
+            .minimumScaleFactor(0.72)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(tint.opacity(0.18), in: Capsule())
             .overlay {
                 Capsule()
                     .strokeBorder(tint.opacity(0.28), lineWidth: 0.8)
