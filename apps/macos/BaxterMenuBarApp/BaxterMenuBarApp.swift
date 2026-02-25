@@ -5,10 +5,10 @@ import SwiftUI
 
 @main
 struct BaxterMenuBarApp: App {
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @StateObject private var model = BackupStatusModel(notificationDispatcher: UNUserNotificationDispatcher())
     @StateObject private var settingsModel = BaxterSettingsModel()
+    @StateObject private var workspaceRouter = BaxterWorkspaceRouter()
 
     var body: some Scene {
         MenuBarExtra("Baxter", systemImage: iconName) {
@@ -46,7 +46,7 @@ struct BaxterMenuBarApp: App {
 
                 VStack(alignment: .leading, spacing: 8) {
                     menuActionButton("Restore...") {
-                        openRestoreWindow()
+                        openWorkspace(section: .restore)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -55,10 +55,10 @@ struct BaxterMenuBarApp: App {
 
                 VStack(alignment: .leading, spacing: 8) {
                     menuActionButton("Settings...") {
-                        openSettingsWindow()
+                        openWorkspace(section: .settings)
                     }
                     menuActionButton("Diagnostics...") {
-                        openDiagnosticsWindow()
+                        openWorkspace(section: .diagnostics)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -116,16 +116,12 @@ struct BaxterMenuBarApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Settings {
-            BaxterSettingsView(model: settingsModel, statusModel: model)
-        }
-
-        Window("Restore", id: "restore") {
-            BaxterRestoreView(statusModel: model)
-        }
-
-        Window("Diagnostics", id: "diagnostics") {
-            BaxterDiagnosticsView(statusModel: model, settingsModel: settingsModel)
+        Window("Baxter", id: "workspace") {
+            BaxterWorkspaceView(
+                statusModel: model,
+                settingsModel: settingsModel,
+                router: workspaceRouter
+            )
         }
     }
 
@@ -133,26 +129,11 @@ struct BaxterMenuBarApp: App {
         model.state == .running ? "arrow.triangle.2.circlepath.circle.fill" : "externaldrive"
     }
 
-    private func openSettingsWindow() {
+    private func openWorkspace(section: BaxterWorkspaceSection) {
+        workspaceRouter.selectedSection = section
         closeMenuBarPanel()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            openSettings()
-            NSApplication.shared.activate(ignoringOtherApps: true)
-        }
-    }
-
-    private func openRestoreWindow() {
-        closeMenuBarPanel()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            openWindow(id: "restore")
-            NSApplication.shared.activate(ignoringOtherApps: true)
-        }
-    }
-
-    private func openDiagnosticsWindow() {
-        closeMenuBarPanel()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            openWindow(id: "diagnostics")
+            openWindow(id: "workspace")
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
     }
@@ -359,15 +340,120 @@ struct BaxterMenuBarApp: App {
     }
 }
 
+enum BaxterWorkspaceSection: String, CaseIterable, Hashable, Identifiable {
+    case restore
+    case settings
+    case diagnostics
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .restore:
+            return "Restore"
+        case .settings:
+            return "Settings"
+        case .diagnostics:
+            return "Diagnostics"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .restore:
+            return "Browse snapshots and restore files with confidence."
+        case .settings:
+            return "Tune backup, verify, storage, and encryption behavior."
+        case .diagnostics:
+            return "Inspect runtime state and export support bundles."
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .restore:
+            return "externaldrive.badge.timemachine"
+        case .settings:
+            return "slider.horizontal.3"
+        case .diagnostics:
+            return "stethoscope"
+        }
+    }
+}
+
+@MainActor
+final class BaxterWorkspaceRouter: ObservableObject {
+    @Published var selectedSection: BaxterWorkspaceSection = .restore
+}
+
+struct BaxterWorkspaceView: View {
+    @ObservedObject var statusModel: BackupStatusModel
+    @ObservedObject var settingsModel: BaxterSettingsModel
+    @ObservedObject var router: BaxterWorkspaceRouter
+
+    var body: some View {
+        NavigationSplitView {
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Baxter")
+                        .font(.system(.headline, design: .rounded).weight(.semibold))
+                    Text("Workspace")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 10)
+
+                List(BaxterWorkspaceSection.allCases, selection: $router.selectedSection) { section in
+                    Label(section.title, systemImage: section.systemImage)
+                        .tag(section)
+                }
+                .listStyle(.sidebar)
+            }
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
+        } detail: {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(router.selectedSection.title)
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                    Text(router.selectedSection.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Group {
+                    switch router.selectedSection {
+                    case .restore:
+                        BaxterRestoreView(statusModel: statusModel, embedded: true)
+                    case .settings:
+                        BaxterSettingsView(model: settingsModel, statusModel: statusModel, embedded: true)
+                    case .diagnostics:
+                        BaxterDiagnosticsView(statusModel: statusModel, settingsModel: settingsModel, embedded: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 1120, minHeight: 720)
+    }
+}
+
 struct BaxterDiagnosticsView: View {
     @ObservedObject var statusModel: BackupStatusModel
     @ObservedObject var settingsModel: BaxterSettingsModel
+    var embedded: Bool = false
     @State private var diagnosticsMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Diagnostics")
-                .font(.title2.weight(.semibold))
+            if !embedded {
+                Text("Diagnostics")
+                    .font(.title2.weight(.semibold))
+            }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
@@ -434,8 +520,8 @@ struct BaxterDiagnosticsView: View {
                 Spacer()
             }
         }
-        .padding()
-        .frame(minWidth: 680, minHeight: 460)
+        .padding(embedded ? 12 : 16)
+        .frame(minWidth: embedded ? nil : 680, minHeight: embedded ? nil : 460)
     }
 
     private var daemonOutLogPath: String {
