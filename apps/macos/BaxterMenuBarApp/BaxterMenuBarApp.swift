@@ -14,20 +14,16 @@ struct BaxterMenuBarApp: App {
         MenuBarExtra("Baxter", systemImage: iconName) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Text("Baxter")
-                            .font(.headline.weight(.semibold))
-                        Spacer(minLength: 8)
-                        daemonStatusBadge
-                    }
+                    Text("Baxter")
+                        .font(.headline.weight(.semibold))
 
-                    HStack(spacing: 10) {
-                        headerMetric(backupChipTitle, systemImage: backupChipSymbol, tint: backupChipTint)
-                        Text("•")
-                            .foregroundStyle(.tertiary)
-                        headerMetric(verifyChipTitle, systemImage: verifyChipSymbol, tint: verifyChipTint)
-                        Spacer(minLength: 0)
+                    VStack(spacing: 6) {
+                        headerStatusRow(title: "Backup", value: backupStatusValue, systemImage: backupChipSymbol, tint: backupChipTint)
+                        headerStatusRow(title: "Verify", value: verifyStatusValue, systemImage: verifyChipSymbol, tint: verifyChipTint)
+                        headerStatusRow(title: "Daemon", value: daemonStatusValue, systemImage: daemonStateSymbol, tint: daemonStateTint)
                     }
+                    .padding(10)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -256,8 +252,8 @@ struct BaxterMenuBarApp: App {
         model.daemonServiceState == .running && model.isDaemonReachable
     }
 
-    private var backupChipTitle: String {
-        isDaemonOperational ? "Backup \(model.state.rawValue)" : "Backup Unavailable"
+    private var backupStatusValue: String {
+        isDaemonOperational ? model.state.rawValue : "Unavailable"
     }
 
     private var backupChipSymbol: String {
@@ -301,8 +297,8 @@ struct BaxterMenuBarApp: App {
         }
     }
 
-    private var verifyChipTitle: String {
-        isDaemonOperational ? "Verify \(model.verifyState.rawValue)" : "Verify Unavailable"
+    private var verifyStatusValue: String {
+        isDaemonOperational ? model.verifyState.rawValue : "Unavailable"
     }
 
     private var verifyChipSymbol: String {
@@ -364,34 +360,24 @@ struct BaxterMenuBarApp: App {
         }
     }
 
-    private var daemonStatusBadge: some View {
-        statusBadge("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol, tint: daemonStateTint)
+    private var daemonStatusValue: String {
+        if model.daemonServiceState == .running && !model.isDaemonReachable {
+            return "Running (No IPC)"
+        }
+        return model.daemonServiceState.rawValue
     }
 
-    private func headerMetric(_ title: String, systemImage: String, tint: Color) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
+    private func headerStatusRow(title: String, value: String, systemImage: String, tint: Color) -> some View {
+        HStack(spacing: 8) {
             Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Label(value, systemImage: systemImage)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
+                .imageScale(.small)
+                .foregroundStyle(tint)
         }
         .lineLimit(1)
-    }
-
-    private func statusBadge(_ title: String, systemImage: String, tint: Color) -> some View {
-        Label(title, systemImage: systemImage)
-        .font(.caption.weight(.semibold))
-        .imageScale(.small)
-        .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(tint.opacity(0.18), in: Capsule())
-        .overlay {
-            Capsule()
-                .strokeBorder(tint.opacity(0.28), lineWidth: 0.8)
-        }
     }
 }

@@ -62,6 +62,9 @@ final class BackupStatusModel: ObservableObject {
     private let iso8601 = ISO8601DateFormatter()
     private var shouldAutoBootstrapDaemon: Bool
     private var hasAttemptedAutoBootstrapDaemon: Bool = false
+    private var suppressAutoRecoveryUntilManualStart: Bool = false
+    private var lastAutoRecoveryAttemptAt: Date?
+    private let autoRecoveryCooldown: TimeInterval = 15
 
     init(
         baseURL: URL = URL(string: "http://127.0.0.1:41820")!,
@@ -102,21 +105,44 @@ final class BackupStatusModel: ObservableObject {
     func refreshStatus() {
         Task {
             var launchdState = await LaunchdController.queryState()
+            var attemptedStartThisRefresh = false
             if shouldAutoBootstrapDaemon &&
                 !hasAttemptedAutoBootstrapDaemon &&
                 launchdState != .running &&
                 LaunchdController.hasConfigFile()
             {
+                attemptedStartThisRefresh = true
                 hasAttemptedAutoBootstrapDaemon = true
                 do {
                     lifecycleMessage = try await LaunchdController.start()
                     launchdState = await LaunchdController.queryState()
+                    suppressAutoRecoveryUntilManualStart = false
                 } catch {
                     lifecycleMessage = "Auto-start failed: \(error.localizedDescription)"
                 }
             }
 
+            if shouldAutoBootstrapDaemon &&
+                !attemptedStartThisRefresh &&
+                !suppressAutoRecoveryUntilManualStart &&
+                launchdState == .stopped &&
+                LaunchdController.hasConfigFile() &&
+                shouldAttemptAutoRecovery()
+            {
+                attemptedStartThisRefresh = true
+                lastAutoRecoveryAttemptAt = Date()
+                do {
+                    lifecycleMessage = "Daemon stopped; attempting restart..."
+                    lifecycleMessage = try await LaunchdController.start()
+                    launchdState = await LaunchdController.queryState()
+                    suppressAutoRecoveryUntilManualStart = false
+                } catch {
+                    lifecycleMessage = "Auto-restart failed: \(error.localizedDescription)"
+                }
+            }
+
             daemonServiceState = launchdState
+            clearStaleLifecycleMessageIfNeeded(for: launchdState)
             do {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/status"))
                 request.httpMethod = "GET"
@@ -205,6 +231,7 @@ final class BackupStatusModel: ObservableObject {
             defer { isLifecycleBusy = false }
             do {
                 lifecycleMessage = try await LaunchdController.start()
+                suppressAutoRecoveryUntilManualStart = false
                 lastError = nil
                 refreshStatus()
             } catch {
@@ -219,6 +246,7 @@ final class BackupStatusModel: ObservableObject {
             defer { isLifecycleBusy = false }
             do {
                 lifecycleMessage = try await LaunchdController.stop()
+                suppressAutoRecoveryUntilManualStart = true
                 lastError = nil
                 refreshStatus()
             } catch {
@@ -527,6 +555,25 @@ final class BackupStatusModel: ObservableObject {
             previousLastBackupAt: previousLastBackupAt,
             previousLastVerifyAt: previousLastVerifyAt
         )
+    }
+
+    private func shouldAttemptAutoRecovery(now: Date = Date()) -> Bool {
+        guard let lastAutoRecoveryAttemptAt else {
+            return true
+        }
+        return now.timeIntervalSince(lastAutoRecoveryAttemptAt) >= autoRecoveryCooldown
+    }
+
+    private func clearStaleLifecycleMessageIfNeeded(for launchdState: DaemonServiceState) {
+        guard launchdState == .stopped, !isLifecycleBusy else {
+            return
+        }
+        guard let lifecycleMessage else {
+            return
+        }
+        if lifecycleMessage.hasPrefix("Daemon ") {
+            self.lifecycleMessage = nil
+        }
     }
 
     private func dispatchStatusTransitionNotifications(
