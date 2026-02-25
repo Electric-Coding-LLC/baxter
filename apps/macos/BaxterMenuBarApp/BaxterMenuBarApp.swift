@@ -14,20 +14,19 @@ struct BaxterMenuBarApp: App {
         MenuBarExtra("Baxter", systemImage: iconName) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 8) {
-                            backupStatusChip
-                            verifyStatusChip
-                            daemonStatusChip
-                        }
+                    HStack(spacing: 8) {
+                        Text("Baxter")
+                            .font(.headline.weight(.semibold))
+                        Spacer(minLength: 8)
+                        daemonStatusBadge
+                    }
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
-                                backupStatusChip
-                                verifyStatusChip
-                            }
-                            daemonStatusChip
-                        }
+                    HStack(spacing: 10) {
+                        headerMetric(backupChipTitle, systemImage: backupChipSymbol, tint: backupChipTint)
+                        Text("•")
+                            .foregroundStyle(.tertiary)
+                        headerMetric(verifyChipTitle, systemImage: verifyChipSymbol, tint: verifyChipTint)
+                        Spacer(minLength: 0)
                     }
                 }
 
@@ -365,30 +364,34 @@ struct BaxterMenuBarApp: App {
         }
     }
 
-    private var backupStatusChip: some View {
-        statusChip(backupChipTitle, systemImage: backupChipSymbol, tint: backupChipTint)
+    private var daemonStatusBadge: some View {
+        statusBadge("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol, tint: daemonStateTint)
     }
 
-    private var verifyStatusChip: some View {
-        statusChip(verifyChipTitle, systemImage: verifyChipSymbol, tint: verifyChipTint)
+    private func headerMetric(_ title: String, systemImage: String, tint: Color) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(tint)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .lineLimit(1)
     }
 
-    private var daemonStatusChip: some View {
-        statusChip("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol, tint: daemonStateTint)
-    }
-
-    private func statusChip(_ title: String, systemImage: String, tint: Color) -> some View {
+    private func statusBadge(_ title: String, systemImage: String, tint: Color) -> some View {
         Label(title, systemImage: systemImage)
-            .font(.caption.weight(.semibold))
-            .imageScale(.small)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(tint.opacity(0.18), in: Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(tint.opacity(0.28), lineWidth: 0.8)
-            }
+        .font(.caption.weight(.semibold))
+        .imageScale(.small)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(tint.opacity(0.18), in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(tint.opacity(0.28), lineWidth: 0.8)
+        }
     }
 }
