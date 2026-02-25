@@ -133,6 +133,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - Installed paths:
 - LaunchAgent plist: `~/Library/LaunchAgents/com.electriccoding.baxterd.plist`
 - Daemon binary: `~/Library/Application Support/baxter/bin/baxterd`
+- In the macOS app, `Start Daemon` can auto-install these paths when missing (if config exists and local build context is available).
 - Logs:
 - `~/Library/Logs/baxterd.out.log`
 - `~/Library/Logs/baxterd.err.log`
