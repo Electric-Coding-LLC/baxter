@@ -13,26 +13,23 @@ struct BaxterMenuBarApp: App {
     var body: some Scene {
         MenuBarExtra("Baxter", systemImage: iconName) {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Label(model.state.rawValue, systemImage: statusSymbol)
-                        .font(.headline)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(statusTint.opacity(0.18), in: Capsule())
-                    Label("Verify \(model.verifyState.rawValue)", systemImage: verifyStateSymbol)
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(verifyStateTint.opacity(0.18), in: Capsule())
-                    Label("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol)
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(daemonStateTint.opacity(0.18), in: Capsule())
-                    Spacer()
-                    Text("Baxter")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        statusChip(model.state.rawValue, systemImage: statusSymbol, tint: statusTint, emphasized: true)
+                            .layoutPriority(2)
+                        Spacer(minLength: 4)
+                        Text("Baxter")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack(spacing: 8) {
+                        statusChip("Verify \(model.verifyState.rawValue)", systemImage: verifyStateSymbol, tint: verifyStateTint)
+                            .layoutPriority(1)
+                        statusChip("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol, tint: daemonStateTint)
+                            .layoutPriority(1)
+                        Spacer(minLength: 0)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -339,5 +336,19 @@ struct BaxterMenuBarApp: App {
         case .unknown:
             return .secondary
         }
+    }
+
+    private func statusChip(_ title: String, systemImage: String, tint: Color, emphasized: Bool = false) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(emphasized ? .headline.weight(.semibold) : .subheadline.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .padding(.horizontal, emphasized ? 11 : 10)
+            .padding(.vertical, emphasized ? 7 : 6)
+            .background(tint.opacity(emphasized ? 0.22 : 0.18), in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(tint.opacity(0.28), lineWidth: 0.8)
+            }
     }
 }
