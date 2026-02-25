@@ -14,14 +14,19 @@ struct BaxterMenuBarApp: App {
         MenuBarExtra("Baxter", systemImage: iconName) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Baxter")
-                        .font(.headline.weight(.semibold))
+                    HStack {
+                        Spacer()
+                        Text("Baxter")
+                            .font(.headline.weight(.semibold))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
 
-                    VStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 6) {
                         statusSummaryLine(backupStatusHeadline, tint: backupChipTint)
                         statusSummaryLine(verifyStatusHeadline, tint: verifyChipTint)
                         statusSummaryLine(daemonStatusHeadline, tint: daemonStateTint)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 Divider()
@@ -347,6 +352,7 @@ struct BaxterMenuBarApp: App {
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .lineLimit(1)
     }
 }
