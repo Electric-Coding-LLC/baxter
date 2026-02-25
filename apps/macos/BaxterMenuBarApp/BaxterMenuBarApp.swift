@@ -13,20 +13,16 @@ struct BaxterMenuBarApp: App {
     var body: some Scene {
         MenuBarExtra("Baxter", systemImage: iconName) {
             VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Spacer()
-                        Text("Baxter")
-                            .font(.headline.weight(.semibold))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-
+                HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         statusSummaryLine(backupStatusHeadline, tint: backupChipTint)
                         statusSummaryLine(verifyStatusHeadline, tint: verifyChipTint)
                         statusSummaryLine(daemonStatusHeadline, tint: daemonStateTint)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text("Baxter")
+                        .font(.headline.weight(.semibold))
                 }
 
                 Divider()
