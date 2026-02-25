@@ -60,6 +60,8 @@ final class BackupStatusModel: ObservableObject {
     private let notificationDispatcher: NotificationDispatching
     private var timer: Timer?
     private let iso8601 = ISO8601DateFormatter()
+    private var shouldAutoBootstrapDaemon: Bool
+    private var hasAttemptedAutoBootstrapDaemon: Bool = false
 
     init(
         baseURL: URL = URL(string: "http://127.0.0.1:41820")!,
@@ -75,6 +77,7 @@ final class BackupStatusModel: ObservableObject {
         self.notificationSettings = notificationSettings
         self.notificationDispatcher = notificationDispatcher
         self.notifyOnSuccess = notificationSettings.notifyOnSuccess
+        self.shouldAutoBootstrapDaemon = autoStartPolling
         self.notificationDispatcher.requestAuthorizationIfNeeded()
         if autoStartPolling {
             startPolling()
@@ -86,6 +89,7 @@ final class BackupStatusModel: ObservableObject {
     }
 
     func startPolling() {
+        shouldAutoBootstrapDaemon = true
         refreshStatus()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
@@ -97,7 +101,22 @@ final class BackupStatusModel: ObservableObject {
 
     func refreshStatus() {
         Task {
-            daemonServiceState = await LaunchdController.queryState()
+            var launchdState = await LaunchdController.queryState()
+            if shouldAutoBootstrapDaemon &&
+                !hasAttemptedAutoBootstrapDaemon &&
+                launchdState != .running &&
+                LaunchdController.hasConfigFile()
+            {
+                hasAttemptedAutoBootstrapDaemon = true
+                do {
+                    lifecycleMessage = try await LaunchdController.start()
+                    launchdState = await LaunchdController.queryState()
+                } catch {
+                    lifecycleMessage = "Auto-start failed: \(error.localizedDescription)"
+                }
+            }
+
+            daemonServiceState = launchdState
             do {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/status"))
                 request.httpMethod = "GET"
@@ -112,7 +131,7 @@ final class BackupStatusModel: ObservableObject {
                 apply(status)
                 isDaemonReachable = true
             } catch {
-                if daemonServiceState == .stopped {
+                if launchdState == .stopped {
                     state = .idle
                     lastError = nil
                 } else {

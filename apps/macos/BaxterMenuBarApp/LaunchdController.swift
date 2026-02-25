@@ -57,6 +57,10 @@ enum LaunchdController {
         }
     }
 
+    static func hasConfigFile() -> Bool {
+        FileManager.default.fileExists(atPath: configPath)
+    }
+
     static func install() async throws -> String {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: configPath) else {
