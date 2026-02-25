@@ -15,9 +15,27 @@ struct BaxterMenuBarApp: App {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
-                        statusSummaryLine(daemonStatusHeadline, tint: daemonStateTint)
-                        statusSummaryLine(backupStatusHeadline, tint: backupChipTint)
-                        statusSummaryLine(verifyStatusHeadline, tint: verifyChipTint)
+                        statusSummaryLine(
+                            title: "Daemon",
+                            activity: daemonActivityStatus,
+                            activityTint: daemonActivityTint,
+                            health: daemonHealthStatus,
+                            healthTint: daemonHealthTint
+                        )
+                        statusSummaryLine(
+                            title: "Backup",
+                            activity: backupActivityStatus,
+                            activityTint: backupActivityTint,
+                            health: backupHealthStatus,
+                            healthTint: backupHealthTint
+                        )
+                        statusSummaryLine(
+                            title: "Verify",
+                            activity: verifyActivityStatus,
+                            activityTint: verifyActivityTint,
+                            health: verifyHealthStatus,
+                            healthTint: verifyHealthTint
+                        )
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -253,31 +271,96 @@ struct BaxterMenuBarApp: App {
         model.daemonServiceState == .running && model.isDaemonReachable
     }
 
-    private var backupStatusValue: String {
-        isDaemonOperational ? model.state.rawValue : "Unavailable"
+    private var daemonActivityStatus: String {
+        model.daemonServiceState.rawValue
     }
 
-    private var backupChipTint: Color {
-        isDaemonOperational ? backupStateTint : .orange
+    private var daemonActivityTint: Color {
+        model.daemonServiceState == .running ? .blue : .secondary
     }
 
-    private var verifyStateTint: Color {
-        switch model.verifyState {
-        case .idle:
-            return .green
+    private var daemonHealthStatus: String {
+        switch model.daemonServiceState {
         case .running:
-            return .blue
-        case .failed:
-            return .orange
+            return model.isDaemonReachable ? "Healthy" : "No IPC"
+        case .stopped:
+            return "Stopped"
+        case .unknown:
+            return "Unknown"
         }
     }
 
-    private var verifyStatusValue: String {
+    private var daemonHealthTint: Color {
+        switch model.daemonServiceState {
+        case .running:
+            return model.isDaemonReachable ? .green : .orange
+        case .stopped:
+            return .orange
+        case .unknown:
+            return .secondary
+        }
+    }
+
+    private var backupActivityStatus: String {
+        isDaemonOperational ? model.state.rawValue : "Unavailable"
+    }
+
+    private var backupActivityTint: Color {
+        guard isDaemonOperational else { return .secondary }
+        return model.state == .running ? Color.blue : Color.secondary
+    }
+
+    private var backupHealthStatus: String {
+        guard isDaemonOperational else { return "Unavailable" }
+        if model.state == .failed || !(model.lastError ?? "").isEmpty {
+            return "Failed"
+        }
+        if model.lastBackupAt != nil {
+            return "Healthy"
+        }
+        return "Not run"
+    }
+
+    private var backupHealthTint: Color {
+        guard isDaemonOperational else { return .orange }
+        if model.state == .failed || !(model.lastError ?? "").isEmpty {
+            return .red
+        }
+        if model.lastBackupAt != nil {
+            return .green
+        }
+        return .secondary
+    }
+
+    private var verifyActivityStatus: String {
         isDaemonOperational ? model.verifyState.rawValue : "Unavailable"
     }
 
-    private var verifyChipTint: Color {
-        isDaemonOperational ? verifyStateTint : .orange
+    private var verifyActivityTint: Color {
+        guard isDaemonOperational else { return .secondary }
+        return model.verifyState == .running ? Color.blue : Color.secondary
+    }
+
+    private var verifyHealthStatus: String {
+        guard isDaemonOperational else { return "Unavailable" }
+        if model.verifyState == .failed || !(model.lastVerifyError ?? "").isEmpty {
+            return "Failed"
+        }
+        if model.lastVerifyAt != nil {
+            return "Healthy"
+        }
+        return "Not run"
+    }
+
+    private var verifyHealthTint: Color {
+        guard isDaemonOperational else { return .orange }
+        if model.verifyState == .failed || !(model.lastVerifyError ?? "").isEmpty {
+            return .red
+        }
+        if model.lastVerifyAt != nil {
+            return .green
+        }
+        return .secondary
     }
 
     private var lastVerifyText: String {
@@ -298,55 +381,26 @@ struct BaxterMenuBarApp: App {
         return "Verify schedule manual"
     }
 
-    private var backupStateTint: Color {
-        switch model.state {
-        case .idle:
-            return .green
-        case .running:
-            return .blue
-        case .failed:
-            return .red
-        }
-    }
-
-    private var daemonStateTint: Color {
-        switch model.daemonServiceState {
-        case .running:
-            return .green
-        case .stopped:
-            return .orange
-        case .unknown:
-            return .secondary
-        }
-    }
-
-    private var daemonStatusValue: String {
-        if model.daemonServiceState == .running && !model.isDaemonReachable {
-            return "Running (No IPC)"
-        }
-        return model.daemonServiceState.rawValue
-    }
-
-    private var backupStatusHeadline: String {
-        "Backup is \(backupStatusValue.lowercased())"
-    }
-
-    private var verifyStatusHeadline: String {
-        "Verify is \(verifyStatusValue.lowercased())"
-    }
-
-    private var daemonStatusHeadline: String {
-        "Daemon is \(daemonStatusValue.lowercased())"
-    }
-
-    private func statusSummaryLine(_ text: String, tint: Color) -> some View {
+    private func statusSummaryLine(
+        title: String,
+        activity: String,
+        activityTint: Color,
+        health: String,
+        healthTint: Color
+    ) -> some View {
         HStack(spacing: 10) {
-            Circle()
-                .fill(tint)
-                .frame(width: 9, height: 9)
-            Text(text)
+            Text("\(title):")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .frame(width: 66, alignment: .leading)
+            Text(activity)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(activityTint)
+            Text("•")
+                .foregroundStyle(.secondary)
+            Text(health)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(healthTint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .lineLimit(1)
