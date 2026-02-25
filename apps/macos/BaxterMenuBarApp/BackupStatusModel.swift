@@ -471,9 +471,38 @@ final class BackupStatusModel: ObservableObject {
 
     private func formatRestoreError(prefix: String, error: Error) -> String {
         if case IPCError.server(let code, let message, _) = error {
+            let guidance = restoreErrorGuidance(for: code)
+            if let guidance {
+                return "\(prefix) failed [\(code)]: \(guidance)"
+            }
             return "\(prefix) failed [\(code)]: \(message)"
         }
         return "\(prefix) failed: \(error.localizedDescription)"
+    }
+
+    private func restoreErrorGuidance(for code: String) -> String? {
+        switch code {
+        case "manifest_load_failed":
+            return "Could not load the selected snapshot. Refresh snapshots and try again."
+        case "path_lookup_failed":
+            return "The requested path was not found in the selected snapshot."
+        case "invalid_restore_target":
+            return "The destination path is invalid or escapes the selected destination root."
+        case "target_exists":
+            return "The destination file already exists. Enable overwrite or choose a different destination."
+        case "restore_object_missing":
+            return "Backup data for this path is missing. Try another snapshot or run a new backup."
+        case "restore_storage_transient":
+            return "Temporary storage error while reading backup data. Retry in a moment."
+        case "restore_key_unavailable":
+            return "Restore key is unavailable. Check BAXTER_PASSPHRASE or keychain settings."
+        case "decrypt_failed":
+            return "Could not decrypt backup data. Verify the configured encryption key."
+        case "integrity_check_failed":
+            return "Integrity verification failed for restored content. Retry from another snapshot."
+        default:
+            return nil
+        }
     }
 
     private func decodeDaemonError(data: Data, statusCode: Int) -> IPCError {

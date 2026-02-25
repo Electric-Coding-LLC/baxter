@@ -15,12 +15,14 @@ import (
 	"baxter/internal/storage"
 )
 
+var objectStoreFromConfig = storage.NewFromConfig
+
 func (d *Daemon) objectStore(cfg *config.Config) (storage.ObjectStore, error) {
 	objectsDir, err := state.ObjectStoreDir()
 	if err != nil {
 		return nil, err
 	}
-	return storage.NewFromConfig(cfg.S3, objectsDir)
+	return objectStoreFromConfig(cfg.S3, objectsDir)
 }
 
 var errBackupAlreadyRunning = errors.New("backup already running")

@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -12,6 +14,7 @@ concurrency:
 jobs:
   go-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -25,6 +28,7 @@ jobs:
 
   macos-app-test:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    timeout-minutes: 45
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/.ci/DerivedData
       RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterMenuBarApp.xcresult
@@ -44,6 +48,9 @@ jobs:
       - name: Run launchd IPC smoke check
         env:
           BAXTER_IPC_TOKEN: ci-smoke-current-token,ci-smoke-next-token
+          BAXTER_SMOKE_DEADLINE_SECONDS: "120"
+          BAXTER_IPC_READY_ATTEMPTS: "24"
+          BAXTER_IPC_READY_SLEEP_SECONDS: "0.5"
         run: |
           set -euo pipefail
           if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
@@ -54,6 +61,20 @@ jobs:
           ./scripts/init-config.sh "$GITHUB_WORKSPACE"
           ./scripts/install-launchd.sh
           ./scripts/smoke-launchd-ipc.sh
+      - name: Collect launchd logs (on failure)
+        if: failure()
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/launchd-logs
+          cp -f "$HOME/Library/Logs/baxterd.out.log" .ci/launchd-logs/ 2>/dev/null || true
+          cp -f "$HOME/Library/Logs/baxterd.err.log" .ci/launchd-logs/ 2>/dev/null || true
+      - name: Upload launchd logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launchd-logs-${{ github.run_id }}
+          path: .ci/launchd-logs
+          if-no-files-found: warn
       - name: Upload macOS test result bundle (on failure)
         if: failure()
         uses: actions/upload-artifact@v4

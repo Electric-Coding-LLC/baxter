@@ -160,10 +160,14 @@ A simple, secure macOS backup utility with an S3 backend.
 - `cmd/baxterd`: process-level `--once` integration test verifying manifest/object outputs.
 
 ## Release
+- Full release/install/upgrade/rollback playbook:
+- `docs/release-playbook.md`
 - Local versioned build artifacts:
 - `./scripts/release.sh v0.1.0`
 - Artifacts are written to:
 - `dist/v0.1.0/`
+- Manual RC build (no tag publish):
+- `gh workflow run "Release Candidate" -f version=v0.4.0-rc1`
 - Tag push triggers GitHub Release workflow:
 - `git tag v0.1.0 && git push origin v0.1.0`
 

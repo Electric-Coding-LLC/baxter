@@ -423,6 +423,9 @@ struct BaxterDiagnosticsView: View {
                 Button("Copy Diagnostics Summary") {
                     copyDiagnosticsSummary()
                 }
+                Button("Export Diagnostics Bundle") {
+                    exportDiagnosticsBundle()
+                }
                 if let diagnosticsMessage {
                     Text(diagnosticsMessage)
                         .font(.caption2)
@@ -469,5 +472,189 @@ struct BaxterDiagnosticsView: View {
         pasteboard.clearContents()
         pasteboard.setString(summary, forType: .string)
         diagnosticsMessage = "Copied."
+    }
+
+    private func exportDiagnosticsBundle() {
+        let bundle = DiagnosticsBundleBuilder.makeBundle(
+            configPath: settingsModel.configURL.path,
+            daemonState: statusModel.daemonServiceState.rawValue,
+            ipcReachable: statusModel.isDaemonReachable,
+            backupState: statusModel.state.rawValue,
+            verifyState: statusModel.verifyState.rawValue,
+            lastBackupError: statusModel.lastError,
+            lastVerifyError: statusModel.lastVerifyError,
+            lastRestoreError: statusModel.lastRestoreError,
+            daemonOutLogPath: daemonOutLogPath,
+            daemonErrLogPath: daemonErrLogPath
+        )
+
+        let outputDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Application Support")
+            .appendingPathComponent("baxter")
+            .appendingPathComponent("diagnostics")
+
+        do {
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+            let outputPath = outputDir.appendingPathComponent(bundle.fileName)
+            try bundle.contents.write(to: outputPath, atomically: true, encoding: .utf8)
+            diagnosticsMessage = "Saved bundle: \(outputPath.path)"
+        } catch {
+            diagnosticsMessage = "Export failed: \(error.localizedDescription)"
+        }
+    }
+}
+
+struct DiagnosticsBundle {
+    let fileName: String
+    let contents: String
+}
+
+enum DiagnosticsBundleBuilder {
+    static func makeBundle(
+        configPath: String,
+        daemonState: String,
+        ipcReachable: Bool,
+        backupState: String,
+        verifyState: String,
+        lastBackupError: String?,
+        lastVerifyError: String?,
+        lastRestoreError: String?,
+        daemonOutLogPath: String,
+        daemonErrLogPath: String,
+        now: Date = Date()
+    ) -> DiagnosticsBundle {
+        let timestamp = iso8601Timestamp(for: now)
+        let fileName = "baxter-diagnostics-\(safeTimestamp(for: now)).txt"
+        let sanitizedConfig = sanitizeConfig(atPath: configPath)
+        let outLogTail = redactSensitiveContent(readLogTail(path: daemonOutLogPath))
+        let errLogTail = redactSensitiveContent(readLogTail(path: daemonErrLogPath))
+
+        let content = [
+            "# Baxter Diagnostics Bundle",
+            "generated_at=\(timestamp)",
+            "",
+            "[status]",
+            "config_path=\(configPath)",
+            "daemon_state=\(daemonState)",
+            "ipc_reachable=\(ipcReachable ? "yes" : "no")",
+            "backup_state=\(backupState)",
+            "verify_state=\(verifyState)",
+            "last_backup_error=\(redactSensitiveContent(lastBackupError ?? ""))",
+            "last_verify_error=\(redactSensitiveContent(lastVerifyError ?? ""))",
+            "last_restore_error=\(redactSensitiveContent(lastRestoreError ?? ""))",
+            "",
+            "[config_sanitized]",
+            sanitizedConfig,
+            "",
+            "[daemon_out_log_tail]",
+            outLogTail,
+            "",
+            "[daemon_err_log_tail]",
+            errLogTail,
+        ].joined(separator: "\n")
+
+        return DiagnosticsBundle(fileName: fileName, contents: content)
+    }
+
+    static func redactSensitiveContent(_ value: String) -> String {
+        value
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { redactSensitiveLine(String($0)) }
+            .joined(separator: "\n")
+    }
+
+    private static func sanitizeConfig(atPath path: String) -> String {
+        guard let configText = try? String(contentsOfFile: path, encoding: .utf8) else {
+            return "<config unavailable>"
+        }
+        return configText
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { sanitizeConfigLine(String($0)) }
+            .joined(separator: "\n")
+    }
+
+    private static func sanitizeConfigLine(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("#") || trimmed.isEmpty {
+            return line
+        }
+        guard let separatorIndex = line.firstIndex(of: "=") else {
+            return redactSensitiveLine(line)
+        }
+
+        let keyPart = String(line[..<separatorIndex])
+        let key = keyPart.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if isSensitiveKey(key) {
+            return "\(keyPart)= \"[REDACTED]\""
+        }
+        return redactSensitiveLine(line)
+    }
+
+    private static func isSensitiveKey(_ key: String) -> Bool {
+        key.contains("passphrase") ||
+            key.contains("token") ||
+            key.contains("secret") ||
+            key.contains("access_key")
+    }
+
+    private static func redactSensitiveLine(_ line: String) -> String {
+        let lower = line.lowercased()
+        let markers = [
+            "baxter_passphrase",
+            "x-baxter-token",
+            "authorization",
+            "ipc_token",
+            "api_token",
+            "access_token",
+            "aws_secret_access_key",
+            "aws_access_key_id",
+        ]
+        for marker in markers {
+            guard let markerRange = lower.range(of: marker) else {
+                continue
+            }
+            let suffix = line[markerRange.upperBound...]
+            guard let separator = suffix.firstIndex(where: { $0 == "=" || $0 == ":" }) else {
+                continue
+            }
+            let tokenStart = line.index(after: separator)
+            let leadingWhitespace = line[tokenStart...].prefix { $0 == " " || $0 == "\t" }
+            let prefix = line[..<tokenStart]
+            return "\(prefix)\(leadingWhitespace)[REDACTED]"
+        }
+        return line
+    }
+
+    private static func readLogTail(path: String, maxBytes: Int = 16 * 1024, maxLines: Int = 120) -> String {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            return "<log unavailable>"
+        }
+        if data.isEmpty {
+            return "<log empty>"
+        }
+
+        let tailBytes = data.count > maxBytes ? Data(data.suffix(maxBytes)) : data
+        let decoded = String(decoding: tailBytes, as: UTF8.self)
+        let lines = decoded.split(separator: "\n", omittingEmptySubsequences: false)
+        if lines.count > maxLines {
+            return lines.suffix(maxLines).joined(separator: "\n")
+        }
+        return decoded
+    }
+
+    private static func safeTimestamp(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: date)
+    }
+
+    private static func iso8601Timestamp(for date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: date)
     }
 }

@@ -411,6 +411,54 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         XCTAssertEqual(model.restorePreviewMessage, "Restore failed [restore_conflict]: restore already running")
     }
 
+    func testRunRestoreFormatsTransientStorageErrorWithGuidance() async throws {
+        MockURLProtocol.requestHandler = { _ in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: URL(string: "http://example.test/v1/restore/run")!, statusCode: 503, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"code\":\"restore_storage_transient\",\"message\":\"transient read failure\"}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            autoStartPolling: false
+        )
+
+        model.runRestore(path: "a.txt", toDir: "/tmp", overwrite: false, verifyOnly: false, snapshot: "")
+        await waitUntil("restore transient error guidance") { model.restorePreviewMessage != nil }
+
+        XCTAssertEqual(
+            model.restorePreviewMessage,
+            "Restore failed [restore_storage_transient]: Temporary storage error while reading backup data. Retry in a moment."
+        )
+    }
+
+    func testRunRestoreFormatsTargetExistsErrorWithGuidance() async throws {
+        MockURLProtocol.requestHandler = { _ in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: URL(string: "http://example.test/v1/restore/run")!, statusCode: 400, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"code\":\"target_exists\",\"message\":\"target already exists\"}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            autoStartPolling: false
+        )
+
+        model.runRestore(path: "a.txt", toDir: "/tmp", overwrite: false, verifyOnly: false, snapshot: "")
+        await waitUntil("restore target exists guidance") { model.restorePreviewMessage != nil }
+
+        XCTAssertEqual(
+            model.restorePreviewMessage,
+            "Restore failed [target_exists]: The destination file already exists. Enable overwrite or choose a different destination."
+        )
+    }
+
     func testRunRestoreIncludesIPCAuthHeaderWhenTokenConfigured() async throws {
         MockURLProtocol.requestHandler = { request in
             let response = try XCTUnwrap(
@@ -549,6 +597,81 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         }
 
         XCTAssertTrue(notifications.notifications.contains(where: { $0.0 == "Baxter backup completed" }))
+    }
+}
+
+final class DiagnosticsBundleBuilderTests: XCTestCase {
+    func testMakeBundleRedactsSensitiveConfigAndLogValues() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let configPath = tempDir.appendingPathComponent("config.toml")
+        try """
+        [encryption]
+        keychain_service = "baxter"
+        keychain_account = "default"
+        passphrase = "super-secret-passphrase"
+        ipc_token = "ci-smoke-token"
+        """.write(to: configPath, atomically: true, encoding: .utf8)
+
+        let outLogPath = tempDir.appendingPathComponent("baxterd.out.log")
+        try "X-Baxter-Token: inline-token\nnormal-line".write(to: outLogPath, atomically: true, encoding: .utf8)
+        let errLogPath = tempDir.appendingPathComponent("baxterd.err.log")
+        try "BAXTER_PASSPHRASE=from-env-secret".write(to: errLogPath, atomically: true, encoding: .utf8)
+
+        let bundle = DiagnosticsBundleBuilder.makeBundle(
+            configPath: configPath.path,
+            daemonState: "running",
+            ipcReachable: true,
+            backupState: "Idle",
+            verifyState: "Idle",
+            lastBackupError: "authorization: bearer secret-token",
+            lastVerifyError: nil,
+            lastRestoreError: nil,
+            daemonOutLogPath: outLogPath.path,
+            daemonErrLogPath: errLogPath.path
+        )
+
+        XCTAssertFalse(bundle.contents.contains("super-secret-passphrase"))
+        XCTAssertFalse(bundle.contents.contains("ci-smoke-token"))
+        XCTAssertFalse(bundle.contents.contains("inline-token"))
+        XCTAssertFalse(bundle.contents.contains("from-env-secret"))
+        XCTAssertFalse(bundle.contents.contains("secret-token"))
+        XCTAssertTrue(bundle.contents.contains("[REDACTED]"))
+    }
+
+    func testMakeBundleIncludesRecentLogTail() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let configPath = tempDir.appendingPathComponent("config.toml")
+        try "schedule = \"manual\"".write(to: configPath, atomically: true, encoding: .utf8)
+
+        let outLogPath = tempDir.appendingPathComponent("baxterd.out.log")
+        let lines = (1...140).map { String(format: "out-line-%04d", $0) }.joined(separator: "\n")
+        try lines.write(to: outLogPath, atomically: true, encoding: .utf8)
+
+        let errLogPath = tempDir.appendingPathComponent("baxterd.err.log")
+        try "err-line-1\nerr-line-2".write(to: errLogPath, atomically: true, encoding: .utf8)
+
+        let bundle = DiagnosticsBundleBuilder.makeBundle(
+            configPath: configPath.path,
+            daemonState: "running",
+            ipcReachable: true,
+            backupState: "Idle",
+            verifyState: "Idle",
+            lastBackupError: nil,
+            lastVerifyError: nil,
+            lastRestoreError: nil,
+            daemonOutLogPath: outLogPath.path,
+            daemonErrLogPath: errLogPath.path
+        )
+
+        XCTAssertFalse(bundle.contents.contains("out-line-0001"))
+        XCTAssertTrue(bundle.contents.contains("out-line-0140"))
+        XCTAssertTrue(bundle.contents.contains("err-line-2"))
     }
 }
 

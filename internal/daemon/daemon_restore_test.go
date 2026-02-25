@@ -418,6 +418,57 @@ func TestRestoreRunEndpointReturnsObjectMissingCode(t *testing.T) {
 	}
 }
 
+func TestRestoreRunEndpointReturnsStorageTransientCode(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "daemon-restore-passphrase")
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	manifest := &backup.Manifest{
+		CreatedAt: time.Now().UTC(),
+		Entries: []backup.ManifestEntry{
+			{
+				Path:   sourcePath,
+				SHA256: strings.Repeat("0", 64),
+			},
+		},
+	}
+	if err := backup.SaveManifest(manifestPath, manifest); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	originalFactory := objectStoreFromConfig
+	t.Cleanup(func() {
+		objectStoreFromConfig = originalFactory
+	})
+	objectStoreFromConfig = func(_ config.S3Config, _ string) (storage.ObjectStore, error) {
+		return transientReadStore{}, nil
+	}
+
+	d := New(config.DefaultConfig())
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/run", bytes.NewBufferString(`{"path":"`+sourcePath+`"}`))
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "restore_storage_transient" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
 func TestClassifyRestoreReadObjectError(t *testing.T) {
 	statusCode, code, _ := classifyRestoreReadObjectError("/Users/me/doc.txt", os.ErrNotExist)
 	if statusCode != http.StatusNotFound || code != "restore_object_missing" {
@@ -534,4 +585,22 @@ func TestDaemonErrorContractRestoreDryRunInvalidRestoreTarget(t *testing.T) {
 	if errResp.Code != "invalid_restore_target" {
 		t.Fatalf("unexpected error code: got %q", errResp.Code)
 	}
+}
+
+type transientReadStore struct{}
+
+func (transientReadStore) PutObject(string, []byte) error {
+	return nil
+}
+
+func (transientReadStore) GetObject(string) ([]byte, error) {
+	return nil, storage.ErrTransient
+}
+
+func (transientReadStore) DeleteObject(string) error {
+	return nil
+}
+
+func (transientReadStore) ListKeys() ([]string, error) {
+	return nil, nil
 }
