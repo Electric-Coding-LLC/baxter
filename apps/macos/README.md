@@ -20,6 +20,7 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - `./scripts/smoke-launchd-ipc.sh`
 - If IPC token auth is enabled, set `BAXTER_IPC_TOKEN` before running the smoke check.
 - The app includes a settings window (via `Open Settings`) that edits `~/Library/Application Support/baxter/config.toml`.
+- The settings window now includes a first-run setup card with backup root selection, schedule, storage mode validation, and a `Run First Backup Now` entry point.
 
 ## Next Steps
 - Open the project in Xcode:

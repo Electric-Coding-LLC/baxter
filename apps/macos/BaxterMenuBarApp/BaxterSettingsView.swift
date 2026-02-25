@@ -3,8 +3,11 @@ import SwiftUI
 struct BaxterSettingsView: View {
     @ObservedObject var model: BaxterSettingsModel
     @ObservedObject var statusModel: BackupStatusModel
+    @AppStorage("baxter.onboarding.dismissed") private var onboardingDismissed = false
     @State private var showApplyNow = false
     @State private var diagnosticsMessage: String?
+    @State private var onboardingStorageMode: StorageModeOption = .local
+    @State private var onboardingMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -13,6 +16,116 @@ struct BaxterSettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    if shouldShowOnboarding {
+                        SettingsCard(title: "First-Run Setup", subtitle: "Guided setup for your first successful backup.") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text("Backup folders")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text("\(model.backupRoots.count) selected")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                HStack(spacing: 8) {
+                                    Button("Choose Folders...") {
+                                        model.chooseBackupRoots()
+                                    }
+                                    Button("Clear") {
+                                        model.clearBackupRoots()
+                                    }
+                                    .disabled(model.backupRoots.isEmpty)
+                                }
+
+                                HStack(alignment: .center, spacing: 12) {
+                                    Text("Schedule")
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 110, alignment: .leading)
+                                    Picker("Schedule", selection: $model.schedule) {
+                                        ForEach(BackupSchedule.allCases) { schedule in
+                                            Text(schedule.rawValue.capitalized).tag(schedule)
+                                        }
+                                    }
+                                    .labelsHidden()
+                                    .frame(width: 170, alignment: .leading)
+                                    .onChange(of: model.schedule) { _, _ in
+                                        model.validateDraft()
+                                    }
+                                }
+
+                                HStack(alignment: .center, spacing: 12) {
+                                    Text("Storage mode")
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 110, alignment: .leading)
+                                    Picker("Storage mode", selection: $onboardingStorageMode) {
+                                        Text("Local").tag(StorageModeOption.local)
+                                        Text("S3").tag(StorageModeOption.s3)
+                                    }
+                                    .pickerStyle(.segmented)
+                                    .frame(width: 220)
+                                    .onChange(of: onboardingStorageMode) { _, mode in
+                                        model.setStorageMode(mode)
+                                    }
+                                    Spacer()
+                                }
+
+                                if onboardingStorageMode == .s3 {
+                                    SettingRow(label: "S3 Region", error: model.validationMessage(for: .s3Region)) {
+                                        TextField("us-west-2", text: $model.s3Region)
+                                            .onChange(of: model.s3Region) { _, _ in
+                                                model.validateDraft()
+                                            }
+                                    }
+                                    SettingRow(label: "S3 Bucket", error: model.validationMessage(for: .s3Bucket)) {
+                                        TextField("my-backups", text: $model.s3Bucket)
+                                            .onChange(of: model.s3Bucket) { _, _ in
+                                                model.validateDraft()
+                                            }
+                                    }
+                                }
+
+                                if model.hasConfiguredKeySource {
+                                    Text("Encryption key source: configured")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("Encryption key source: configure BAXTER_PASSPHRASE or keychain service/account.")
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
+
+                                if let onboardingError = model.firstRunValidationMessage() {
+                                    Text(onboardingError)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
+                                if let onboardingMessage {
+                                    Text(onboardingMessage)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                HStack(spacing: 8) {
+                                    Button("Save Setup") {
+                                        completeOnboarding(runBackupNow: false)
+                                    }
+                                    .disabled(model.firstRunValidationMessage() != nil)
+
+                                    Button("Run First Backup Now") {
+                                        completeOnboarding(runBackupNow: true)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(model.firstRunValidationMessage() != nil)
+
+                                    Button("Skip Wizard") {
+                                        onboardingDismissed = true
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     SettingsCard(title: "Backup", subtitle: "Choose folders to include in backups.") {
                         VStack(alignment: .leading, spacing: 10) {
                             if model.backupRoots.isEmpty {
@@ -404,6 +517,9 @@ struct BaxterSettingsView: View {
                 showApplyNow = false
             }
         }
+        .onAppear {
+            onboardingStorageMode = model.storageMode()
+        }
     }
 
     private var daemonOutLogPath: String {
@@ -440,6 +556,38 @@ struct BaxterSettingsView: View {
         pasteboard.clearContents()
         pasteboard.setString(summary, forType: .string)
         diagnosticsMessage = "Copied."
+    }
+
+    private var shouldShowOnboarding: Bool {
+        !onboardingDismissed && (!model.configExists || model.backupRoots.isEmpty)
+    }
+
+    private func completeOnboarding(runBackupNow: Bool) {
+        if let validation = model.firstRunValidationMessage() {
+            onboardingMessage = validation
+            return
+        }
+
+        model.save()
+        if let error = model.errorMessage {
+            onboardingMessage = error
+            return
+        }
+
+        onboardingDismissed = true
+        if !runBackupNow {
+            onboardingMessage = "Setup saved. You can run backup now from the menu bar."
+            return
+        }
+
+        if statusModel.daemonServiceState != .running {
+            statusModel.startDaemon()
+            onboardingMessage = "Setup saved. Daemon starting; run first backup once daemon is running."
+            return
+        }
+
+        statusModel.runBackup()
+        onboardingMessage = "Setup saved. First backup started."
     }
 }
 

@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 @testable import BaxterMenuBarApp
 
 @MainActor
@@ -207,6 +208,41 @@ final class SettingsModelTests: XCTestCase {
 
         XCTAssertEqual(model.validationMessage(for: .verifyLimit), "Verify limit must be a non-negative integer.")
         XCTAssertFalse(model.canSave)
+    }
+
+    func testSetStorageModeLocalClearsS3Coordinates() {
+        let model = BaxterSettingsModel()
+        model.s3Endpoint = "https://s3.amazonaws.com"
+        model.s3Region = "us-west-2"
+        model.s3Bucket = "bucket"
+
+        model.setStorageMode(.local)
+
+        XCTAssertEqual(model.s3Endpoint, "")
+        XCTAssertEqual(model.s3Region, "")
+        XCTAssertEqual(model.s3Bucket, "")
+        XCTAssertEqual(model.storageMode(), .local)
+    }
+
+    func testFirstRunValidationMessageRequiresBackupRoot() {
+        let model = BaxterSettingsModel()
+        model.backupRoots = []
+
+        XCTAssertEqual(model.firstRunValidationMessage(), "Select at least one backup folder.")
+    }
+
+    func testFirstRunValidationMessageRequiresKeySource() {
+        let model = BaxterSettingsModel()
+        _ = setenv("BAXTER_PASSPHRASE", "", 1)
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        model.backupRoots = [tempDir.path]
+        model.keychainService = ""
+        model.keychainAccount = ""
+
+        XCTAssertEqual(model.firstRunValidationMessage(), "Configure BAXTER_PASSPHRASE or keychain service/account.")
     }
 }
 

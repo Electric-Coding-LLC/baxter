@@ -21,6 +21,13 @@ enum WeekdayOption: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum StorageModeOption: String, CaseIterable, Identifiable {
+    case local
+    case s3
+
+    var id: String { rawValue }
+}
+
 struct BaxterConfig {
     var backupRoots: [String]
     var excludePaths: [String]
