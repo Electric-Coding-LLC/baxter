@@ -4,6 +4,7 @@ struct BaxterSettingsView: View {
     @ObservedObject var model: BaxterSettingsModel
     @ObservedObject var statusModel: BackupStatusModel
     @State private var showApplyNow = false
+    @State private var diagnosticsMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -289,6 +290,61 @@ struct BaxterSettingsView: View {
                             .toggleStyle(.switch)
                     }
 
+                    SettingsCard(title: "Diagnostics", subtitle: "Copy runtime context for troubleshooting.") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Config path: \(model.configURL.path)")
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                            Text("Daemon state: \(statusModel.daemonServiceState.rawValue)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("IPC reachable: \(statusModel.isDaemonReachable ? "yes" : "no")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("Backup state: \(statusModel.state.rawValue)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("Verify state: \(statusModel.verifyState.rawValue)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let lastError = statusModel.lastError, !lastError.isEmpty {
+                                Text("Last backup error: \(lastError)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                            }
+                            if let lastVerifyError = statusModel.lastVerifyError, !lastVerifyError.isEmpty {
+                                Text("Last verify error: \(lastVerifyError)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                            }
+                            if let lastRestoreError = statusModel.lastRestoreError, !lastRestoreError.isEmpty {
+                                Text("Last restore error: \(lastRestoreError)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                            }
+                            Text("Daemon logs:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text("  \(daemonOutLogPath)")
+                                .font(.caption2.monospaced())
+                                .textSelection(.enabled)
+                            Text("  \(daemonErrLogPath)")
+                                .font(.caption2.monospaced())
+                                .textSelection(.enabled)
+
+                            HStack(spacing: 10) {
+                                Button("Copy Diagnostics Summary") {
+                                    copyDiagnosticsSummary()
+                                }
+                                if let diagnosticsMessage {
+                                    Text(diagnosticsMessage)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
                 }
             }
             .frame(maxHeight: .infinity)
@@ -348,6 +404,42 @@ struct BaxterSettingsView: View {
                 showApplyNow = false
             }
         }
+    }
+
+    private var daemonOutLogPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Logs")
+            .appendingPathComponent("baxterd.out.log")
+            .path
+    }
+
+    private var daemonErrLogPath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library")
+            .appendingPathComponent("Logs")
+            .appendingPathComponent("baxterd.err.log")
+            .path
+    }
+
+    private func copyDiagnosticsSummary() {
+        let summary = [
+            "config_path=\(model.configURL.path)",
+            "daemon_state=\(statusModel.daemonServiceState.rawValue)",
+            "ipc_reachable=\(statusModel.isDaemonReachable ? "yes" : "no")",
+            "backup_state=\(statusModel.state.rawValue)",
+            "verify_state=\(statusModel.verifyState.rawValue)",
+            "last_backup_error=\(statusModel.lastError ?? "")",
+            "last_verify_error=\(statusModel.lastVerifyError ?? "")",
+            "last_restore_error=\(statusModel.lastRestoreError ?? "")",
+            "daemon_out_log=\(daemonOutLogPath)",
+            "daemon_err_log=\(daemonErrLogPath)",
+        ].joined(separator: "\n")
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(summary, forType: .string)
+        diagnosticsMessage = "Copied."
     }
 }
 
