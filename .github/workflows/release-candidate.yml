@@ -1,0 +1,48 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "RC version (example: v0.4.0-rc1)"
+        required: true
+        default: "v0.4.0-rc1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-rc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.13"
+          cache: true
+      - run: go mod download
+      - name: Validate RC version format
+        run: |
+          set -euo pipefail
+          VERSION='${{ inputs.version }}'
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$ ]]; then
+            echo "Invalid RC version format: $VERSION"
+            echo "Expected format: vX.Y.Z-rcN"
+            exit 1
+          fi
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: govulncheck ./...
+      - run: go test ./...
+      - name: Build RC artifacts
+        env:
+          BAXTER_RELEASE_SKIP_TESTS: "1"
+        run: ./scripts/release.sh '${{ inputs.version }}'
+      - name: Upload RC artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: baxter-${{ inputs.version }}
+          path: dist/${{ inputs.version }}
+          if-no-files-found: error
+          retention-days: 14

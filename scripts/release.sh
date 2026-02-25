@@ -16,7 +16,11 @@ mkdir -p "$DIST_DIR"
 
 pushd "$ROOT_DIR" >/dev/null
 
-go test ./...
+if [ "${BAXTER_RELEASE_SKIP_TESTS:-0}" != "1" ]; then
+  go test ./...
+else
+  echo "Skipping go test ./... (BAXTER_RELEASE_SKIP_TESTS=1)"
+fi
 
 GOOS=darwin GOARCH=arm64 go build -o "$DIST_DIR/baxter-darwin-arm64" ./cmd/baxter
 GOOS=darwin GOARCH=arm64 go build -o "$DIST_DIR/baxterd-darwin-arm64" ./cmd/baxterd

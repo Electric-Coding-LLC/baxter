@@ -1,128 +1,87 @@
 # Baxter Product Roadmap
 
-As of February 24, 2026.
+As of February 25, 2026.
 
-## Planning Assumptions
+## Vision
 
-- Team capacity: one primary engineer with part-time review/support.
-- Estimates are engineering days and include implementation plus tests and docs.
-- Priorities are based on user impact, risk reduction, and fit with current architecture.
+- Be the simplest trustworthy macOS backup tool for personal data.
+- Keep recovery fast, predictable, and safe under stress.
+- Ship secure-by-default behavior without forcing users through complex setup.
 
-## Milestone v0.2 (Target: March 2026)
+## Current State
 
-Goal: make recovery and day-to-day operation noticeably easier for real users.
+- Core product is in place:
+  - CLI backup/restore, daemon scheduling, and menu bar UI are implemented.
+  - Snapshot-based restore, diagnostics view, first-run setup, verify, and restore-drill are available.
+  - Local mode and S3 mode are both supported with encryption and retention controls.
+- Current gap:
+  - Release/distribution experience and support workflows still need to be polished for wider adoption.
+  - Restore confidence can be improved with deeper failure-path coverage and clearer recovery UX.
 
-### 1) Snapshot Explorer in macOS App (Priority: P0, 3-4 days)
+## Milestones
 
-- Why now: daemon already exposes `GET /v1/snapshots`, but macOS UI does not surface snapshots yet.
+### v0.4 Release Candidate
+
+- Goal: make Baxter stable and supportable for day-to-day personal use.
 - Scope:
-  - Add snapshot list UI in the Restore window.
-  - Show snapshot ID, created time, and entry count.
-  - Add snapshot selection control that feeds existing restore list and restore run actions.
+  - Distribution and upgrades:
+    - Define one supported install/upgrade path for CLI, daemon, and macOS app.
+    - Add release checklist, rollback notes, and reproducible smoke steps.
+  - Restore confidence pass:
+    - Expand restore integration coverage for missing objects, overwrite collisions, and transient storage errors.
+    - Improve UI messages for each daemon restore error class and preserve actionable codes.
+  - Diagnostics bundle v2:
+    - Export sanitized status/config/log bundle for support and bug reports.
+    - Add explicit redaction checks to prevent secret/token leakage.
+  - CI/runtime guardrails:
+    - Harden macOS and daemon smoke reliability.
+    - Fail fast on flaky or hanging smoke paths with clearer failure output.
 - Acceptance criteria:
-  - User can choose `latest` or a specific snapshot without typing raw IDs.
-  - Restore search and restore run operate against selected snapshot.
-  - App tests cover fetch/decode and selection behavior.
+  - A new user can install from release artifacts and complete first backup without source checkout.
+  - Upgrade path preserves config and state between versions without manual migration.
+  - Restore failure classes are user-visible with actionable remediation text.
+  - Diagnostics export contains useful context and no sensitive material.
+  - Required CI checks are consistently green across reruns.
 
-### 2) Guided Restore Flow (Priority: P0, 4-5 days)
+### v0.5 Reliability and Operability
 
-- Why now: restore requires manual path entry and is easy to misuse under stress.
+- Goal: improve long-term trust and reduce user/operator footguns.
 - Scope:
-  - Add selectable restore results (single-click to populate path).
-  - Add native destination folder picker.
-  - Add confirmation summary before `Run Restore` (source, target, overwrite, verify-only, snapshot).
+  - Retention profiles:
+    - Add preset profiles (light, balanced, archive) for safer defaults.
+    - Keep advanced override path for manual retention tuning.
+  - Key management UX hardening:
+    - Improve key resolution health checks and keychain/env fallback messaging.
+    - Add guided remediation for common key configuration failures.
+  - Scheduled confidence checks:
+    - Add optional recurring restore-drill scheduling.
+    - Show last drill outcome in status/diagnostics.
 - Acceptance criteria:
-  - Restore can be completed end-to-end without manual path typing.
-  - Dry-run and final restore use identical target resolution parameters.
-  - Error states are user-facing and preserve daemon error codes/messages.
+  - Users can choose sensible retention behavior without editing raw TOML.
+  - Key resolution failures are explicit and recoverable with guided steps.
+  - Restore-drill can run on a configured cadence and report summary outcomes in UI.
 
-### 3) User Notifications for Failures (Priority: P1, 2-3 days)
+### Post-v0.5 Exploration
 
-- Why now: users can miss failed backups/verifies if menu bar app is not open.
+- Goal: evaluate higher-scale and multi-device readiness without committing to a control plane.
 - Scope:
-  - macOS local notifications for backup/verify failures.
-  - Optional success notification toggle in settings (default off).
+  - Measure performance bottlenecks on larger datasets.
+  - Assess metadata/indexing changes needed for faster restore browsing at scale.
+  - Prototype optional health reporting format suitable for local-only support tooling.
 - Acceptance criteria:
-  - Failure notification fires once per failed run transition.
-  - No duplicate notification spam during polling.
-  - Settings persist and survive app restart.
+  - Decision memo exists for each exploration area with go/no-go recommendation.
+  - Any approved work is broken into scoped deliverables for a future milestone.
 
-### 4) Operational Diagnostics View (Priority: P1, 2-3 days)
+## Next Sprint
 
-- Why now: support/debug currently requires manual log and config digging.
-- Scope:
-  - Add read-only diagnostics panel in settings:
-    - config path
-    - daemon state
-    - last error fields
-    - launchd log file paths
-  - Add “copy diagnostics summary” action.
-- Acceptance criteria:
-  - One-click copy exports actionable environment snapshot for bug reports.
-  - No secrets included in copied output.
+1. Complete distribution + upgrade checklist and wire it into release docs.
+2. Land restore failure-path tests and map error classes to UI copy.
+3. Implement diagnostics bundle export with redaction tests.
+4. Tighten CI smoke guardrails and cut v0.4 RC build.
 
-## Milestone v0.3 (Target: May 2026)
-
-Goal: strengthen retention controls and backup reliability at larger scale.
-
-### 1) Retention Policy v2 (Priority: P0, 4-6 days)
-
-- Why now: current retention is count-only (`manifest_snapshots`), which is limited for long-term usage.
-- Scope:
-  - Add age-based retention (for example, keep daily for 30 days, weekly for 12 weeks).
-  - Keep count cap as safety guardrail.
-  - Update gc/snapshot logic and docs.
-- Acceptance criteria:
-  - Retention applies deterministically during backup and GC.
-  - Dry-run mode reports what would be pruned.
-  - Tests cover boundary dates and mixed policy behavior.
-
-### 2) S3 Transfer Resilience Pass (Priority: P0, 4-5 days)
-
-- Why now: larger datasets increase probability of transient network/provider failures.
-- Scope:
-  - Harden retry/backoff for upload/download paths.
-  - Improve error classification in CLI and daemon responses.
-  - Add integration tests with fault injection stubs.
-- Acceptance criteria:
-  - Transient failures recover within configured retry budget.
-  - Non-retryable errors fail fast with clear messages.
-  - Restore path reports failures with actionable error codes.
-
-### 3) Setup Wizard / First-Run Onboarding (Priority: P1, 3-4 days)
-
-- Why now: first backup setup still depends on manual runbook steps.
-- Scope:
-  - Guided first-run flow in macOS app for:
-    - selecting backup roots
-    - choosing schedule
-    - validating encryption key source
-    - validating local mode vs S3 mode
-  - “Run first backup now” entry point.
-- Acceptance criteria:
-  - New user can complete first successful backup with no shell commands.
-  - Validation blocks invalid config combinations.
-  - Existing users can skip wizard and continue normal flow.
-
-### 4) End-to-End Restore Drill Command (Priority: P2, 2 days)
-
-- Why now: regular restore drills are a practical confidence check.
-- Scope:
-  - Add CLI command to verify a sampled set of restore paths to temp destination with checksum checks.
-  - Output machine-readable summary.
-- Acceptance criteria:
-  - Command exits non-zero on any integrity mismatch.
-  - Summary includes checked count, failures, and sampled paths.
-
-## Sequenced Next Sprint (Start: February 24, 2026)
-
-1. Build Snapshot Explorer (unblocks guided restore UX).
-2. Build Guided Restore Flow (highest user-facing recovery value).
-3. Add failure notifications.
-4. Add diagnostics view and ship v0.2.
-
-## Out of Scope for v0.2/v0.3
+## Out of Scope
 
 - Non-macOS clients.
-- Cloud-hosted control plane or multi-device sync.
-- Cross-account/team access management.
+- Cloud-hosted control plane or account sync service.
+- Team/multi-user access management.
+- Mobile restore clients.

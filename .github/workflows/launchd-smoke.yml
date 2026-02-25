@@ -10,8 +10,12 @@ concurrency:
 jobs:
   launchd-smoke:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    timeout-minutes: 20
     env:
       BAXTER_IPC_TOKEN: ci-smoke-current-token,ci-smoke-next-token
+      BAXTER_SMOKE_DEADLINE_SECONDS: "120"
+      BAXTER_IPC_READY_ATTEMPTS: "24"
+      BAXTER_IPC_READY_SLEEP_SECONDS: "0.5"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
