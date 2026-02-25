@@ -21,8 +21,9 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - Operational smoke check:
 - `./scripts/smoke-launchd-ipc.sh`
 - If IPC token auth is enabled, set `BAXTER_IPC_TOKEN` before running the smoke check.
-- The app includes a settings window (via `Open Settings`) that edits `~/Library/Application Support/baxter/config.toml`.
-- The settings window now includes a first-run setup card with backup root selection, schedule, storage mode validation, and a `Run First Backup Now` entry point.
+- The app includes a workspace window with dedicated `Restore`, `Settings`, and `Diagnostics` sections.
+- Menu actions (`Restore...`, `Settings...`, `Diagnostics...`) deep-link into the matching workspace section.
+- The Settings section edits `~/Library/Application Support/baxter/config.toml` and includes a first-run setup card with backup root selection, schedule, storage mode validation, and a `Run First Backup Now` entry point.
 
 ## Next Steps
 - Open the project in Xcode:
@@ -36,3 +37,6 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - verify schedule fields (`daily_time`, `weekly_day`, `weekly_time`) save to config
 - verify `[verify]` fields (`schedule`, `daily_time`, `weekly_day`, `weekly_time`, `prefix`, `limit`, `sample`) save to config
 - verify inline validation prevents invalid time formats
+- Validate Restore workspace flow:
+- verify snapshot selector + searchable tree can pick a source path without manual typing
+- verify dry-run/run actions preserve daemon error codes in inline messaging
