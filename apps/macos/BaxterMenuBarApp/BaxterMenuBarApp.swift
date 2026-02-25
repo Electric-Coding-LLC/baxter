@@ -24,6 +24,7 @@ struct BaxterMenuBarApp: App {
                     }
                     .padding(10)
                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .fixedSize(horizontal: true, vertical: false)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -368,11 +369,11 @@ struct BaxterMenuBarApp: App {
     }
 
     private func headerStatusRow(title: String, value: String, systemImage: String, tint: Color) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
+                .frame(width: 56, alignment: .leading)
             Label(value, systemImage: systemImage)
                 .font(.subheadline.weight(.semibold))
                 .imageScale(.small)
