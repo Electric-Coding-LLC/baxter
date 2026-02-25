@@ -14,18 +14,21 @@ struct BaxterMenuBarApp: App {
         MenuBarExtra("Baxter", systemImage: iconName) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        statusChip(backupChipTitle, systemImage: backupChipSymbol, tint: backupChipTint)
-                            .frame(maxWidth: .infinity, minHeight: 34)
-                        statusChip(verifyChipTitle, systemImage: verifyChipSymbol, tint: verifyChipTint)
-                            .frame(maxWidth: .infinity, minHeight: 34)
-                        statusChip("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol, tint: daemonStateTint)
-                            .frame(maxWidth: .infinity, minHeight: 34)
-                    }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            backupStatusChip
+                            verifyStatusChip
+                            daemonStatusChip
+                        }
 
-                    Text("Baxter")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                backupStatusChip
+                                verifyStatusChip
+                            }
+                            daemonStatusChip
+                        }
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -362,13 +365,24 @@ struct BaxterMenuBarApp: App {
         }
     }
 
+    private var backupStatusChip: some View {
+        statusChip(backupChipTitle, systemImage: backupChipSymbol, tint: backupChipTint)
+    }
+
+    private var verifyStatusChip: some View {
+        statusChip(verifyChipTitle, systemImage: verifyChipSymbol, tint: verifyChipTint)
+    }
+
+    private var daemonStatusChip: some View {
+        statusChip("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol, tint: daemonStateTint)
+    }
+
     private func statusChip(_ title: String, systemImage: String, tint: Color) -> some View {
         Label(title, systemImage: systemImage)
             .font(.caption.weight(.semibold))
             .imageScale(.small)
             .lineLimit(1)
-            .minimumScaleFactor(0.72)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(tint.opacity(0.18), in: Capsule())
