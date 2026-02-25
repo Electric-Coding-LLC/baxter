@@ -258,7 +258,7 @@ struct BaxterMenuBarApp: App {
     }
 
     private var backupChipTint: Color {
-        isDaemonOperational ? statusTint : .orange
+        isDaemonOperational ? backupStateTint : .orange
     }
 
     private var verifyStateTint: Color {
@@ -298,10 +298,10 @@ struct BaxterMenuBarApp: App {
         return "Verify schedule manual"
     }
 
-    private var statusTint: Color {
+    private var backupStateTint: Color {
         switch model.state {
         case .idle:
-            return .secondary
+            return .green
         case .running:
             return .blue
         case .failed:
