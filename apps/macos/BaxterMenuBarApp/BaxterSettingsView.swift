@@ -284,6 +284,11 @@ struct BaxterSettingsView: View {
                         }
                     }
 
+                    SettingsCard(title: "Notifications", subtitle: "Failure alerts are always enabled; success alerts are optional.") {
+                        Toggle("Notify on successful backup/verify", isOn: $statusModel.notifyOnSuccess)
+                            .toggleStyle(.switch)
+                    }
+
                 }
             }
             .frame(maxHeight: .infinity)

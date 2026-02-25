@@ -11,10 +11,11 @@
 		A00000000000000000000014 /* SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* SettingsModel.swift */; };
 		A00000000000000000000015 /* BaxterSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* BaxterSettingsView.swift */; };
 		A00000000000000000000016 /* BackupStatusModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* BackupStatusModel.swift */; };
-		A00000000000000000000017 /* LaunchdController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000005 /* LaunchdController.swift */; };
-		A00000000000000000000018 /* SettingsTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* SettingsTypes.swift */; };
-		A00000000000000000000019 /* SettingsToml.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* SettingsToml.swift */; };
-		A00000000000000000000061 /* SettingsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000071 /* SettingsModelTests.swift */; };
+			A00000000000000000000017 /* LaunchdController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000005 /* LaunchdController.swift */; };
+			A00000000000000000000018 /* SettingsTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* SettingsTypes.swift */; };
+			A00000000000000000000019 /* SettingsToml.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* SettingsToml.swift */; };
+			A0000000000000000000001A /* NotificationSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* NotificationSettings.swift */; };
+			A00000000000000000000061 /* SettingsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000071 /* SettingsModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,10 +33,11 @@
 		A00000000000000000000002 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsModel.swift; sourceTree = "<group>"; };
 		A00000000000000000000003 /* BaxterSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BaxterSettingsView.swift; sourceTree = "<group>"; };
 		A00000000000000000000004 /* BackupStatusModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BackupStatusModel.swift; sourceTree = "<group>"; };
-		A00000000000000000000005 /* LaunchdController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/LaunchdController.swift; sourceTree = "<group>"; };
-		A00000000000000000000006 /* SettingsTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsTypes.swift; sourceTree = "<group>"; };
-		A00000000000000000000007 /* SettingsToml.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsToml.swift; sourceTree = "<group>"; };
-		A00000000000000000000021 /* BaxterMenuBarApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaxterMenuBarApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+			A00000000000000000000005 /* LaunchdController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/LaunchdController.swift; sourceTree = "<group>"; };
+			A00000000000000000000006 /* SettingsTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsTypes.swift; sourceTree = "<group>"; };
+			A00000000000000000000007 /* SettingsToml.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsToml.swift; sourceTree = "<group>"; };
+			A00000000000000000000008 /* NotificationSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/NotificationSettings.swift; sourceTree = "<group>"; };
+			A00000000000000000000021 /* BaxterMenuBarApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaxterMenuBarApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000071 /* SettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarAppTests/SettingsModelTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000072 /* BaxterMenuBarAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaxterMenuBarAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -74,10 +76,11 @@
 				A00000000000000000000002 /* SettingsModel.swift */,
 				A00000000000000000000003 /* BaxterSettingsView.swift */,
 				A00000000000000000000004 /* BackupStatusModel.swift */,
-				A00000000000000000000005 /* LaunchdController.swift */,
-				A00000000000000000000006 /* SettingsTypes.swift */,
-				A00000000000000000000007 /* SettingsToml.swift */,
-			);
+					A00000000000000000000005 /* LaunchdController.swift */,
+					A00000000000000000000006 /* SettingsTypes.swift */,
+					A00000000000000000000007 /* SettingsToml.swift */,
+					A00000000000000000000008 /* NotificationSettings.swift */,
+				);
 			path = .;
 			sourceTree = SOURCE_ROOT;
 		};
@@ -181,10 +184,11 @@
 				A00000000000000000000014 /* SettingsModel.swift in Sources */,
 				A00000000000000000000015 /* BaxterSettingsView.swift in Sources */,
 				A00000000000000000000016 /* BackupStatusModel.swift in Sources */,
-				A00000000000000000000017 /* LaunchdController.swift in Sources */,
-				A00000000000000000000018 /* SettingsTypes.swift in Sources */,
-				A00000000000000000000019 /* SettingsToml.swift in Sources */,
-			);
+					A00000000000000000000017 /* LaunchdController.swift in Sources */,
+					A00000000000000000000018 /* SettingsTypes.swift in Sources */,
+					A00000000000000000000019 /* SettingsToml.swift in Sources */,
+					A0000000000000000000001A /* NotificationSettings.swift in Sources */,
+				);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A00000000000000000000060 /* Sources */ = {

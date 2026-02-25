@@ -47,10 +47,17 @@ final class BackupStatusModel: ObservableObject {
     @Published var selectedSnapshot: String = latestSnapshotSelection
     @Published var isSnapshotsBusy: Bool = false
     @Published var snapshotsMessage: String?
+    @Published var notifyOnSuccess: Bool = false {
+        didSet {
+            notificationSettings.notifyOnSuccess = notifyOnSuccess
+        }
+    }
 
     private let baseURL: URL
     private let urlSession: URLSession
     private let ipcToken: String?
+    private let notificationSettings: NotificationSettingsStore
+    private let notificationDispatcher: NotificationDispatching
     private var timer: Timer?
     private let iso8601 = ISO8601DateFormatter()
 
@@ -58,11 +65,17 @@ final class BackupStatusModel: ObservableObject {
         baseURL: URL = URL(string: "http://127.0.0.1:41820")!,
         urlSession: URLSession = .shared,
         ipcToken: String? = ProcessInfo.processInfo.environment["BAXTER_IPC_TOKEN"],
+        notificationSettings: NotificationSettingsStore = .shared,
+        notificationDispatcher: NotificationDispatching = NoopNotificationDispatcher(),
         autoStartPolling: Bool = true
     ) {
         self.baseURL = baseURL
         self.urlSession = urlSession
         self.ipcToken = ipcToken?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.notificationSettings = notificationSettings
+        self.notificationDispatcher = notificationDispatcher
+        self.notifyOnSuccess = notificationSettings.notifyOnSuccess
+        self.notificationDispatcher.requestAuthorizationIfNeeded()
         if autoStartPolling {
             startPolling()
         }
@@ -431,6 +444,11 @@ final class BackupStatusModel: ObservableObject {
     }
 
     private func apply(_ status: DaemonStatus) {
+        let previousState = state
+        let previousVerifyState = verifyState
+        let previousLastBackupAt = lastBackupAt
+        let previousLastVerifyAt = lastVerifyAt
+
         switch status.state.lowercased() {
         case "running":
             state = .running
@@ -483,5 +501,53 @@ final class BackupStatusModel: ObservableObject {
         lastVerifyDecryptErrors = status.lastVerifyDecryptErrors ?? 0
         lastVerifyChecksumErrors = status.lastVerifyChecksumErrors ?? 0
         lastError = status.lastError
+
+        dispatchStatusTransitionNotifications(
+            previousState: previousState,
+            previousVerifyState: previousVerifyState,
+            previousLastBackupAt: previousLastBackupAt,
+            previousLastVerifyAt: previousLastVerifyAt
+        )
+    }
+
+    private func dispatchStatusTransitionNotifications(
+        previousState: State,
+        previousVerifyState: VerifyState,
+        previousLastBackupAt: Date?,
+        previousLastVerifyAt: Date?
+    ) {
+        if state == .failed && previousState != .failed {
+            notificationDispatcher.sendNotification(
+                title: "Baxter backup failed",
+                body: lastError ?? "A backup run failed. Open Baxter for details."
+            )
+        }
+        if verifyState == .failed && previousVerifyState != .failed {
+            notificationDispatcher.sendNotification(
+                title: "Baxter verify failed",
+                body: lastVerifyError ?? "A verify run failed. Open Baxter for details."
+            )
+        }
+        guard notifyOnSuccess else {
+            return
+        }
+        if previousState == .running,
+            state == .idle,
+            let backupAt = lastBackupAt,
+            backupAt != previousLastBackupAt {
+            notificationDispatcher.sendNotification(
+                title: "Baxter backup completed",
+                body: "Backup finished successfully at \(backupAt.formatted(date: .abbreviated, time: .shortened))."
+            )
+        }
+        if previousVerifyState == .running,
+            verifyState == .idle,
+            let verifyAt = lastVerifyAt,
+            verifyAt != previousLastVerifyAt {
+            notificationDispatcher.sendNotification(
+                title: "Baxter verify completed",
+                body: "Verify finished successfully at \(verifyAt.formatted(date: .abbreviated, time: .shortened))."
+            )
+        }
     }
 }

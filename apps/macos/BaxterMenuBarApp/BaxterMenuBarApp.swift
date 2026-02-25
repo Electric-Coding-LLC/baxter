@@ -7,7 +7,7 @@ import SwiftUI
 struct BaxterMenuBarApp: App {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
-    @StateObject private var model = BackupStatusModel()
+    @StateObject private var model = BackupStatusModel(notificationDispatcher: UNUserNotificationDispatcher())
     @StateObject private var settingsModel = BaxterSettingsModel()
 
     var body: some Scene {

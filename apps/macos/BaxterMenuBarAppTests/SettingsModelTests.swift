@@ -453,6 +453,67 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         )
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
     }
+
+    func testRefreshStatusSendsFailureNotificationOncePerTransition() async throws {
+        let notifications = MockNotificationDispatcher()
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"state\":\"failed\",\"last_error\":\"backup exploded\"}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            notificationDispatcher: notifications,
+            autoStartPolling: false
+        )
+
+        XCTAssertTrue(notifications.authorizationRequested)
+        model.refreshStatus()
+        await waitUntil("first failure notification") { notifications.notifications.count == 1 }
+        model.refreshStatus()
+        await waitUntil("second status request") {
+            MockURLProtocol.requests().filter { $0.url?.path == "/v1/status" }.count >= 2
+        }
+
+        XCTAssertEqual(notifications.notifications.count, 1)
+        XCTAssertEqual(notifications.notifications.first?.0, "Baxter backup failed")
+    }
+
+    func testRefreshStatusSendsSuccessNotificationWhenEnabled() async throws {
+        let notifications = MockNotificationDispatcher()
+        var statusCallCount = 0
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            defer { statusCallCount += 1 }
+            if statusCallCount == 0 {
+                return (response, Data("{\"state\":\"running\"}".utf8))
+            }
+            return (response, Data("{\"state\":\"idle\",\"last_backup_at\":\"2026-02-24T12:00:00Z\"}".utf8))
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            notificationDispatcher: notifications,
+            autoStartPolling: false
+        )
+        model.notifyOnSuccess = true
+
+        model.refreshStatus()
+        await waitUntil("running state refresh") { model.state == .running }
+        model.refreshStatus()
+        await waitUntil("success notification") {
+            notifications.notifications.contains(where: { $0.0 == "Baxter backup completed" })
+        }
+
+        XCTAssertTrue(notifications.notifications.contains(where: { $0.0 == "Baxter backup completed" }))
+    }
 }
 
 private func makeMockURLSession() -> URLSession {
@@ -549,5 +610,18 @@ private final class MockURLProtocol: URLProtocol {
         let value = observedRequests
         lock.unlock()
         return value
+    }
+}
+
+private final class MockNotificationDispatcher: NotificationDispatching {
+    private(set) var authorizationRequested = false
+    private(set) var notifications: [(String, String)] = []
+
+    func requestAuthorizationIfNeeded() {
+        authorizationRequested = true
+    }
+
+    func sendNotification(title: String, body: String) {
+        notifications.append((title, body))
     }
 }
