@@ -37,6 +37,8 @@ keychain_account = "default"
 [retention]
 # Number of manifest snapshots to keep (0 = keep all).
 manifest_snapshots = 30
+# Maximum age in days for manifest snapshots (0 = no age-based pruning).
+manifest_max_age_days = 0
 
 [verify]
 # manual | daily | weekly

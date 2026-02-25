@@ -70,11 +70,12 @@ func (d *Daemon) performBackup(ctx context.Context, cfg *config.Config) error {
 	}
 
 	result, err := backup.Run(cfg, backup.RunOptions{
-		ManifestPath:      manifestPath,
-		SnapshotDir:       snapshotDir,
-		SnapshotRetention: cfg.Retention.ManifestSnapshots,
-		EncryptionKey:     keys.primary,
-		Store:             store,
+		ManifestPath:       manifestPath,
+		SnapshotDir:        snapshotDir,
+		SnapshotRetention:  cfg.Retention.ManifestSnapshots,
+		SnapshotMaxAgeDays: cfg.Retention.ManifestMaxAgeDays,
+		EncryptionKey:      keys.primary,
+		Store:              store,
 	})
 	if err != nil {
 		return err

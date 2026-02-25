@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"baxter/internal/config"
 	"baxter/internal/storage"
@@ -243,6 +244,65 @@ func TestRunPrunesSnapshotsByRetention(t *testing.T) {
 	}
 	if len(snapshots) != 2 {
 		t.Fatalf("expected 2 snapshots after retention prune, got %d", len(snapshots))
+	}
+}
+
+func TestRunPrunesSnapshotsByMaxAgeDays(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	snapshotDir := filepath.Join(t.TempDir(), "manifests")
+	objectsDir := filepath.Join(t.TempDir(), "objects")
+	key := []byte("01234567890123456789012345678901")
+	pruneNow := time.Date(2026, time.February, 25, 12, 0, 0, 0, time.UTC)
+
+	filePath := filepath.Join(root, "doc.txt")
+	if err := os.WriteFile(filePath, []byte("current"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	if _, err := SaveSnapshotManifest(snapshotDir, &Manifest{
+		CreatedAt: pruneNow.AddDate(0, 0, -60),
+		Entries:   []ManifestEntry{{Path: "/old.txt", SHA256: "a"}},
+	}); err != nil {
+		t.Fatalf("save old snapshot: %v", err)
+	}
+	if _, err := SaveSnapshotManifest(snapshotDir, &Manifest{
+		CreatedAt: pruneNow.AddDate(0, 0, -5),
+		Entries:   []ManifestEntry{{Path: "/recent.txt", SHA256: "b"}},
+	}); err != nil {
+		t.Fatalf("save recent snapshot: %v", err)
+	}
+
+	cfg := &config.Config{
+		BackupRoots: []string{root},
+		S3:          config.S3Config{},
+		Encryption:  config.EncryptionConfig{},
+	}
+	store := storage.NewLocalClient(objectsDir)
+
+	if _, err := Run(cfg, RunOptions{
+		ManifestPath:       manifestPath,
+		SnapshotDir:        snapshotDir,
+		SnapshotRetention:  0,
+		SnapshotMaxAgeDays: 30,
+		SnapshotPruneNow:   pruneNow,
+		EncryptionKey:      key,
+		Store:              store,
+	}); err != nil {
+		t.Fatalf("run backup: %v", err)
+	}
+
+	snapshots, err := ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 snapshots after age prune, got %d", len(snapshots))
+	}
+	for _, snapshot := range snapshots {
+		if snapshot.CreatedAt.Before(pruneNow.AddDate(0, 0, -30)) {
+			t.Fatalf("found snapshot older than max age after prune: %s", snapshot.CreatedAt)
+		}
 	}
 }
 

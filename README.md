@@ -59,13 +59,14 @@ A simple, secure macOS backup utility with an S3 backend.
 - `s3.bucket` set -> S3 object storage (requires `s3.region`)
 - Snapshot retention:
 - `retention.manifest_snapshots` controls how many manifest snapshots are kept
+- `retention.manifest_max_age_days` prunes snapshots older than N days
 - `0` disables pruning and keeps all snapshots
 
 ## CLI (current)
 - `baxter backup run`: scan configured roots, skip configured excludes, encrypt changed files, and store objects.
 - `baxter backup status`: show manifest/object counts.
 - `baxter snapshot list [--limit n]`: list available manifest snapshots (newest first).
-- `baxter gc [--dry-run]`: delete objects not referenced by latest/retained manifest sources.
+- `baxter gc [--dry-run]`: apply snapshot retention policy, then delete objects not referenced by latest/retained manifest sources.
 - `baxter verify [--snapshot latest|<id>|<RFC3339>] [--prefix path] [--limit n] [--sample n]`: verify object presence, decryption, and checksum integrity.
 - `baxter restore list [--snapshot latest|<id>|<RFC3339>] [--prefix path] [--contains text]`: browse/search restoreable paths from the selected restore point.
 - `baxter restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|<id>|<RFC3339>] <path>`: restore one path from latest or point-in-time snapshot.

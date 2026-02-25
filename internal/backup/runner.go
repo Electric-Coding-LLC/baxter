@@ -3,6 +3,7 @@ package backup
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"baxter/internal/config"
 	"baxter/internal/crypto"
@@ -12,12 +13,14 @@ import (
 const defaultUploadMaxAttempts = 3
 
 type RunOptions struct {
-	ManifestPath      string
-	SnapshotDir       string
-	SnapshotRetention int
-	UploadMaxAttempts int
-	EncryptionKey     []byte
-	Store             storage.ObjectStore
+	ManifestPath       string
+	SnapshotDir        string
+	SnapshotRetention  int
+	SnapshotMaxAgeDays int
+	SnapshotPruneNow   time.Time
+	UploadMaxAttempts  int
+	EncryptionKey      []byte
+	Store              storage.ObjectStore
 }
 
 type RunResult struct {
@@ -78,7 +81,11 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 	if _, err := SaveSnapshotManifest(opts.SnapshotDir, current); err != nil {
 		return RunResult{}, fmt.Errorf("save snapshot manifest: %w", err)
 	}
-	if _, err := PruneSnapshotManifests(opts.SnapshotDir, opts.SnapshotRetention); err != nil {
+	if _, err := PruneSnapshotManifestsWithPolicy(opts.SnapshotDir, SnapshotPrunePolicy{
+		Retain:     opts.SnapshotRetention,
+		MaxAgeDays: opts.SnapshotMaxAgeDays,
+		Now:        opts.SnapshotPruneNow,
+	}); err != nil {
 		return RunResult{}, fmt.Errorf("prune snapshot manifests: %w", err)
 	}
 
