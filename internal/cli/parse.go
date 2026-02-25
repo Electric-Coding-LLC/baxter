@@ -108,3 +108,28 @@ func parseVerifyArgs(args []string) (verifyOptions, error) {
 	}
 	return opts, nil
 }
+
+func parseRestoreDrillArgs(args []string) (restoreDrillOptions, error) {
+	drillFS := flag.NewFlagSet("restore-drill", flag.ContinueOnError)
+	drillFS.SetOutput(os.Stderr)
+
+	var opts restoreDrillOptions
+	drillFS.StringVar(&opts.Snapshot, "snapshot", "", "drill from snapshot selector (latest, snapshot id, or RFC3339 timestamp)")
+	drillFS.StringVar(&opts.Prefix, "prefix", "", "drill only paths with this prefix")
+	drillFS.IntVar(&opts.Sample, "sample", 10, "sample size before limit is applied (0 for all)")
+	drillFS.IntVar(&opts.Limit, "limit", 0, "maximum entries to drill after filtering (0 for all)")
+
+	if err := drillFS.Parse(args); err != nil {
+		return restoreDrillOptions{}, err
+	}
+	if len(drillFS.Args()) != 0 {
+		return restoreDrillOptions{}, errors.New("usage: baxter restore-drill [--snapshot latest|id|RFC3339] [--prefix path] [--sample n] [--limit n]")
+	}
+	if opts.Limit < 0 {
+		return restoreDrillOptions{}, errors.New("limit must be >= 0")
+	}
+	if opts.Sample < 0 {
+		return restoreDrillOptions{}, errors.New("sample must be >= 0")
+	}
+	return opts, nil
+}

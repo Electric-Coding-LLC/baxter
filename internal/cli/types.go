@@ -30,3 +30,10 @@ type verifyOptions struct {
 	Limit    int
 	Sample   int
 }
+
+type restoreDrillOptions struct {
+	Snapshot string
+	Prefix   string
+	Sample   int
+	Limit    int
+}
