@@ -354,6 +354,7 @@ struct BaxterRestoreView: View {
     @State private var restoreToDir = ""
     @State private var restoreOverwrite = false
     @State private var restoreVerifyOnly = false
+    @State private var showRestoreConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -440,7 +441,13 @@ struct BaxterRestoreView: View {
 
                     TextField("Path to restore", text: $restorePath)
                         .font(.system(.body, design: .monospaced))
-                    TextField("Destination root (optional)", text: $restoreToDir)
+                    HStack(spacing: 8) {
+                        TextField("Destination root (optional)", text: $restoreToDir)
+                        Button("Choose...") {
+                            chooseRestoreDestination()
+                        }
+                        .disabled(statusModel.isRestoreBusy)
+                    }
                     Toggle("Overwrite", isOn: $restoreOverwrite)
                         .font(.caption)
                     Toggle("Verify Only (no writes)", isOn: $restoreVerifyOnly)
@@ -457,13 +464,7 @@ struct BaxterRestoreView: View {
                         }
                         .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         Button("Run Restore") {
-                            statusModel.runRestore(
-                                path: restorePath,
-                                toDir: restoreToDir,
-                                overwrite: restoreOverwrite,
-                                verifyOnly: restoreVerifyOnly,
-                                snapshot: statusModel.selectedSnapshotRequestValue
-                            )
+                            showRestoreConfirmation = true
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -514,10 +515,54 @@ struct BaxterRestoreView: View {
                 statusModel.fetchSnapshots()
             }
         }
+        .alert("Confirm Restore", isPresented: $showRestoreConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Run Restore", role: .destructive) {
+                statusModel.runRestore(
+                    path: restorePath,
+                    toDir: restoreToDir,
+                    overwrite: restoreOverwrite,
+                    verifyOnly: restoreVerifyOnly,
+                    snapshot: statusModel.selectedSnapshotRequestValue
+                )
+            }
+        } message: {
+            Text(restoreConfirmationSummary)
+        }
     }
 
     private func snapshotRowLabel(_ snapshot: SnapshotSummary) -> String {
         "\(snapshot.id) (\(snapshot.entries) entries)"
+    }
+
+    private var restoreConfirmationSummary: String {
+        let source = restorePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let destination = restoreToDir.trimmingCharacters(in: .whitespacesAndNewlines)
+        let snapshot = statusModel.selectedSnapshot == BackupStatusModel.latestSnapshotSelection
+            ? "latest"
+            : statusModel.selectedSnapshot
+        let targetText = destination.isEmpty ? "original path" : destination
+        return "Source: \(source)\nSnapshot: \(snapshot)\nDestination root: \(targetText)\nOverwrite: \(restoreOverwrite ? "yes" : "no")\nVerify only: \(restoreVerifyOnly ? "yes" : "no")"
+    }
+
+    private func chooseRestoreDestination() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.resolvesAliases = true
+        panel.prompt = "Choose"
+        panel.message = "Select a destination root for restore output."
+
+        if !restoreToDir.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: restoreToDir)
+        }
+
+        let response = panel.runModal()
+        guard response == .OK, let selectedURL = panel.urls.first else {
+            return
+        }
+        restoreToDir = selectedURL.path
     }
 }
 
