@@ -59,14 +59,16 @@ A simple, secure macOS backup utility with an S3 backend.
 - `s3.bucket` set -> S3 object storage (requires `s3.region`)
 - Snapshot retention:
 - `retention.manifest_snapshots` controls how many manifest snapshots are kept
+- `retention.manifest_max_age_days` prunes snapshots older than N days
 - `0` disables pruning and keeps all snapshots
 
 ## CLI (current)
 - `baxter backup run`: scan configured roots, skip configured excludes, encrypt changed files, and store objects.
 - `baxter backup status`: show manifest/object counts.
 - `baxter snapshot list [--limit n]`: list available manifest snapshots (newest first).
-- `baxter gc [--dry-run]`: delete objects not referenced by latest/retained manifest sources.
+- `baxter gc [--dry-run]`: apply snapshot retention policy, then delete objects not referenced by latest/retained manifest sources.
 - `baxter verify [--snapshot latest|<id>|<RFC3339>] [--prefix path] [--limit n] [--sample n]`: verify object presence, decryption, and checksum integrity.
+- `baxter restore-drill [--snapshot latest|<id>|<RFC3339>] [--prefix path] [--sample n] [--limit n]`: restore a sampled set of files into a temporary directory, verify checksums, and print a JSON summary.
 - `baxter restore list [--snapshot latest|<id>|<RFC3339>] [--prefix path] [--contains text]`: browse/search restoreable paths from the selected restore point.
 - `baxter restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|<id>|<RFC3339>] <path>`: restore one path from latest or point-in-time snapshot.
 - Restore safety defaults:
@@ -105,6 +107,9 @@ A simple, secure macOS backup utility with an S3 backend.
 - `POST /v1/restore/dry-run` (supports optional `snapshot` field)
 - `POST /v1/restore/run`
   - supports `path`, optional `to_dir`, optional `overwrite`, optional `verify_only`, optional `snapshot`
+  - restore object read failures classify as:
+    - `restore_object_missing` (`404`) when the object no longer exists
+    - `restore_storage_transient` (`503`) for retryable/transient storage failures
 - All `/v1/*` endpoints enforce `X-Baxter-Token` when an IPC token is configured.
 - Restore JSON request bodies are capped at 1 MiB.
 - IPC HTTP server applies explicit timeout/header limits (`ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout`, `IdleTimeout`, `MaxHeaderBytes`) for DoS hardening.
@@ -128,6 +133,8 @@ A simple, secure macOS backup utility with an S3 backend.
 - Installed paths:
 - LaunchAgent plist: `~/Library/LaunchAgents/com.electriccoding.baxterd.plist`
 - Daemon binary: `~/Library/Application Support/baxter/bin/baxterd`
+- In the macOS app, `Start Daemon` can auto-install these paths when missing (if config exists and local build context is available).
+- On app startup, the macOS menu app will auto-start the daemon once when config exists and launchd reports it is not running.
 - Logs:
 - `~/Library/Logs/baxterd.out.log`
 - `~/Library/Logs/baxterd.err.log`

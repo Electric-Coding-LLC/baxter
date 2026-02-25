@@ -37,7 +37,8 @@ type EncryptionConfig struct {
 }
 
 type RetentionConfig struct {
-	ManifestSnapshots int `toml:"manifest_snapshots"`
+	ManifestSnapshots  int `toml:"manifest_snapshots"`
+	ManifestMaxAgeDays int `toml:"manifest_max_age_days"`
 }
 
 type VerifyConfig struct {
@@ -70,7 +71,8 @@ func DefaultConfig() *Config {
 			KeychainAccount: "default",
 		},
 		Retention: RetentionConfig{
-			ManifestSnapshots: 30,
+			ManifestSnapshots:  30,
+			ManifestMaxAgeDays: 0,
 		},
 		Verify: VerifyConfig{
 			Schedule:   "manual",
@@ -270,6 +272,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Retention.ManifestSnapshots < 0 {
 		return errors.New("retention.manifest_snapshots must be >= 0")
+	}
+	if c.Retention.ManifestMaxAgeDays < 0 {
+		return errors.New("retention.manifest_max_age_days must be >= 0")
 	}
 	switch c.Verify.Schedule {
 	case "", "daily", "weekly", "manual":

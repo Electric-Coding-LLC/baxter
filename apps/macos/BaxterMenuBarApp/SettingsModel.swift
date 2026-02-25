@@ -25,11 +25,21 @@ final class BaxterSettingsModel: ObservableObject {
     @Published var verifySample: String = "0"
     @Published var statusMessage: String?
     @Published var errorMessage: String?
+    @Published private(set) var configExists: Bool = false
     @Published private(set) var validationErrors: [SettingsField: String] = [:]
     @Published private(set) var backupRootWarnings: [String: String] = [:]
 
     var canSave: Bool {
         validationErrors.isEmpty
+    }
+
+    var hasConfiguredKeySource: Bool {
+        let envPassphrase = ProcessInfo.processInfo.environment["BAXTER_PASSPHRASE"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !envPassphrase.isEmpty {
+            return true
+        }
+        return !keychainService.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !keychainAccount.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var s3ModeHint: String {
@@ -69,10 +79,12 @@ final class BaxterSettingsModel: ObservableObject {
         do {
             let config: BaxterConfig
             if FileManager.default.fileExists(atPath: configURL.path) {
+                configExists = true
                 let text = try String(contentsOf: configURL, encoding: .utf8)
                 config = decodeBaxterConfig(from: text)
                 statusMessage = "Loaded settings from config.toml"
             } else {
+                configExists = false
                 config = .default
                 statusMessage = "Config not found. Showing defaults."
             }
@@ -105,6 +117,7 @@ final class BaxterSettingsModel: ObservableObject {
 
             statusMessage = "Saved settings to \(configURL.path)"
             errorMessage = nil
+            configExists = true
         } catch {
             errorMessage = "Failed to save config: \(error.localizedDescription)"
         }
@@ -154,6 +167,43 @@ final class BaxterSettingsModel: ObservableObject {
         statusMessage = nil
         errorMessage = nil
         validateDraft()
+    }
+
+    func storageMode() -> StorageModeOption {
+        s3Bucket.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .local : .s3
+    }
+
+    func setStorageMode(_ mode: StorageModeOption) {
+        switch mode {
+        case .local:
+            s3Endpoint = ""
+            s3Region = ""
+            s3Bucket = ""
+        case .s3:
+            if s3Prefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                s3Prefix = "baxter/"
+            }
+        }
+        validateDraft()
+    }
+
+    func firstRunValidationMessage() -> String? {
+        let config = draftConfig()
+        let warnings = backupRootIssues(for: config.backupRoots)
+        if config.backupRoots.isEmpty {
+            return "Select at least one backup folder."
+        }
+        if !warnings.isEmpty {
+            return "Fix invalid backup folders before continuing."
+        }
+        if !hasConfiguredKeySource {
+            return "Configure BAXTER_PASSPHRASE or keychain service/account."
+        }
+        let errors = validationIssues(for: config, backupRootWarnings: warnings)
+        if let message = firstValidationMessage(from: errors) {
+            return message
+        }
+        return nil
     }
 
     private func apply(_ config: BaxterConfig) {

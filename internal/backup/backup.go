@@ -96,6 +96,10 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 			if err != nil {
 				return err
 			}
+			if !info.Mode().IsRegular() {
+				// Skip non-regular entries (for example symlinked framework dirs).
+				return nil
+			}
 
 			hash, err := fileSHA256(path)
 			if err != nil {

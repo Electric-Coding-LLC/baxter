@@ -257,6 +257,50 @@ func TestRestorePathFromOlderSnapshotAfterDeletion(t *testing.T) {
 	}
 }
 
+func TestRestorePathReportsMissingObjectClearly(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	sourceContent := []byte("missing object payload")
+	if err := os.WriteFile(sourcePath, sourceContent, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "test-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+	cfg.S3.Bucket = ""
+
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("run backup failed: %v", err)
+	}
+
+	store, err := objectStoreFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("object store from config: %v", err)
+	}
+	if err := store.DeleteObject(backup.ObjectKeyForPath(sourcePath)); err != nil {
+		t.Fatalf("delete object: %v", err)
+	}
+
+	err = restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot})
+	if err == nil {
+		t.Fatal("expected restore to fail when object is missing")
+	}
+	if !strings.Contains(err.Error(), "restore object missing for path") {
+		t.Fatalf("unexpected missing object error: %v", err)
+	}
+}
+
 func TestRestorePathVerifyOnlyDoesNotWrite(t *testing.T) {
 	homeDir := t.TempDir()
 	srcRoot := filepath.Join(t.TempDir(), "src")

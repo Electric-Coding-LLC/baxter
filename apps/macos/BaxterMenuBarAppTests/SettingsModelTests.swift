@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 @testable import BaxterMenuBarApp
 
 @MainActor
@@ -208,6 +209,41 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertEqual(model.validationMessage(for: .verifyLimit), "Verify limit must be a non-negative integer.")
         XCTAssertFalse(model.canSave)
     }
+
+    func testSetStorageModeLocalClearsS3Coordinates() {
+        let model = BaxterSettingsModel()
+        model.s3Endpoint = "https://s3.amazonaws.com"
+        model.s3Region = "us-west-2"
+        model.s3Bucket = "bucket"
+
+        model.setStorageMode(.local)
+
+        XCTAssertEqual(model.s3Endpoint, "")
+        XCTAssertEqual(model.s3Region, "")
+        XCTAssertEqual(model.s3Bucket, "")
+        XCTAssertEqual(model.storageMode(), .local)
+    }
+
+    func testFirstRunValidationMessageRequiresBackupRoot() {
+        let model = BaxterSettingsModel()
+        model.backupRoots = []
+
+        XCTAssertEqual(model.firstRunValidationMessage(), "Select at least one backup folder.")
+    }
+
+    func testFirstRunValidationMessageRequiresKeySource() {
+        let model = BaxterSettingsModel()
+        _ = setenv("BAXTER_PASSPHRASE", "", 1)
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        model.backupRoots = [tempDir.path]
+        model.keychainService = ""
+        model.keychainAccount = ""
+
+        XCTAssertEqual(model.firstRunValidationMessage(), "Configure BAXTER_PASSPHRASE or keychain service/account.")
+    }
 }
 
 @MainActor
@@ -215,6 +251,72 @@ final class BackupStatusModelRestoreTests: XCTestCase {
     override func tearDown() {
         MockURLProtocol.reset()
         super.tearDown()
+    }
+
+    func testFetchSnapshotsLoadsSummariesAndIncludesIPCAuthHeader() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("""
+            {"snapshots":[
+              {"id":"snap-2","created_at":"2026-02-24T10:00:00Z","entries":12},
+              {"id":"snap-1","created_at":"2026-02-23T10:00:00Z","entries":10}
+            ]}
+            """.utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            ipcToken: "token-123",
+            autoStartPolling: false
+        )
+        model.selectedSnapshot = "snap-2"
+
+        model.fetchSnapshots(limit: 42)
+        await waitUntil("snapshot fetch completion") { model.snapshots.count == 2 }
+
+        let request = try XCTUnwrap(
+            MockURLProtocol.requests().first { $0.url?.path == "/v1/snapshots" }
+        )
+        let queryItems = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first(where: { $0.name == "limit" })?.value, "42")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
+        XCTAssertEqual(model.snapshots.first?.id, "snap-2")
+        XCTAssertEqual(model.selectedSnapshot, "snap-2")
+        XCTAssertEqual(model.selectedSnapshotRequestValue, "snap-2")
+        XCTAssertEqual(model.selectedSnapshotSummary?.entries, 12)
+    }
+
+    func testFetchSnapshotsResetsMissingSelectionToLatest() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("""
+            {"snapshots":[
+              {"id":"snap-9","created_at":"2026-02-24T10:00:00Z","entries":9}
+            ]}
+            """.utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            autoStartPolling: false
+        )
+        model.selectedSnapshot = "does-not-exist"
+
+        model.fetchSnapshots()
+        await waitUntil("snapshot fetch fallback") { model.snapshotsMessage != nil }
+
+        XCTAssertEqual(model.selectedSnapshot, BackupStatusModel.latestSnapshotSelection)
+        XCTAssertEqual(model.selectedSnapshotRequestValue, "")
+        XCTAssertNil(model.selectedSnapshotSummary)
+        XCTAssertEqual(model.snapshots.count, 1)
     }
 
     func testFetchRestoreListIncludesSnapshotQueryItem() async throws {
@@ -387,6 +489,67 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         )
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
     }
+
+    func testRefreshStatusSendsFailureNotificationOncePerTransition() async throws {
+        let notifications = MockNotificationDispatcher()
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"state\":\"failed\",\"last_error\":\"backup exploded\"}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            notificationDispatcher: notifications,
+            autoStartPolling: false
+        )
+
+        XCTAssertTrue(notifications.authorizationRequested)
+        model.refreshStatus()
+        await waitUntil("first failure notification") { notifications.notifications.count == 1 }
+        model.refreshStatus()
+        await waitUntil("second status request") {
+            MockURLProtocol.requests().filter { $0.url?.path == "/v1/status" }.count >= 2
+        }
+
+        XCTAssertEqual(notifications.notifications.count, 1)
+        XCTAssertEqual(notifications.notifications.first?.0, "Baxter backup failed")
+    }
+
+    func testRefreshStatusSendsSuccessNotificationWhenEnabled() async throws {
+        let notifications = MockNotificationDispatcher()
+        var statusCallCount = 0
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            defer { statusCallCount += 1 }
+            if statusCallCount == 0 {
+                return (response, Data("{\"state\":\"running\"}".utf8))
+            }
+            return (response, Data("{\"state\":\"idle\",\"last_backup_at\":\"2026-02-24T12:00:00Z\"}".utf8))
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            notificationDispatcher: notifications,
+            autoStartPolling: false
+        )
+        model.notifyOnSuccess = true
+
+        model.refreshStatus()
+        await waitUntil("running state refresh") { model.state == .running }
+        model.refreshStatus()
+        await waitUntil("success notification") {
+            notifications.notifications.contains(where: { $0.0 == "Baxter backup completed" })
+        }
+
+        XCTAssertTrue(notifications.notifications.contains(where: { $0.0 == "Baxter backup completed" }))
+    }
 }
 
 private func makeMockURLSession() -> URLSession {
@@ -483,5 +646,18 @@ private final class MockURLProtocol: URLProtocol {
         let value = observedRequests
         lock.unlock()
         return value
+    }
+}
+
+private final class MockNotificationDispatcher: NotificationDispatching {
+    private(set) var authorizationRequested = false
+    private(set) var notifications: [(String, String)] = []
+
+    func requestAuthorizationIfNeeded() {
+        authorizationRequested = true
+    }
+
+    func sendNotification(title: String, body: String) {
+        notifications.append((title, body))
     }
 }

@@ -5,6 +5,8 @@ import SwiftUI
 
 @MainActor
 final class BackupStatusModel: ObservableObject {
+    static let latestSnapshotSelection = "latest"
+
     enum State: String {
         case idle = "Idle"
         case running = "Running"
@@ -41,22 +43,45 @@ final class BackupStatusModel: ObservableObject {
     @Published var lastRestoreAt: Date?
     @Published var lastRestorePath: String?
     @Published var lastRestoreError: String?
+    @Published var snapshots: [SnapshotSummary] = []
+    @Published var selectedSnapshot: String = latestSnapshotSelection
+    @Published var isSnapshotsBusy: Bool = false
+    @Published var snapshotsMessage: String?
+    @Published var notifyOnSuccess: Bool = false {
+        didSet {
+            notificationSettings.notifyOnSuccess = notifyOnSuccess
+        }
+    }
 
     private let baseURL: URL
     private let urlSession: URLSession
     private let ipcToken: String?
+    private let notificationSettings: NotificationSettingsStore
+    private let notificationDispatcher: NotificationDispatching
     private var timer: Timer?
     private let iso8601 = ISO8601DateFormatter()
+    private var shouldAutoBootstrapDaemon: Bool
+    private var hasAttemptedAutoBootstrapDaemon: Bool = false
+    private var suppressAutoRecoveryUntilManualStart: Bool = false
+    private var lastAutoRecoveryAttemptAt: Date?
+    private let autoRecoveryCooldown: TimeInterval = 15
 
     init(
         baseURL: URL = URL(string: "http://127.0.0.1:41820")!,
         urlSession: URLSession = .shared,
         ipcToken: String? = ProcessInfo.processInfo.environment["BAXTER_IPC_TOKEN"],
+        notificationSettings: NotificationSettingsStore = .shared,
+        notificationDispatcher: NotificationDispatching = NoopNotificationDispatcher(),
         autoStartPolling: Bool = true
     ) {
         self.baseURL = baseURL
         self.urlSession = urlSession
         self.ipcToken = ipcToken?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.notificationSettings = notificationSettings
+        self.notificationDispatcher = notificationDispatcher
+        self.notifyOnSuccess = notificationSettings.notifyOnSuccess
+        self.shouldAutoBootstrapDaemon = autoStartPolling
+        self.notificationDispatcher.requestAuthorizationIfNeeded()
         if autoStartPolling {
             startPolling()
         }
@@ -67,6 +92,7 @@ final class BackupStatusModel: ObservableObject {
     }
 
     func startPolling() {
+        shouldAutoBootstrapDaemon = true
         refreshStatus()
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
@@ -78,7 +104,45 @@ final class BackupStatusModel: ObservableObject {
 
     func refreshStatus() {
         Task {
-            daemonServiceState = await LaunchdController.queryState()
+            var launchdState = await LaunchdController.queryState()
+            var attemptedStartThisRefresh = false
+            if shouldAutoBootstrapDaemon &&
+                !hasAttemptedAutoBootstrapDaemon &&
+                launchdState != .running &&
+                LaunchdController.hasConfigFile()
+            {
+                attemptedStartThisRefresh = true
+                hasAttemptedAutoBootstrapDaemon = true
+                do {
+                    lifecycleMessage = try await LaunchdController.start()
+                    launchdState = await LaunchdController.queryState()
+                    suppressAutoRecoveryUntilManualStart = false
+                } catch {
+                    lifecycleMessage = "Auto-start failed: \(error.localizedDescription)"
+                }
+            }
+
+            if shouldAutoBootstrapDaemon &&
+                !attemptedStartThisRefresh &&
+                !suppressAutoRecoveryUntilManualStart &&
+                launchdState == .stopped &&
+                LaunchdController.hasConfigFile() &&
+                shouldAttemptAutoRecovery()
+            {
+                attemptedStartThisRefresh = true
+                lastAutoRecoveryAttemptAt = Date()
+                do {
+                    lifecycleMessage = "Daemon stopped; attempting restart..."
+                    lifecycleMessage = try await LaunchdController.start()
+                    launchdState = await LaunchdController.queryState()
+                    suppressAutoRecoveryUntilManualStart = false
+                } catch {
+                    lifecycleMessage = "Auto-restart failed: \(error.localizedDescription)"
+                }
+            }
+
+            daemonServiceState = launchdState
+            clearStaleLifecycleMessageIfNeeded(for: launchdState)
             do {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/status"))
                 request.httpMethod = "GET"
@@ -93,7 +157,7 @@ final class BackupStatusModel: ObservableObject {
                 apply(status)
                 isDaemonReachable = true
             } catch {
-                if daemonServiceState == .stopped {
+                if launchdState == .stopped {
                     state = .idle
                     lastError = nil
                 } else {
@@ -167,6 +231,7 @@ final class BackupStatusModel: ObservableObject {
             defer { isLifecycleBusy = false }
             do {
                 lifecycleMessage = try await LaunchdController.start()
+                suppressAutoRecoveryUntilManualStart = false
                 lastError = nil
                 refreshStatus()
             } catch {
@@ -181,6 +246,7 @@ final class BackupStatusModel: ObservableObject {
             defer { isLifecycleBusy = false }
             do {
                 lifecycleMessage = try await LaunchdController.stop()
+                suppressAutoRecoveryUntilManualStart = true
                 lastError = nil
                 refreshStatus()
             } catch {
@@ -268,6 +334,53 @@ final class BackupStatusModel: ObservableObject {
                 restorePreviewMessage = "Restore list failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    func fetchSnapshots(limit: Int = 50) {
+        Task {
+            isSnapshotsBusy = true
+            defer { isSnapshotsBusy = false }
+
+            do {
+                var components = URLComponents(url: baseURL.appendingPathComponent("v1/snapshots"), resolvingAgainstBaseURL: false)
+                components?.queryItems = [URLQueryItem(name: "limit", value: String(max(limit, 0)))]
+                guard let url = components?.url else {
+                    throw IPCError.badResponse
+                }
+
+                var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+                applyIPCAuthHeader(to: &request)
+
+                let (data, response) = try await urlSession.data(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw IPCError.badResponse
+                }
+                guard http.statusCode == 200 else {
+                    throw decodeDaemonError(data: data, statusCode: http.statusCode)
+                }
+
+                let decoded = try JSONDecoder().decode(SnapshotsPayload.self, from: data)
+                snapshots = decoded.snapshots
+                if selectedSnapshot != Self.latestSnapshotSelection &&
+                    !decoded.snapshots.contains(where: { $0.id == selectedSnapshot }) {
+                    selectedSnapshot = Self.latestSnapshotSelection
+                }
+                snapshotsMessage = decoded.snapshots.isEmpty
+                    ? "No snapshots found. Use latest."
+                    : "Loaded \(decoded.snapshots.count) snapshot(s)."
+            } catch {
+                snapshotsMessage = "Snapshot load failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    var selectedSnapshotRequestValue: String {
+        selectedSnapshot == Self.latestSnapshotSelection ? "" : selectedSnapshot
+    }
+
+    var selectedSnapshotSummary: SnapshotSummary? {
+        snapshots.first(where: { $0.id == selectedSnapshot })
     }
 
     func previewRestore(path: String, toDir: String, overwrite: Bool, snapshot: String) {
@@ -378,6 +491,11 @@ final class BackupStatusModel: ObservableObject {
     }
 
     private func apply(_ status: DaemonStatus) {
+        let previousState = state
+        let previousVerifyState = verifyState
+        let previousLastBackupAt = lastBackupAt
+        let previousLastVerifyAt = lastVerifyAt
+
         switch status.state.lowercased() {
         case "running":
             state = .running
@@ -430,5 +548,72 @@ final class BackupStatusModel: ObservableObject {
         lastVerifyDecryptErrors = status.lastVerifyDecryptErrors ?? 0
         lastVerifyChecksumErrors = status.lastVerifyChecksumErrors ?? 0
         lastError = status.lastError
+
+        dispatchStatusTransitionNotifications(
+            previousState: previousState,
+            previousVerifyState: previousVerifyState,
+            previousLastBackupAt: previousLastBackupAt,
+            previousLastVerifyAt: previousLastVerifyAt
+        )
+    }
+
+    private func shouldAttemptAutoRecovery(now: Date = Date()) -> Bool {
+        guard let lastAutoRecoveryAttemptAt else {
+            return true
+        }
+        return now.timeIntervalSince(lastAutoRecoveryAttemptAt) >= autoRecoveryCooldown
+    }
+
+    private func clearStaleLifecycleMessageIfNeeded(for launchdState: DaemonServiceState) {
+        guard launchdState == .stopped, !isLifecycleBusy else {
+            return
+        }
+        guard let lifecycleMessage else {
+            return
+        }
+        if lifecycleMessage.hasPrefix("Daemon ") {
+            self.lifecycleMessage = nil
+        }
+    }
+
+    private func dispatchStatusTransitionNotifications(
+        previousState: State,
+        previousVerifyState: VerifyState,
+        previousLastBackupAt: Date?,
+        previousLastVerifyAt: Date?
+    ) {
+        if state == .failed && previousState != .failed {
+            notificationDispatcher.sendNotification(
+                title: "Baxter backup failed",
+                body: lastError ?? "A backup run failed. Open Baxter for details."
+            )
+        }
+        if verifyState == .failed && previousVerifyState != .failed {
+            notificationDispatcher.sendNotification(
+                title: "Baxter verify failed",
+                body: lastVerifyError ?? "A verify run failed. Open Baxter for details."
+            )
+        }
+        guard notifyOnSuccess else {
+            return
+        }
+        if previousState == .running,
+            state == .idle,
+            let backupAt = lastBackupAt,
+            backupAt != previousLastBackupAt {
+            notificationDispatcher.sendNotification(
+                title: "Baxter backup completed",
+                body: "Backup finished successfully at \(backupAt.formatted(date: .abbreviated, time: .shortened))."
+            )
+        }
+        if previousVerifyState == .running,
+            verifyState == .idle,
+            let verifyAt = lastVerifyAt,
+            verifyAt != previousLastVerifyAt {
+            notificationDispatcher.sendNotification(
+                title: "Baxter verify completed",
+                body: "Verify finished successfully at \(verifyAt.formatted(date: .abbreviated, time: .shortened))."
+            )
+        }
     }
 }

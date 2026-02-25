@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -50,6 +51,34 @@ func TestBuildManifestWithOptionsExcludesRootPath(t *testing.T) {
 	}
 	if len(manifest.Entries) != 0 {
 		t.Fatalf("expected empty manifest when root is excluded, got %d entries", len(manifest.Entries))
+	}
+}
+
+func TestBuildManifestWithOptionsSkipsSymlinkedDirectories(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink behavior differs on windows")
+	}
+
+	root := t.TempDir()
+	targetDir := filepath.Join(root, "target")
+	mustWriteTestFile(t, filepath.Join(targetDir, "file.txt"), []byte("content"))
+	linkPath := filepath.Join(root, "framework-resources")
+	if err := os.Symlink(targetDir, linkPath); err != nil {
+		t.Skipf("symlink unsupported in this environment: %v", err)
+	}
+
+	manifest, err := BuildManifestWithOptions([]string{root}, BuildOptions{})
+	if err != nil {
+		t.Fatalf("build manifest with symlinked directory: %v", err)
+	}
+
+	got := make([]string, 0, len(manifest.Entries))
+	for _, entry := range manifest.Entries {
+		got = append(got, entry.Path)
+	}
+	want := []string{filepath.Join(targetDir, "file.txt")}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected manifest paths: got %#v want %#v", got, want)
 	}
 }
 

@@ -2,6 +2,7 @@ package backup
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -68,4 +69,83 @@ func TestLoadManifestForRestoreSnapshotNotFound(t *testing.T) {
 	if _, err := LoadManifestForRestore(manifestPath, snapshotDir, "missing-snapshot"); !errors.Is(err, ErrSnapshotNotFound) {
 		t.Fatalf("expected ErrSnapshotNotFound, got %v", err)
 	}
+}
+
+func TestPruneSnapshotManifestsWithPolicyMixedRetention(t *testing.T) {
+	snapshotDir := filepath.Join(t.TempDir(), "manifests")
+	now := time.Date(2026, time.February, 25, 15, 0, 0, 0, time.UTC)
+
+	_ = mustSaveSnapshot(t, snapshotDir, now.AddDate(0, 0, -1))
+	_ = mustSaveSnapshot(t, snapshotDir, now.AddDate(0, 0, -2))
+	oldButRetainedByCount := mustSaveSnapshot(t, snapshotDir, now.AddDate(0, 0, -45))
+	veryOld := mustSaveSnapshot(t, snapshotDir, now.AddDate(0, 0, -70))
+
+	removed, err := PruneSnapshotManifestsWithPolicy(snapshotDir, SnapshotPrunePolicy{
+		Retain:     3,
+		MaxAgeDays: 30,
+		Now:        now,
+	})
+	if err != nil {
+		t.Fatalf("prune snapshots: %v", err)
+	}
+	if removed != 2 {
+		t.Fatalf("unexpected removed count: got %d want 2", removed)
+	}
+
+	remaining, err := ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("unexpected remaining count: got %d want 2", len(remaining))
+	}
+	for _, snapshot := range remaining {
+		if snapshot.ID == oldButRetainedByCount.ID || snapshot.ID == veryOld.ID {
+			t.Fatalf("expected old snapshots to be pruned, remaining=%+v", remaining)
+		}
+	}
+}
+
+func TestPlanSnapshotPruneManifestsWithPolicyBoundaryCutoff(t *testing.T) {
+	snapshotDir := filepath.Join(t.TempDir(), "manifests")
+	now := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+
+	cutoffAge := now.AddDate(0, 0, -30)
+	atCutoff := mustSaveSnapshot(t, snapshotDir, cutoffAge)
+	older := mustSaveSnapshot(t, snapshotDir, cutoffAge.Add(-time.Second))
+
+	candidates, err := PlanSnapshotPruneManifestsWithPolicy(snapshotDir, SnapshotPrunePolicy{
+		MaxAgeDays: 30,
+		Now:        now,
+	})
+	if err != nil {
+		t.Fatalf("plan prune snapshots: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("unexpected candidate count: got %d want 1", len(candidates))
+	}
+	if candidates[0].ID != older.ID {
+		t.Fatalf("unexpected prune candidate: got %s want %s", candidates[0].ID, older.ID)
+	}
+
+	// Ensure plan-only mode is non-destructive.
+	if _, err := os.Stat(atCutoff.Path); err != nil {
+		t.Fatalf("expected snapshot at cutoff to remain on disk: %v", err)
+	}
+	if _, err := os.Stat(older.Path); err != nil {
+		t.Fatalf("expected older snapshot to remain on disk in plan mode: %v", err)
+	}
+}
+
+func mustSaveSnapshot(t *testing.T, dir string, createdAt time.Time) ManifestSnapshot {
+	t.Helper()
+
+	snapshot, err := SaveSnapshotManifest(dir, &Manifest{
+		CreatedAt: createdAt,
+		Entries:   []ManifestEntry{{Path: createdAt.Format(time.RFC3339)}},
+	})
+	if err != nil {
+		t.Fatalf("save snapshot: %v", err)
+	}
+	return snapshot
 }

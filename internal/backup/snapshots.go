@@ -22,6 +22,12 @@ type ManifestSnapshot struct {
 	Entries   int
 }
 
+type SnapshotPrunePolicy struct {
+	Retain     int
+	MaxAgeDays int
+	Now        time.Time
+}
+
 func SaveSnapshotManifest(snapshotDir string, m *Manifest) (ManifestSnapshot, error) {
 	if strings.TrimSpace(snapshotDir) == "" {
 		return ManifestSnapshot{}, errors.New("snapshot directory is required")
@@ -111,26 +117,69 @@ func ListSnapshotManifests(snapshotDir string) ([]ManifestSnapshot, error) {
 }
 
 func PruneSnapshotManifests(snapshotDir string, retain int) (int, error) {
-	if retain <= 0 {
-		return 0, nil
-	}
+	return PruneSnapshotManifestsWithPolicy(snapshotDir, SnapshotPrunePolicy{
+		Retain: retain,
+	})
+}
 
+func PruneSnapshotManifestsWithPolicy(snapshotDir string, policy SnapshotPrunePolicy) (int, error) {
 	snapshots, err := ListSnapshotManifests(snapshotDir)
 	if err != nil {
 		return 0, err
 	}
-	if len(snapshots) <= retain {
+	if len(snapshots) == 0 {
 		return 0, nil
 	}
 
+	candidates := snapshotPruneCandidates(snapshots, policy)
 	removed := 0
-	for _, snapshot := range snapshots[retain:] {
+	for _, snapshot := range candidates {
 		if err := os.Remove(snapshot.Path); err != nil && !os.IsNotExist(err) {
 			return removed, err
 		}
 		removed++
 	}
 	return removed, nil
+}
+
+func PlanSnapshotPruneManifestsWithPolicy(snapshotDir string, policy SnapshotPrunePolicy) ([]ManifestSnapshot, error) {
+	snapshots, err := ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		return nil, err
+	}
+	return snapshotPruneCandidates(snapshots, policy), nil
+}
+
+func snapshotPruneCandidates(snapshots []ManifestSnapshot, policy SnapshotPrunePolicy) []ManifestSnapshot {
+	if len(snapshots) == 0 {
+		return []ManifestSnapshot{}
+	}
+
+	now := policy.Now.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	var cutoff time.Time
+	if policy.MaxAgeDays > 0 {
+		cutoff = now.AddDate(0, 0, -policy.MaxAgeDays)
+	}
+
+	candidates := make([]ManifestSnapshot, 0)
+	for index, snapshot := range snapshots {
+		keep := true
+		if policy.Retain > 0 && index >= policy.Retain {
+			keep = false
+		}
+		if !cutoff.IsZero() && snapshot.CreatedAt.Before(cutoff) {
+			keep = false
+		}
+		if keep {
+			continue
+		}
+		candidates = append(candidates, snapshot)
+	}
+	return candidates
 }
 
 func LoadManifestForRestore(latestManifestPath, snapshotDir, selector string) (*Manifest, error) {

@@ -9,6 +9,7 @@ import (
 
 	"baxter/internal/backup"
 	"baxter/internal/state"
+	"baxter/internal/storage"
 )
 
 var (
@@ -122,4 +123,15 @@ func (d *Daemon) loadManifestForRestore(snapshotSelector string) (*backup.Manife
 		return nil, err
 	}
 	return backup.LoadManifestForRestore(manifestPath, snapshotDir, snapshotSelector)
+}
+
+func classifyRestoreReadObjectError(entryPath string, err error) (int, string, string) {
+	switch {
+	case storage.IsNotFound(err):
+		return http.StatusNotFound, "restore_object_missing", fmt.Sprintf("restore object missing for path %s", entryPath)
+	case storage.IsTransient(err):
+		return http.StatusServiceUnavailable, "restore_storage_transient", fmt.Sprintf("transient storage read failure for %s: %v", entryPath, err)
+	default:
+		return http.StatusBadRequest, "read_object_failed", fmt.Sprintf("read object: %v", err)
+	}
 }

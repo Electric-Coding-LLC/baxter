@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,15 +17,22 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 )
 
 type fakeUploader struct {
 	lastInput *transfermanager.UploadObjectInput
 	err       error
+	uploadFn  func(ctx context.Context, input *transfermanager.UploadObjectInput, opts ...func(*transfermanager.Options)) (*transfermanager.UploadObjectOutput, error)
+	callCount int
 }
 
-func (f *fakeUploader) UploadObject(_ context.Context, input *transfermanager.UploadObjectInput, _ ...func(*transfermanager.Options)) (*transfermanager.UploadObjectOutput, error) {
+func (f *fakeUploader) UploadObject(ctx context.Context, input *transfermanager.UploadObjectInput, opts ...func(*transfermanager.Options)) (*transfermanager.UploadObjectOutput, error) {
+	f.callCount++
 	f.lastInput = input
+	if f.uploadFn != nil {
+		return f.uploadFn(ctx, input, opts...)
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -92,6 +101,14 @@ type errReadCloser struct{}
 
 func (errReadCloser) Read(_ []byte) (int, error) { return 0, errors.New("read failure") }
 func (errReadCloser) Close() error               { return nil }
+
+type timeoutNetErr struct{}
+
+func (timeoutNetErr) Error() string   { return "timeout" }
+func (timeoutNetErr) Timeout() bool   { return true }
+func (timeoutNetErr) Temporary() bool { return true }
+
+var _ net.Error = timeoutNetErr{}
 
 func TestAWSListObjectsV2PaginatorNilInner(t *testing.T) {
 	p := &awsListObjectsV2Paginator{}
@@ -253,6 +270,56 @@ func TestS3PutObjectErrors(t *testing.T) {
 	}
 }
 
+func TestS3PutObjectRetriesTransientErrors(t *testing.T) {
+	attempts := 0
+	uploader := &fakeUploader{
+		uploadFn: func(_ context.Context, _ *transfermanager.UploadObjectInput, _ ...func(*transfermanager.Options)) (*transfermanager.UploadObjectOutput, error) {
+			attempts++
+			if attempts < 3 {
+				return nil, timeoutNetErr{}
+			}
+			return &transfermanager.UploadObjectOutput{}, nil
+		},
+	}
+	c := &S3Client{
+		uploader:             uploader,
+		bucket:               "bucket",
+		prefix:               "baxter/",
+		operationMaxAttempts: 3,
+		retryBaseDelay:       time.Millisecond,
+		retryMaxDelay:        time.Millisecond,
+		sleepFn:              func(time.Duration) {},
+	}
+
+	if err := c.PutObject("path/item", []byte("payload")); err != nil {
+		t.Fatalf("expected transient retries to succeed, got: %v", err)
+	}
+	if uploader.callCount != 3 {
+		t.Fatalf("unexpected upload call count: got %d want 3", uploader.callCount)
+	}
+}
+
+func TestS3PutObjectFailsFastForNonRetryableErrors(t *testing.T) {
+	uploader := &fakeUploader{
+		err: errors.New("access denied"),
+	}
+	c := &S3Client{
+		uploader:             uploader,
+		bucket:               "bucket",
+		prefix:               "baxter/",
+		operationMaxAttempts: 5,
+		sleepFn:              func(time.Duration) {},
+	}
+
+	err := c.PutObject("path/item", []byte("payload"))
+	if err == nil {
+		t.Fatal("expected put object to fail")
+	}
+	if uploader.callCount != 1 {
+		t.Fatalf("expected non-retryable error to fail fast, got %d attempts", uploader.callCount)
+	}
+}
+
 func TestS3GetObjectSuccess(t *testing.T) {
 	c := &S3Client{
 		bucket: "bucket",
@@ -303,6 +370,73 @@ func TestS3GetObjectErrors(t *testing.T) {
 	}
 	if _, err := c.GetObject("key"); err == nil || !strings.Contains(err.Error(), "read object body: read failure") {
 		t.Fatalf("expected body read error, got: %v", err)
+	}
+}
+
+func TestS3GetObjectRetriesTransientErrors(t *testing.T) {
+	attempts := 0
+	c := &S3Client{
+		bucket:               "bucket",
+		prefix:               "baxter/",
+		operationMaxAttempts: 3,
+		retryBaseDelay:       time.Millisecond,
+		retryMaxDelay:        time.Millisecond,
+		sleepFn:              func(time.Duration) {},
+		api: &fakeS3API{
+			getFn: func(_ context.Context, _ *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+				attempts++
+				if attempts < 3 {
+					return nil, timeoutNetErr{}
+				}
+				return &s3.GetObjectOutput{Body: io.NopCloser(strings.NewReader("payload"))}, nil
+			},
+		},
+	}
+
+	got, err := c.GetObject("key")
+	if err != nil {
+		t.Fatalf("expected transient retries to succeed, got: %v", err)
+	}
+	if string(got) != "payload" {
+		t.Fatalf("payload mismatch: got %q", string(got))
+	}
+	if attempts != 3 {
+		t.Fatalf("unexpected get attempts: got %d want 3", attempts)
+	}
+}
+
+func TestS3GetObjectClassifiesNotFoundAndTransient(t *testing.T) {
+	c := &S3Client{
+		bucket:               "bucket",
+		prefix:               "baxter/",
+		operationMaxAttempts: 2,
+		sleepFn:              func(time.Duration) {},
+		api: &fakeS3API{
+			getFn: func(_ context.Context, _ *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+				return nil, &smithy.GenericAPIError{Code: "NoSuchKey", Message: "missing"}
+			},
+		},
+	}
+
+	_, err := c.GetObject("key")
+	if err == nil {
+		t.Fatal("expected missing object error")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected not found classification, got: %v", err)
+	}
+
+	c.api = &fakeS3API{
+		getFn: func(_ context.Context, _ *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+			return nil, timeoutNetErr{}
+		},
+	}
+	_, err = c.GetObject("key")
+	if err == nil {
+		t.Fatal("expected transient get error")
+	}
+	if !errors.Is(err, ErrTransient) {
+		t.Fatalf("expected transient classification, got: %v", err)
 	}
 }
 

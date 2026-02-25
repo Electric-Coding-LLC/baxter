@@ -29,11 +29,12 @@ func runBackup(cfg *config.Config) error {
 	}
 
 	result, err := backup.Run(cfg, backup.RunOptions{
-		ManifestPath:      manifestPath,
-		SnapshotDir:       snapshotDir,
-		SnapshotRetention: cfg.Retention.ManifestSnapshots,
-		EncryptionKey:     key,
-		Store:             store,
+		ManifestPath:       manifestPath,
+		SnapshotDir:        snapshotDir,
+		SnapshotRetention:  cfg.Retention.ManifestSnapshots,
+		SnapshotMaxAgeDays: cfg.Retention.ManifestMaxAgeDays,
+		EncryptionKey:      key,
+		Store:              store,
 	})
 	if err != nil {
 		return err

@@ -54,6 +54,9 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if cfg.Verify.WeeklyTime != "09:00" {
 		t.Fatalf("unexpected default verify weekly_time: got %q want %q", cfg.Verify.WeeklyTime, "09:00")
 	}
+	if cfg.Retention.ManifestMaxAgeDays != 0 {
+		t.Fatalf("unexpected default retention.manifest_max_age_days: got %d want 0", cfg.Retention.ManifestMaxAgeDays)
+	}
 }
 
 func TestLoadAppliesDefaultsAndNormalizes(t *testing.T) {
@@ -514,6 +517,18 @@ func TestValidate(t *testing.T) {
 				t.Fatalf("unexpected error: got %q want %q", err.Error(), tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestValidateRejectsNegativeManifestMaxAgeDays(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.BackupRoots = []string{"/Users/me/Documents"}
+	cfg.Encryption.KeychainService = "svc"
+	cfg.Encryption.KeychainAccount = "acct"
+	cfg.Retention.ManifestMaxAgeDays = -1
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "retention.manifest_max_age_days must be >= 0") {
+		t.Fatalf("expected manifest_max_age_days validation error, got %v", err)
 	}
 }
 

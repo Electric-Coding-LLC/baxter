@@ -98,6 +98,25 @@ func TestParseVerifyArgsRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestParseRestoreDrillArgs(t *testing.T) {
+	opts, err := parseRestoreDrillArgs([]string{"--snapshot", "latest", "--prefix", "/Users/me", "--sample", "12", "--limit", "8"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Snapshot != "latest" || opts.Prefix != "/Users/me" || opts.Sample != 12 || opts.Limit != 8 {
+		t.Fatalf("unexpected opts: %+v", opts)
+	}
+}
+
+func TestParseRestoreDrillArgsRejectsInvalidValues(t *testing.T) {
+	if _, err := parseRestoreDrillArgs([]string{"--limit", "-1"}); err == nil {
+		t.Fatal("expected negative limit to be rejected")
+	}
+	if _, err := parseRestoreDrillArgs([]string{"--sample", "-1"}); err == nil {
+		t.Fatal("expected negative sample to be rejected")
+	}
+}
+
 func TestResolvedRestorePath(t *testing.T) {
 	got, err := resolvedRestorePath("/Users/me/file.txt", "/restore")
 	if err != nil {
