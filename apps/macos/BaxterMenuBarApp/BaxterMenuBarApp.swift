@@ -18,14 +18,13 @@ struct BaxterMenuBarApp: App {
                         .font(.headline.weight(.semibold))
 
                     VStack(spacing: 6) {
-                        headerStatusRow(title: "Backup", value: backupStatusValue, systemImage: backupChipSymbol, tint: backupChipTint)
-                        headerStatusRow(title: "Verify", value: verifyStatusValue, systemImage: verifyChipSymbol, tint: verifyChipTint)
-                        headerStatusRow(title: "Daemon", value: daemonStatusValue, systemImage: daemonStateSymbol, tint: daemonStateTint)
+                        statusSummaryLine(backupStatusHeadline, tint: backupChipTint)
+                        statusSummaryLine(verifyStatusHeadline, tint: verifyChipTint)
+                        statusSummaryLine(daemonStatusHeadline, tint: daemonStateTint)
                     }
-                    .padding(10)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
-                    .fixedSize(horizontal: true, vertical: false)
                 }
+
+                Divider()
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Last backup")
@@ -257,34 +256,8 @@ struct BaxterMenuBarApp: App {
         isDaemonOperational ? model.state.rawValue : "Unavailable"
     }
 
-    private var backupChipSymbol: String {
-        isDaemonOperational ? statusSymbol : "xmark.circle.fill"
-    }
-
     private var backupChipTint: Color {
         isDaemonOperational ? statusTint : .orange
-    }
-
-    private var statusSymbol: String {
-        switch model.state {
-        case .idle:
-            return "pause.circle.fill"
-        case .running:
-            return "arrow.triangle.2.circlepath.circle.fill"
-        case .failed:
-            return "xmark.octagon.fill"
-        }
-    }
-
-    private var verifyStateSymbol: String {
-        switch model.verifyState {
-        case .idle:
-            return "checkmark.shield"
-        case .running:
-            return "arrow.triangle.2.circlepath"
-        case .failed:
-            return "exclamationmark.shield"
-        }
     }
 
     private var verifyStateTint: Color {
@@ -300,10 +273,6 @@ struct BaxterMenuBarApp: App {
 
     private var verifyStatusValue: String {
         isDaemonOperational ? model.verifyState.rawValue : "Unavailable"
-    }
-
-    private var verifyChipSymbol: String {
-        isDaemonOperational ? verifyStateSymbol : "exclamationmark.shield"
     }
 
     private var verifyChipTint: Color {
@@ -339,17 +308,6 @@ struct BaxterMenuBarApp: App {
         }
     }
 
-    private var daemonStateSymbol: String {
-        switch model.daemonServiceState {
-        case .running:
-            return "dot.circle.fill"
-        case .stopped:
-            return "pause.circle"
-        case .unknown:
-            return "questionmark.circle"
-        }
-    }
-
     private var daemonStateTint: Color {
         switch model.daemonServiceState {
         case .running:
@@ -368,16 +326,26 @@ struct BaxterMenuBarApp: App {
         return model.daemonServiceState.rawValue
     }
 
-    private func headerStatusRow(title: String, value: String, systemImage: String, tint: Color) -> some View {
-        HStack(spacing: 12) {
-            Text(title)
-                .font(.caption.weight(.semibold))
+    private var backupStatusHeadline: String {
+        "Backup is \(backupStatusValue.lowercased())"
+    }
+
+    private var verifyStatusHeadline: String {
+        "Verify is \(verifyStatusValue.lowercased())"
+    }
+
+    private var daemonStatusHeadline: String {
+        "Daemon is \(daemonStatusValue.lowercased())"
+    }
+
+    private func statusSummaryLine(_ text: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(tint)
+                .frame(width: 9, height: 9)
+            Text(text)
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
-            Label(value, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .imageScale(.small)
-                .foregroundStyle(tint)
         }
         .lineLimit(1)
     }
