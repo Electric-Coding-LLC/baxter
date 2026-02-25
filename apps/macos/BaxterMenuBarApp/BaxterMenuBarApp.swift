@@ -15,7 +15,7 @@ struct BaxterMenuBarApp: App {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        statusChip(model.state.rawValue, systemImage: statusSymbol, tint: statusTint, emphasized: true)
+                        statusChip(backupChipTitle, systemImage: backupChipSymbol, tint: backupChipTint, emphasized: true)
                             .layoutPriority(2)
                         Spacer(minLength: 4)
                         Text("Baxter")
@@ -24,7 +24,7 @@ struct BaxterMenuBarApp: App {
                     }
 
                     HStack(spacing: 8) {
-                        statusChip("Verify \(model.verifyState.rawValue)", systemImage: verifyStateSymbol, tint: verifyStateTint)
+                        statusChip(verifyChipTitle, systemImage: verifyChipSymbol, tint: verifyChipTint)
                             .layoutPriority(1)
                         statusChip("Daemon \(model.daemonServiceState.rawValue)", systemImage: daemonStateSymbol, tint: daemonStateTint)
                             .layoutPriority(1)
@@ -254,6 +254,22 @@ struct BaxterMenuBarApp: App {
         return "Manual"
     }
 
+    private var isDaemonOperational: Bool {
+        model.daemonServiceState == .running && model.isDaemonReachable
+    }
+
+    private var backupChipTitle: String {
+        isDaemonOperational ? "Backup \(model.state.rawValue)" : "Backup Unavailable"
+    }
+
+    private var backupChipSymbol: String {
+        isDaemonOperational ? statusSymbol : "xmark.circle.fill"
+    }
+
+    private var backupChipTint: Color {
+        isDaemonOperational ? statusTint : .orange
+    }
+
     private var statusSymbol: String {
         switch model.state {
         case .idle:
@@ -285,6 +301,18 @@ struct BaxterMenuBarApp: App {
         case .failed:
             return .orange
         }
+    }
+
+    private var verifyChipTitle: String {
+        isDaemonOperational ? "Verify \(model.verifyState.rawValue)" : "Verify Unavailable"
+    }
+
+    private var verifyChipSymbol: String {
+        isDaemonOperational ? verifyStateSymbol : "exclamationmark.shield"
+    }
+
+    private var verifyChipTint: Color {
+        isDaemonOperational ? verifyStateTint : .orange
     }
 
     private var lastVerifyText: String {
