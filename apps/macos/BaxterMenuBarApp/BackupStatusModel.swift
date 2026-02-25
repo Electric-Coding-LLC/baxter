@@ -5,6 +5,8 @@ import SwiftUI
 
 @MainActor
 final class BackupStatusModel: ObservableObject {
+    static let latestSnapshotSelection = "latest"
+
     enum State: String {
         case idle = "Idle"
         case running = "Running"
@@ -41,6 +43,10 @@ final class BackupStatusModel: ObservableObject {
     @Published var lastRestoreAt: Date?
     @Published var lastRestorePath: String?
     @Published var lastRestoreError: String?
+    @Published var snapshots: [SnapshotSummary] = []
+    @Published var selectedSnapshot: String = latestSnapshotSelection
+    @Published var isSnapshotsBusy: Bool = false
+    @Published var snapshotsMessage: String?
 
     private let baseURL: URL
     private let urlSession: URLSession
@@ -268,6 +274,53 @@ final class BackupStatusModel: ObservableObject {
                 restorePreviewMessage = "Restore list failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    func fetchSnapshots(limit: Int = 50) {
+        Task {
+            isSnapshotsBusy = true
+            defer { isSnapshotsBusy = false }
+
+            do {
+                var components = URLComponents(url: baseURL.appendingPathComponent("v1/snapshots"), resolvingAgainstBaseURL: false)
+                components?.queryItems = [URLQueryItem(name: "limit", value: String(max(limit, 0)))]
+                guard let url = components?.url else {
+                    throw IPCError.badResponse
+                }
+
+                var request = URLRequest(url: url)
+                request.httpMethod = "GET"
+                applyIPCAuthHeader(to: &request)
+
+                let (data, response) = try await urlSession.data(for: request)
+                guard let http = response as? HTTPURLResponse else {
+                    throw IPCError.badResponse
+                }
+                guard http.statusCode == 200 else {
+                    throw decodeDaemonError(data: data, statusCode: http.statusCode)
+                }
+
+                let decoded = try JSONDecoder().decode(SnapshotsPayload.self, from: data)
+                snapshots = decoded.snapshots
+                if selectedSnapshot != Self.latestSnapshotSelection &&
+                    !decoded.snapshots.contains(where: { $0.id == selectedSnapshot }) {
+                    selectedSnapshot = Self.latestSnapshotSelection
+                }
+                snapshotsMessage = decoded.snapshots.isEmpty
+                    ? "No snapshots found. Use latest."
+                    : "Loaded \(decoded.snapshots.count) snapshot(s)."
+            } catch {
+                snapshotsMessage = "Snapshot load failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    var selectedSnapshotRequestValue: String {
+        selectedSnapshot == Self.latestSnapshotSelection ? "" : selectedSnapshot
+    }
+
+    var selectedSnapshotSummary: SnapshotSummary? {
+        snapshots.first(where: { $0.id == selectedSnapshot })
     }
 
     func previewRestore(path: String, toDir: String, overwrite: Bool, snapshot: String) {

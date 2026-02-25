@@ -354,7 +354,6 @@ struct BaxterRestoreView: View {
     @State private var restoreToDir = ""
     @State private var restoreOverwrite = false
     @State private var restoreVerifyOnly = false
-    @State private var restoreSnapshot = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -363,13 +362,56 @@ struct BaxterRestoreView: View {
 
             SettingsCard(title: "Restore", subtitle: "Find paths, dry-run, or restore from the latest or a specific snapshot.") {
                 VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .center, spacing: 8) {
+                        Text("Snapshot")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("Snapshot", selection: $statusModel.selectedSnapshot) {
+                            Text("Latest").tag(BackupStatusModel.latestSnapshotSelection)
+                            ForEach(statusModel.snapshots, id: \.id) { snapshot in
+                                Text(snapshotRowLabel(snapshot)).tag(snapshot.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 360, alignment: .leading)
+                        .disabled(statusModel.isSnapshotsBusy)
+                        Button("Refresh Snapshots") {
+                            statusModel.fetchSnapshots()
+                        }
+                        .disabled(statusModel.isSnapshotsBusy)
+                        if statusModel.isSnapshotsBusy {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Spacer()
+                    }
+
+                    if let selectedSnapshot = statusModel.selectedSnapshotSummary {
+                        Text("Selected snapshot: \(selectedSnapshot.id) • \(selectedSnapshot.createdAt) • \(selectedSnapshot.entries) entries")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    } else {
+                        Text("Selected snapshot: latest")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let snapshotsMessage = statusModel.snapshotsMessage {
+                        Text(snapshotsMessage)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
                     HStack(spacing: 8) {
                         TextField("Filter prefix (optional)", text: $restorePrefix)
                         TextField("Contains text (optional)", text: $restoreContains)
-                        TextField("Snapshot (optional)", text: $restoreSnapshot)
-                            .font(.system(.body, design: .monospaced))
                         Button("Search") {
-                            statusModel.fetchRestoreList(prefix: restorePrefix, contains: restoreContains, snapshot: restoreSnapshot)
+                            statusModel.fetchRestoreList(
+                                prefix: restorePrefix,
+                                contains: restoreContains,
+                                snapshot: statusModel.selectedSnapshotRequestValue
+                            )
                         }
                         .disabled(statusModel.isRestoreBusy)
                     }
@@ -406,7 +448,12 @@ struct BaxterRestoreView: View {
 
                     HStack {
                         Button("Dry Run Restore") {
-                            statusModel.previewRestore(path: restorePath, toDir: restoreToDir, overwrite: restoreOverwrite, snapshot: restoreSnapshot)
+                            statusModel.previewRestore(
+                                path: restorePath,
+                                toDir: restoreToDir,
+                                overwrite: restoreOverwrite,
+                                snapshot: statusModel.selectedSnapshotRequestValue
+                            )
                         }
                         .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         Button("Run Restore") {
@@ -415,7 +462,7 @@ struct BaxterRestoreView: View {
                                 toDir: restoreToDir,
                                 overwrite: restoreOverwrite,
                                 verifyOnly: restoreVerifyOnly,
-                                snapshot: restoreSnapshot
+                                snapshot: statusModel.selectedSnapshotRequestValue
                             )
                         }
                         .buttonStyle(.borderedProminent)
@@ -462,6 +509,15 @@ struct BaxterRestoreView: View {
         }
         .padding()
         .frame(minWidth: 720, minHeight: 480)
+        .onAppear {
+            if statusModel.snapshots.isEmpty && !statusModel.isSnapshotsBusy {
+                statusModel.fetchSnapshots()
+            }
+        }
+    }
+
+    private func snapshotRowLabel(_ snapshot: SnapshotSummary) -> String {
+        "\(snapshot.id) (\(snapshot.entries) entries)"
     }
 }
 

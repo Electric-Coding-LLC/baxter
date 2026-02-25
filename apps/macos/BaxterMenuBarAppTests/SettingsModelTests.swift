@@ -217,6 +217,72 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         super.tearDown()
     }
 
+    func testFetchSnapshotsLoadsSummariesAndIncludesIPCAuthHeader() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("""
+            {"snapshots":[
+              {"id":"snap-2","created_at":"2026-02-24T10:00:00Z","entries":12},
+              {"id":"snap-1","created_at":"2026-02-23T10:00:00Z","entries":10}
+            ]}
+            """.utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            ipcToken: "token-123",
+            autoStartPolling: false
+        )
+        model.selectedSnapshot = "snap-2"
+
+        model.fetchSnapshots(limit: 42)
+        await waitUntil("snapshot fetch completion") { model.snapshots.count == 2 }
+
+        let request = try XCTUnwrap(
+            MockURLProtocol.requests().first { $0.url?.path == "/v1/snapshots" }
+        )
+        let queryItems = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first(where: { $0.name == "limit" })?.value, "42")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
+        XCTAssertEqual(model.snapshots.first?.id, "snap-2")
+        XCTAssertEqual(model.selectedSnapshot, "snap-2")
+        XCTAssertEqual(model.selectedSnapshotRequestValue, "snap-2")
+        XCTAssertEqual(model.selectedSnapshotSummary?.entries, 12)
+    }
+
+    func testFetchSnapshotsResetsMissingSelectionToLatest() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("""
+            {"snapshots":[
+              {"id":"snap-9","created_at":"2026-02-24T10:00:00Z","entries":9}
+            ]}
+            """.utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            autoStartPolling: false
+        )
+        model.selectedSnapshot = "does-not-exist"
+
+        model.fetchSnapshots()
+        await waitUntil("snapshot fetch fallback") { model.snapshotsMessage != nil }
+
+        XCTAssertEqual(model.selectedSnapshot, BackupStatusModel.latestSnapshotSelection)
+        XCTAssertEqual(model.selectedSnapshotRequestValue, "")
+        XCTAssertNil(model.selectedSnapshotSummary)
+        XCTAssertEqual(model.snapshots.count, 1)
+    }
+
     func testFetchRestoreListIncludesSnapshotQueryItem() async throws {
         MockURLProtocol.requestHandler = { request in
             let response = try XCTUnwrap(

@@ -142,6 +142,22 @@ struct RestoreListPayload: Decodable {
     let paths: [String]
 }
 
+struct SnapshotSummary: Decodable, Identifiable, Hashable {
+    let id: String
+    let createdAt: String
+    let entries: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt = "created_at"
+        case entries
+    }
+}
+
+struct SnapshotsPayload: Decodable {
+    let snapshots: [SnapshotSummary]
+}
+
 struct RestoreActionRequest: Encodable {
     let path: String
     let toDir: String?
