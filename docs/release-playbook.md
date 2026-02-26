@@ -62,7 +62,7 @@ Use rollback when smoke checks fail after upgrade.
    - `./scripts/upgrade-preservation-smoke.sh --before /path/to/baxter-before --after /path/to/baxter-after`
    - `./scripts/smoke-launchd-ipc.sh`
 3. macOS app tests:
-   - `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' test`
+   - `xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' test`
 4. Build artifacts locally:
    - `./scripts/release.sh vX.Y.Z`
 5. Tag and publish:

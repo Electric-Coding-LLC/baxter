@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A00000000000000000000070"
-               BuildableName = "BaxterMenuBarAppTests.xctest"
-               BlueprintName = "BaxterMenuBarAppTests"
-               ReferencedContainer = "container:BaxterMenuBarApp.xcodeproj">
+               BuildableName = "BaxterAppTests.xctest"
+               BlueprintName = "BaxterAppTests"
+               ReferencedContainer = "container:BaxterApp.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -30,9 +30,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A00000000000000000000020"
-               BuildableName = "BaxterMenuBarApp.app"
-               BlueprintName = "BaxterMenuBarApp"
-               ReferencedContainer = "container:BaxterMenuBarApp.xcodeproj">
+               BuildableName = "BaxterApp.app"
+               BlueprintName = "BaxterApp"
+               ReferencedContainer = "container:BaxterApp.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -50,9 +50,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A00000000000000000000070"
-               BuildableName = "BaxterMenuBarAppTests.xctest"
-               BlueprintName = "BaxterMenuBarAppTests"
-               ReferencedContainer = "container:BaxterMenuBarApp.xcodeproj">
+               BuildableName = "BaxterAppTests.xctest"
+               BlueprintName = "BaxterAppTests"
+               ReferencedContainer = "container:BaxterApp.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -72,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A00000000000000000000020"
-            BuildableName = "BaxterMenuBarApp.app"
-            BlueprintName = "BaxterMenuBarApp"
-            ReferencedContainer = "container:BaxterMenuBarApp.xcodeproj">
+            BuildableName = "BaxterApp.app"
+            BlueprintName = "BaxterApp"
+            ReferencedContainer = "container:BaxterApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -89,9 +89,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A00000000000000000000020"
-            BuildableName = "BaxterMenuBarApp.app"
-            BlueprintName = "BaxterMenuBarApp"
-            ReferencedContainer = "container:BaxterMenuBarApp.xcodeproj">
+            BuildableName = "BaxterApp.app"
+            BlueprintName = "BaxterApp"
+            ReferencedContainer = "container:BaxterApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

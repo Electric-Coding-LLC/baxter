@@ -604,21 +604,33 @@ struct BaxterRestoreView: View {
     private var restoreMainLayout: some View {
         HStack(alignment: .top, spacing: 0) {
             restoreSourceColumn
-                .frame(width: 280, alignment: .topLeading)
+                .frame(width: sourceColumnWidth, alignment: .topLeading)
                 .frame(maxHeight: .infinity, alignment: .topLeading)
 
             Divider()
 
             restoreBrowserPanel
-                .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(minWidth: browserPanelMinWidth, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             Divider()
 
             restoreActionsPanel
-                .frame(width: 330, alignment: .topLeading)
+                .frame(width: actionsPanelWidth, alignment: .topLeading)
                 .frame(maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var sourceColumnWidth: CGFloat {
+        embedded ? 250 : 280
+    }
+
+    private var browserPanelMinWidth: CGFloat {
+        embedded ? 420 : 520
+    }
+
+    private var actionsPanelWidth: CGFloat {
+        embedded ? 280 : 330
     }
 
     private var restoreToolbar: some View {

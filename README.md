@@ -192,7 +192,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - upgrade-preservation smoke:
 - `./scripts/upgrade-preservation-smoke.sh --before /path/to/baxter-before --after /path/to/baxter-after`
 - macOS app settings:
-- `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' test`
+- `xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' test`
 - Manual verification checklist:
 - Save settings with `daily_time`/`weekly_day`/`weekly_time` from the Settings UI.
 - Verify invalid schedule entries show inline validation and cannot be saved.

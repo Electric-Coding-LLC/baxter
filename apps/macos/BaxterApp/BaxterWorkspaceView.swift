@@ -1,344 +1,6 @@
 import AppKit
-import Darwin
 import Foundation
 import SwiftUI
-
-@main
-struct BaxterMenuBarApp: App {
-    @Environment(\.openWindow) private var openWindow
-    @StateObject private var model = BackupStatusModel(notificationDispatcher: UNUserNotificationDispatcher())
-    @StateObject private var settingsModel = BaxterSettingsModel()
-    @StateObject private var workspaceRouter = BaxterWorkspaceRouter()
-
-    var body: some Scene {
-        MenuBarExtra("Baxter", systemImage: iconName) {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    statusDotLine(daemonStatusHeadline, tint: daemonStatusTint)
-                    statusDotLine(backupStatusHeadline, tint: backupStatusTint)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    inlineMetricLine(label: "Last Backup", value: lastBackupText)
-                    inlineMetricLine(label: "Next Backup", value: nextBackupText)
-                    if let lastError = model.lastError, !lastError.isEmpty {
-                        Label(lastError, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                    menuActionButton(
-                        "Run Backup",
-                        systemImage: "play.fill",
-                        isEnabled: !(model.state == .running || model.isLifecycleBusy || model.daemonServiceState != .running)
-                    ) {
-                        model.runBackup()
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    menuActionButton("Restore...") {
-                        openWorkspace(section: .restore)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    menuActionButton("Settings...") {
-                        openWorkspace(section: .settings)
-                    }
-                    menuActionButton("Diagnostics...") {
-                        openWorkspace(section: .diagnostics)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if !model.isDaemonReachable {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Baxter is not reachable.")
-                        Text("Use Start Baxter to bootstrap launchd, or inspect launchctl output.")
-                            .font(.caption)
-                    }
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
-                }
-
-                if let lifecycleMessage = model.lifecycleMessage {
-                    Label(lifecycleMessage, systemImage: "bolt.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                }
-
-                Divider()
-
-                VStack(spacing: 2) {
-                    menuActionButton(
-                        "Start Baxter",
-                        systemImage: "play.circle",
-                        isEnabled: !(model.isLifecycleBusy || model.daemonServiceState == .running)
-                    ) {
-                        model.startDaemon()
-                    }
-
-                    menuActionButton(
-                        "Stop Baxter",
-                        systemImage: "stop.circle",
-                        isEnabled: !(model.isLifecycleBusy || model.daemonServiceState == .stopped)
-                    ) {
-                        model.stopDaemon()
-                    }
-
-                    menuActionButton("Refresh", systemImage: "arrow.clockwise") {
-                        model.refreshStatus()
-                    }
-
-                    menuActionButton("Quit", systemImage: "xmark") {
-                        NSApplication.shared.terminate(nil)
-                    }
-                }
-            }
-            .padding(14)
-            .frame(width: 340)
-        }
-        .menuBarExtraStyle(.window)
-
-        Window("Baxter", id: "workspace") {
-            BaxterWorkspaceView(
-                statusModel: model,
-                settingsModel: settingsModel,
-                router: workspaceRouter
-            )
-        }
-    }
-
-    private var iconName: String {
-        model.state == .running ? "arrow.triangle.2.circlepath.circle.fill" : "externaldrive"
-    }
-
-    private func openWorkspace(section: BaxterWorkspaceSection) {
-        workspaceRouter.selectedSection = section
-        closeMenuBarPanel()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            openWindow(id: "workspace")
-            NSApplication.shared.activate(ignoringOtherApps: true)
-        }
-    }
-
-    private func closeMenuBarPanel() {
-        if let keyWindow = NSApplication.shared.keyWindow, isMenuBarPanelWindow(keyWindow) {
-            keyWindow.orderOut(nil)
-        }
-        _ = NSApplication.shared.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
-    }
-
-    private func isMenuBarPanelWindow(_ window: NSWindow) -> Bool {
-        let className = NSStringFromClass(type(of: window))
-        if className.contains("MenuBarExtra") {
-            return true
-        }
-        if window.level == .statusBar || window.level == .popUpMenu {
-            return true
-        }
-        return className.contains("Panel")
-    }
-
-    private var lastBackupText: String {
-        if let lastBackupAt = model.lastBackupAt {
-            return lastBackupAt.formatted(date: .abbreviated, time: .shortened)
-        }
-        return "Never"
-    }
-
-    private var nextBackupText: String {
-        if let nextScheduledAt = model.nextScheduledAt {
-            return nextScheduledAt.formatted(date: .abbreviated, time: .shortened)
-        }
-        return "Manual"
-    }
-
-    private var isDaemonOperational: Bool {
-        model.daemonServiceState == .running && model.isDaemonReachable
-    }
-
-    private var daemonStatusHeadline: String {
-        switch model.daemonServiceState {
-        case .running:
-            return model.isDaemonReachable ? "Baxter is running" : "Baxter is running (no IPC)"
-        case .stopped:
-            return "Baxter is stopped"
-        case .unknown:
-            return "Baxter status unknown"
-        }
-    }
-
-    private var daemonStatusTint: Color {
-        switch model.daemonServiceState {
-        case .running:
-            return model.isDaemonReachable ? .green : .orange
-        case .stopped:
-            return .orange
-        case .unknown:
-            return .secondary
-        }
-    }
-
-    private var backupStatusHeadline: String {
-        "Backup is \(backupStatusWord)"
-    }
-
-    private var backupStatusWord: String {
-        guard isDaemonOperational else { return "unavailable" }
-        if model.state == .running {
-            return "running"
-        }
-        if model.state == .failed {
-            return "failed"
-        }
-        return "idle"
-    }
-
-    private var backupStatusTint: Color {
-        guard isDaemonOperational else { return .orange }
-        if model.state == .running {
-            return .blue
-        }
-        if model.state == .failed {
-            return .red
-        }
-        return .secondary
-    }
-
-    private var menuIndicatorSize: CGFloat { 9 }
-    private var menuRowSpacing: CGFloat { 8 }
-    private var menuRowLeadingInset: CGFloat { 8 }
-    private var metricLabelColumnWidth: CGFloat { 86 }
-
-    private func statusDotLine(_ text: String, tint: Color) -> some View {
-        HStack(spacing: menuRowSpacing) {
-            Circle()
-                .fill(tint)
-                .frame(width: menuIndicatorSize, height: menuIndicatorSize)
-            Text(text)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, menuRowLeadingInset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .lineLimit(1)
-    }
-
-    private func metricRow(label: String, value: String, valueFont: Font = .body.weight(.medium)) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
-            Text(value)
-                .font(valueFont)
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.trailing)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func inlineMetricLine(label: String, value: String) -> some View {
-        HStack(spacing: 10) {
-            Text("\(label):")
-                .foregroundStyle(.secondary)
-                .frame(width: metricLabelColumnWidth, alignment: .leading)
-            Text(value)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, menuRowLeadingInset)
-        .font(.body.weight(.medium))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .lineLimit(1)
-        .truncationMode(.tail)
-    }
-
-    private func menuActionButton(
-        _ title: String,
-        systemImage: String? = nil,
-        isEnabled: Bool = true,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: menuRowSpacing) {
-                if let systemImage {
-                    Image(systemName: systemImage)
-                        .font(.subheadline)
-                }
-                Text(title)
-                Spacer(minLength: 0)
-            }
-            .padding(.leading, menuRowLeadingInset)
-            .font(.body.weight(.medium))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(MenuLinkButtonStyle())
-        .disabled(!isEnabled)
-    }
-
-    private struct MenuLinkButtonStyle: ButtonStyle {
-        func makeBody(configuration: Configuration) -> some View {
-            MenuLinkButtonBody(configuration: configuration)
-        }
-    }
-
-    private struct MenuLinkButtonBody: View {
-        let configuration: ButtonStyle.Configuration
-        @Environment(\.isEnabled) private var isEnabled
-        @State private var isHovered = false
-
-        var body: some View {
-            configuration.label
-                .padding(.vertical, 3)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(backgroundColor)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .onHover { hovering in
-                    isHovered = isEnabled ? hovering : false
-                }
-                .foregroundStyle(foregroundColor)
-                .animation(.easeOut(duration: 0.10), value: isHovered)
-        }
-
-        private var isActive: Bool {
-            guard isEnabled else { return false }
-            return configuration.isPressed || isHovered
-        }
-
-        private var backgroundColor: Color {
-            isActive ? Color.accentColor : .clear
-        }
-
-        private var foregroundColor: Color {
-            if !isEnabled {
-                return .secondary
-            }
-            return isActive ? .white : .primary
-        }
-    }
-}
 
 enum BaxterWorkspaceSection: String, CaseIterable, Hashable, Identifiable {
     case restore
@@ -404,13 +66,35 @@ struct BaxterWorkspaceView: View {
                 .padding(.horizontal, 10)
                 .padding(.top, 10)
 
-                List(BaxterWorkspaceSection.allCases, selection: $router.selectedSection) { section in
-                    Label(section.title, systemImage: section.systemImage)
-                        .tag(section)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(BaxterWorkspaceSection.allCases) { section in
+                            Button {
+                                router.selectedSection = section
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: section.systemImage)
+                                        .frame(width: 16)
+                                    Text(section.title)
+                                        .lineLimit(1)
+                                }
+                                .font(.body)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(router.selectedSection == section ? Color.accentColor.opacity(0.20) : .clear)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 8)
                 }
-                .listStyle(.sidebar)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 220)
+            .navigationSplitViewColumnWidth(min: 230, ideal: 250, max: 280)
         } detail: {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -438,7 +122,7 @@ struct BaxterWorkspaceView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1120, minHeight: 720)
+        .frame(minWidth: 1400, minHeight: 760)
     }
 }
 
