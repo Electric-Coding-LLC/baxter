@@ -19,6 +19,22 @@ final class BackupStatusModel: ObservableObject {
         case failed = "Failed"
     }
 
+    enum ConnectionState: Equatable {
+        case connected
+        case connecting
+        case delayed
+        case unavailable
+        case stopped
+        case unknown
+    }
+
+    enum LifecycleAction {
+        case none
+        case starting
+        case stopping
+        case applyingConfig
+    }
+
     @Published var state: State = .idle
     @Published var verifyState: VerifyState = .idle
     @Published var lastBackupAt: Date?
@@ -35,8 +51,11 @@ final class BackupStatusModel: ObservableObject {
     @Published var lastVerifyChecksumErrors: Int = 0
     @Published var isDaemonReachable: Bool = true
     @Published var daemonServiceState: DaemonServiceState = .unknown
+    @Published private(set) var connectionState: ConnectionState = .unknown
     @Published var lifecycleMessage: String?
     @Published var isLifecycleBusy: Bool = false
+    @Published private(set) var activeLifecycleAction: LifecycleAction = .none
+    @Published private(set) var nextAutomaticRefreshAt: Date?
     @Published var restorePaths: [String] = []
     @Published var restorePreviewMessage: String?
     @Published var isRestoreBusy: Bool = false
@@ -56,6 +75,11 @@ final class BackupStatusModel: ObservableObject {
     private let baseURL: URL
     private let urlSession: URLSession
     private let ipcToken: String?
+    private let queryLaunchdState: () async -> DaemonServiceState
+    private let startLaunchd: () async throws -> String
+    private let stopLaunchd: () async throws -> String
+    private let hasConfigFile: () -> Bool
+    private let nowProvider: () -> Date
     private let notificationSettings: NotificationSettingsStore
     private let notificationDispatcher: NotificationDispatching
     private var timer: Timer?
@@ -65,11 +89,20 @@ final class BackupStatusModel: ObservableObject {
     private var suppressAutoRecoveryUntilManualStart: Bool = false
     private var lastAutoRecoveryAttemptAt: Date?
     private let autoRecoveryCooldown: TimeInterval = 15
+    private let pollingInterval: TimeInterval = 5
+    private let ipcConnectingGracePeriod: TimeInterval = 12
+    private let ipcUnavailableEscalationPeriod: TimeInterval = 30
+    private var ipcUnavailableSince: Date?
 
     init(
         baseURL: URL = URL(string: "http://127.0.0.1:41820")!,
         urlSession: URLSession = .shared,
         ipcToken: String? = ProcessInfo.processInfo.environment["BAXTER_IPC_TOKEN"],
+        queryLaunchdState: @escaping () async -> DaemonServiceState = { await LaunchdController.queryState() },
+        startLaunchd: @escaping () async throws -> String = { try await LaunchdController.start() },
+        stopLaunchd: @escaping () async throws -> String = { try await LaunchdController.stop() },
+        hasConfigFile: @escaping () -> Bool = { LaunchdController.hasConfigFile() },
+        nowProvider: @escaping () -> Date = Date.init,
         notificationSettings: NotificationSettingsStore = .shared,
         notificationDispatcher: NotificationDispatching = NoopNotificationDispatcher(),
         autoStartPolling: Bool = true
@@ -77,6 +110,11 @@ final class BackupStatusModel: ObservableObject {
         self.baseURL = baseURL
         self.urlSession = urlSession
         self.ipcToken = ipcToken?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.queryLaunchdState = queryLaunchdState
+        self.startLaunchd = startLaunchd
+        self.stopLaunchd = stopLaunchd
+        self.hasConfigFile = hasConfigFile
+        self.nowProvider = nowProvider
         self.notificationSettings = notificationSettings
         self.notificationDispatcher = notificationDispatcher
         self.notifyOnSuccess = notificationSettings.notifyOnSuccess
@@ -93,29 +131,34 @@ final class BackupStatusModel: ObservableObject {
 
     func startPolling() {
         shouldAutoBootstrapDaemon = true
+        scheduleNextAutomaticRefresh()
         refreshStatus()
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: pollingInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
+                self?.scheduleNextAutomaticRefresh()
                 self?.refreshStatus()
             }
         }
     }
 
     func refreshStatus() {
+        if timer != nil {
+            scheduleNextAutomaticRefresh()
+        }
         Task {
-            var launchdState = await LaunchdController.queryState()
+            var launchdState = await queryLaunchdState()
             var attemptedStartThisRefresh = false
             if shouldAutoBootstrapDaemon &&
                 !hasAttemptedAutoBootstrapDaemon &&
                 launchdState != .running &&
-                LaunchdController.hasConfigFile()
+                hasConfigFile()
             {
                 attemptedStartThisRefresh = true
                 hasAttemptedAutoBootstrapDaemon = true
                 do {
-                    lifecycleMessage = try await LaunchdController.start()
-                    launchdState = await LaunchdController.queryState()
+                    lifecycleMessage = try await startLaunchd()
+                    launchdState = await queryLaunchdState()
                     suppressAutoRecoveryUntilManualStart = false
                 } catch {
                     lifecycleMessage = "Auto-start failed: \(error.localizedDescription)"
@@ -126,15 +169,15 @@ final class BackupStatusModel: ObservableObject {
                 !attemptedStartThisRefresh &&
                 !suppressAutoRecoveryUntilManualStart &&
                 launchdState == .stopped &&
-                LaunchdController.hasConfigFile() &&
+                hasConfigFile() &&
                 shouldAttemptAutoRecovery()
             {
                 attemptedStartThisRefresh = true
                 lastAutoRecoveryAttemptAt = Date()
                 do {
                     lifecycleMessage = "Daemon stopped; attempting restart..."
-                    lifecycleMessage = try await LaunchdController.start()
-                    launchdState = await LaunchdController.queryState()
+                    lifecycleMessage = try await startLaunchd()
+                    launchdState = await queryLaunchdState()
                     suppressAutoRecoveryUntilManualStart = false
                 } catch {
                     lifecycleMessage = "Auto-restart failed: \(error.localizedDescription)"
@@ -156,13 +199,24 @@ final class BackupStatusModel: ObservableObject {
                 let status = try JSONDecoder().decode(DaemonStatus.self, from: data)
                 apply(status)
                 isDaemonReachable = true
+                ipcUnavailableSince = nil
+                connectionState = .connected
             } catch {
+                let now = nowProvider()
                 if launchdState == .stopped {
                     state = .idle
                     lastError = nil
+                    connectionState = .stopped
+                    ipcUnavailableSince = nil
+                } else if launchdState == .unknown {
+                    state = .idle
+                    lastError = nil
+                    connectionState = .unknown
+                    ipcUnavailableSince = nil
                 } else {
-                    state = .failed
-                    lastError = "IPC unavailable: \(error.localizedDescription)"
+                    state = .idle
+                    lastError = nil
+                    updateConnectionStateForIPCFailure(now: now)
                 }
                 isDaemonReachable = false
             }
@@ -227,12 +281,18 @@ final class BackupStatusModel: ObservableObject {
 
     func startDaemon() {
         Task {
+            activeLifecycleAction = .starting
             isLifecycleBusy = true
-            defer { isLifecycleBusy = false }
+            defer {
+                isLifecycleBusy = false
+                activeLifecycleAction = .none
+            }
             do {
-                lifecycleMessage = try await LaunchdController.start()
+                lifecycleMessage = try await startLaunchd()
                 suppressAutoRecoveryUntilManualStart = false
                 lastError = nil
+                connectionState = .connecting
+                ipcUnavailableSince = nowProvider()
                 refreshStatus()
             } catch {
                 lifecycleMessage = "Start failed: \(error.localizedDescription)"
@@ -242,12 +302,18 @@ final class BackupStatusModel: ObservableObject {
 
     func stopDaemon() {
         Task {
+            activeLifecycleAction = .stopping
             isLifecycleBusy = true
-            defer { isLifecycleBusy = false }
+            defer {
+                isLifecycleBusy = false
+                activeLifecycleAction = .none
+            }
             do {
-                lifecycleMessage = try await LaunchdController.stop()
+                lifecycleMessage = try await stopLaunchd()
                 suppressAutoRecoveryUntilManualStart = true
                 lastError = nil
+                connectionState = .stopped
+                ipcUnavailableSince = nil
                 refreshStatus()
             } catch {
                 lifecycleMessage = "Stop failed: \(error.localizedDescription)"
@@ -257,8 +323,12 @@ final class BackupStatusModel: ObservableObject {
 
     func applyConfigNow() {
         Task {
+            activeLifecycleAction = .applyingConfig
             isLifecycleBusy = true
-            defer { isLifecycleBusy = false }
+            defer {
+                isLifecycleBusy = false
+                activeLifecycleAction = .none
+            }
             do {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/config/reload"))
                 request.httpMethod = "POST"
@@ -281,8 +351,10 @@ final class BackupStatusModel: ObservableObject {
             } catch IPCError.reloadUnavailable {
                 do {
                     lifecycleMessage = "Reload unavailable; restarting daemon..."
-                    lifecycleMessage = try await LaunchdController.start()
+                    lifecycleMessage = try await startLaunchd()
                     lastError = nil
+                    connectionState = .connecting
+                    ipcUnavailableSince = nowProvider()
                     refreshStatus()
                 } catch {
                     lifecycleMessage = "Apply failed: \(error.localizedDescription)"
@@ -291,6 +363,14 @@ final class BackupStatusModel: ObservableObject {
                 lifecycleMessage = "Apply failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    func secondsUntilNextAutoRefresh(now: Date = Date()) -> Int? {
+        guard let nextAutomaticRefreshAt else {
+            return nil
+        }
+        let remaining = nextAutomaticRefreshAt.timeIntervalSince(now)
+        return max(0, Int(ceil(remaining)))
     }
 
     func fetchRestoreList(prefix: String, contains: String, snapshot: String) {
@@ -591,6 +671,26 @@ final class BackupStatusModel: ObservableObject {
             return true
         }
         return now.timeIntervalSince(lastAutoRecoveryAttemptAt) >= autoRecoveryCooldown
+    }
+
+    private func scheduleNextAutomaticRefresh(now: Date = Date()) {
+        nextAutomaticRefreshAt = now.addingTimeInterval(pollingInterval)
+    }
+
+    private func updateConnectionStateForIPCFailure(now: Date) {
+        if ipcUnavailableSince == nil {
+            ipcUnavailableSince = now
+        }
+        let elapsed = now.timeIntervalSince(ipcUnavailableSince ?? now)
+        if elapsed < ipcConnectingGracePeriod {
+            connectionState = .connecting
+            return
+        }
+        if elapsed < ipcUnavailableEscalationPeriod {
+            connectionState = .delayed
+            return
+        }
+        connectionState = .unavailable
     }
 
     private func clearStaleLifecycleMessageIfNeeded(for launchdState: DaemonServiceState) {

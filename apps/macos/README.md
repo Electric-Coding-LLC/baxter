@@ -27,11 +27,11 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 
 ## Next Steps
 - Open the project in Xcode:
-- `open apps/macos/BaxterMenuBarApp.xcodeproj`
+- `open apps/macos/BaxterApp.xcodeproj`
 - Build from terminal:
-- `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -configuration Debug build`
+- `xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -configuration Debug build`
 - Run tests from terminal:
-- `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' test`
+- `xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' test`
 - Validate Settings flow:
 - verify folder picker for backup roots
 - verify schedule fields (`daily_time`, `weekly_day`, `weekly_time`) save to config

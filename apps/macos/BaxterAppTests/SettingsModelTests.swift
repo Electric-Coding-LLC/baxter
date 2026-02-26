@@ -1,6 +1,6 @@
 import XCTest
 import Darwin
-@testable import BaxterMenuBarApp
+@testable import BaxterApp
 
 @MainActor
 final class SettingsModelTests: XCTestCase {
@@ -536,6 +536,58 @@ final class BackupStatusModelRestoreTests: XCTestCase {
             MockURLProtocol.requests().first { $0.url?.path == "/v1/status" }
         )
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
+    }
+
+    func testRefreshStatusTreatsInitialIPCFailureAsConnecting() async throws {
+        var now = Date(timeIntervalSince1970: 1_700_000_000)
+        MockURLProtocol.requestHandler = { _ in
+            throw URLError(.cannotConnectToHost)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            queryLaunchdState: { .running },
+            nowProvider: { now },
+            autoStartPolling: false
+        )
+
+        model.refreshStatus()
+        await waitUntil("initial IPC startup state") { model.connectionState == .connecting }
+
+        XCTAssertNil(model.lastError)
+        XCTAssertEqual(model.state, .idle)
+    }
+
+    func testRefreshStatusEscalatesToUnavailableAfterRepeatedFailures() async throws {
+        var now = Date(timeIntervalSince1970: 1_700_000_000)
+        MockURLProtocol.requestHandler = { _ in
+            throw URLError(.cannotConnectToHost)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            queryLaunchdState: { .running },
+            nowProvider: { now },
+            autoStartPolling: false
+        )
+
+        model.refreshStatus()
+        await waitUntil("first IPC failure") {
+            MockURLProtocol.requests().filter { $0.url?.path == "/v1/status" }.count >= 1
+        }
+        XCTAssertEqual(model.connectionState, .connecting)
+
+        now = now.addingTimeInterval(35)
+        model.refreshStatus()
+        await waitUntil("escalated IPC failure") {
+            MockURLProtocol.requests().filter { $0.url?.path == "/v1/status" }.count >= 2
+                && model.connectionState == .unavailable
+        }
+
+        XCTAssertNil(model.lastError)
+        XCTAssertEqual(model.state, .idle)
     }
 
     func testRefreshStatusSendsFailureNotificationOncePerTransition() async throws {

@@ -7,15 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A00000000000000000000011 /* BaxterMenuBarApp/BaxterMenuBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* BaxterMenuBarApp/BaxterMenuBarApp.swift */; };
-		A00000000000000000000014 /* BaxterMenuBarApp/SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* BaxterMenuBarApp/SettingsModel.swift */; };
-		A00000000000000000000015 /* BaxterMenuBarApp/BaxterSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* BaxterMenuBarApp/BaxterSettingsView.swift */; };
-		A00000000000000000000016 /* BaxterMenuBarApp/BackupStatusModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* BaxterMenuBarApp/BackupStatusModel.swift */; };
-		A00000000000000000000017 /* BaxterMenuBarApp/LaunchdController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000005 /* BaxterMenuBarApp/LaunchdController.swift */; };
-		A00000000000000000000018 /* BaxterMenuBarApp/SettingsTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* BaxterMenuBarApp/SettingsTypes.swift */; };
-		A00000000000000000000019 /* BaxterMenuBarApp/SettingsToml.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* BaxterMenuBarApp/SettingsToml.swift */; };
-		A0000000000000000000001A /* BaxterMenuBarApp/NotificationSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* BaxterMenuBarApp/NotificationSettings.swift */; };
-		A00000000000000000000061 /* BaxterMenuBarAppTests/SettingsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000071 /* BaxterMenuBarAppTests/SettingsModelTests.swift */; };
+		A00000000000000000000011 /* BaxterApp/BaxterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* BaxterApp/BaxterApp.swift */; };
+		A00000000000000000000014 /* BaxterApp/SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* BaxterApp/SettingsModel.swift */; };
+		A00000000000000000000015 /* BaxterApp/BaxterSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* BaxterApp/BaxterSettingsView.swift */; };
+		A00000000000000000000016 /* BaxterApp/BackupStatusModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* BaxterApp/BackupStatusModel.swift */; };
+		A00000000000000000000017 /* BaxterApp/LaunchdController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000005 /* BaxterApp/LaunchdController.swift */; };
+		A00000000000000000000018 /* BaxterApp/SettingsTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* BaxterApp/SettingsTypes.swift */; };
+		A00000000000000000000019 /* BaxterApp/SettingsToml.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* BaxterApp/SettingsToml.swift */; };
+		A0000000000000000000001A /* BaxterApp/NotificationSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* BaxterApp/NotificationSettings.swift */; };
+		A0000000000000000000001B /* BaxterApp/BaxterMenuContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* BaxterApp/BaxterMenuContentView.swift */; };
+		A0000000000000000000001C /* BaxterApp/BaxterWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* BaxterApp/BaxterWorkspaceView.swift */; };
+		A0000000000000000000001D /* BaxterApp/MenuLinkButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000B /* BaxterApp/MenuLinkButtonStyle.swift */; };
+		A00000000000000000000061 /* BaxterAppTests/SettingsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000071 /* BaxterAppTests/SettingsModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -24,22 +27,25 @@
 			containerPortal = A00000000000000000000040 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = A00000000000000000000020;
-			remoteInfo = BaxterMenuBarApp;
+			remoteInfo = BaxterApp;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		A00000000000000000000001 /* BaxterMenuBarApp/BaxterMenuBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BaxterMenuBarApp.swift; sourceTree = "<group>"; };
-		A00000000000000000000002 /* BaxterMenuBarApp/SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsModel.swift; sourceTree = "<group>"; };
-		A00000000000000000000003 /* BaxterMenuBarApp/BaxterSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BaxterSettingsView.swift; sourceTree = "<group>"; };
-		A00000000000000000000004 /* BaxterMenuBarApp/BackupStatusModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/BackupStatusModel.swift; sourceTree = "<group>"; };
-		A00000000000000000000005 /* BaxterMenuBarApp/LaunchdController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/LaunchdController.swift; sourceTree = "<group>"; };
-		A00000000000000000000006 /* BaxterMenuBarApp/SettingsTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsTypes.swift; sourceTree = "<group>"; };
-		A00000000000000000000007 /* BaxterMenuBarApp/SettingsToml.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/SettingsToml.swift; sourceTree = "<group>"; };
-		A00000000000000000000008 /* BaxterMenuBarApp/NotificationSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarApp/NotificationSettings.swift; sourceTree = "<group>"; };
-		A00000000000000000000021 /* BaxterMenuBarApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaxterMenuBarApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A00000000000000000000071 /* BaxterMenuBarAppTests/SettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterMenuBarAppTests/SettingsModelTests.swift; sourceTree = "<group>"; };
-		A00000000000000000000072 /* BaxterMenuBarAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaxterMenuBarAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000001 /* BaxterApp/BaxterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000002 /* BaxterApp/SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/SettingsModel.swift; sourceTree = "<group>"; };
+		A00000000000000000000003 /* BaxterApp/BaxterSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterSettingsView.swift; sourceTree = "<group>"; };
+		A00000000000000000000004 /* BaxterApp/BackupStatusModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BackupStatusModel.swift; sourceTree = "<group>"; };
+		A00000000000000000000005 /* BaxterApp/LaunchdController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/LaunchdController.swift; sourceTree = "<group>"; };
+		A00000000000000000000006 /* BaxterApp/SettingsTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/SettingsTypes.swift; sourceTree = "<group>"; };
+		A00000000000000000000007 /* BaxterApp/SettingsToml.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/SettingsToml.swift; sourceTree = "<group>"; };
+		A00000000000000000000008 /* BaxterApp/NotificationSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/NotificationSettings.swift; sourceTree = "<group>"; };
+		A00000000000000000000009 /* BaxterApp/BaxterMenuContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterMenuContentView.swift; sourceTree = "<group>"; };
+		A0000000000000000000000A /* BaxterApp/BaxterWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterWorkspaceView.swift; sourceTree = "<group>"; };
+		A0000000000000000000000B /* BaxterApp/MenuLinkButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/MenuLinkButtonStyle.swift; sourceTree = "<group>"; };
+		A00000000000000000000021 /* BaxterApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaxterApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000071 /* BaxterAppTests/SettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterAppTests/SettingsModelTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000072 /* BaxterAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaxterAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,14 +78,17 @@
 		A00000000000000000000031 /* . */ = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000001 /* BaxterMenuBarApp/BaxterMenuBarApp.swift */,
-				A00000000000000000000002 /* BaxterMenuBarApp/SettingsModel.swift */,
-				A00000000000000000000003 /* BaxterMenuBarApp/BaxterSettingsView.swift */,
-				A00000000000000000000004 /* BaxterMenuBarApp/BackupStatusModel.swift */,
-				A00000000000000000000005 /* BaxterMenuBarApp/LaunchdController.swift */,
-				A00000000000000000000006 /* BaxterMenuBarApp/SettingsTypes.swift */,
-				A00000000000000000000007 /* BaxterMenuBarApp/SettingsToml.swift */,
-				A00000000000000000000008 /* BaxterMenuBarApp/NotificationSettings.swift */,
+				A00000000000000000000001 /* BaxterApp/BaxterApp.swift */,
+				A00000000000000000000002 /* BaxterApp/SettingsModel.swift */,
+				A00000000000000000000003 /* BaxterApp/BaxterSettingsView.swift */,
+				A00000000000000000000004 /* BaxterApp/BackupStatusModel.swift */,
+				A00000000000000000000005 /* BaxterApp/LaunchdController.swift */,
+				A00000000000000000000006 /* BaxterApp/SettingsTypes.swift */,
+				A00000000000000000000007 /* BaxterApp/SettingsToml.swift */,
+				A00000000000000000000008 /* BaxterApp/NotificationSettings.swift */,
+				A00000000000000000000009 /* BaxterApp/BaxterMenuContentView.swift */,
+				A0000000000000000000000A /* BaxterApp/BaxterWorkspaceView.swift */,
+				A0000000000000000000000B /* BaxterApp/MenuLinkButtonStyle.swift */,
 			);
 			path = .;
 			sourceTree = SOURCE_ROOT;
@@ -87,8 +96,8 @@
 		A00000000000000000000032 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000021 /* BaxterMenuBarApp.app */,
-				A00000000000000000000072 /* BaxterMenuBarAppTests.xctest */,
+				A00000000000000000000021 /* BaxterApp.app */,
+				A00000000000000000000072 /* BaxterAppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -96,7 +105,7 @@
 		A00000000000000000000033 /* . */ = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000071 /* BaxterMenuBarAppTests/SettingsModelTests.swift */,
+				A00000000000000000000071 /* BaxterAppTests/SettingsModelTests.swift */,
 			);
 			path = .;
 			sourceTree = SOURCE_ROOT;
@@ -104,9 +113,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A00000000000000000000020 /* BaxterMenuBarApp */ = {
+		A00000000000000000000020 /* BaxterApp */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A00000000000000000000042 /* Build configuration list for PBXNativeTarget "BaxterMenuBarApp" */;
+			buildConfigurationList = A00000000000000000000042 /* Build configuration list for PBXNativeTarget "BaxterApp" */;
 			buildPhases = (
 				A00000000000000000000010 /* Sources */,
 				A00000000000000000000012 /* Frameworks */,
@@ -115,14 +124,14 @@
 			);
 			dependencies = (
 			);
-			name = BaxterMenuBarApp;
-			productName = BaxterMenuBarApp;
-			productReference = A00000000000000000000021 /* BaxterMenuBarApp.app */;
+			name = BaxterApp;
+			productName = BaxterApp;
+			productReference = A00000000000000000000021 /* BaxterApp.app */;
 			productType = "com.apple.product-type.application";
 		};
-		A00000000000000000000070 /* BaxterMenuBarAppTests */ = {
+		A00000000000000000000070 /* BaxterAppTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A00000000000000000000043 /* Build configuration list for PBXNativeTarget "BaxterMenuBarAppTests" */;
+			buildConfigurationList = A00000000000000000000043 /* Build configuration list for PBXNativeTarget "BaxterAppTests" */;
 			buildPhases = (
 				A00000000000000000000060 /* Sources */,
 				A00000000000000000000062 /* Frameworks */,
@@ -132,9 +141,9 @@
 			dependencies = (
 				A00000000000000000000081 /* PBXTargetDependency */,
 			);
-			name = BaxterMenuBarAppTests;
-			productName = BaxterMenuBarAppTests;
-			productReference = A00000000000000000000072 /* BaxterMenuBarAppTests.xctest */;
+			name = BaxterAppTests;
+			productName = BaxterAppTests;
+			productReference = A00000000000000000000072 /* BaxterAppTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -156,7 +165,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A00000000000000000000041 /* Build configuration list for PBXProject "BaxterMenuBarApp" */;
+			buildConfigurationList = A00000000000000000000041 /* Build configuration list for PBXProject "BaxterApp" */;
 			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -169,8 +178,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A00000000000000000000020 /* BaxterMenuBarApp */,
-				A00000000000000000000070 /* BaxterMenuBarAppTests */,
+				A00000000000000000000020 /* BaxterApp */,
+				A00000000000000000000070 /* BaxterAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -180,14 +189,17 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A00000000000000000000011 /* BaxterMenuBarApp/BaxterMenuBarApp.swift in Sources */,
-				A00000000000000000000014 /* BaxterMenuBarApp/SettingsModel.swift in Sources */,
-				A00000000000000000000015 /* BaxterMenuBarApp/BaxterSettingsView.swift in Sources */,
-				A00000000000000000000016 /* BaxterMenuBarApp/BackupStatusModel.swift in Sources */,
-				A00000000000000000000017 /* BaxterMenuBarApp/LaunchdController.swift in Sources */,
-				A00000000000000000000018 /* BaxterMenuBarApp/SettingsTypes.swift in Sources */,
-				A00000000000000000000019 /* BaxterMenuBarApp/SettingsToml.swift in Sources */,
-				A0000000000000000000001A /* BaxterMenuBarApp/NotificationSettings.swift in Sources */,
+				A00000000000000000000011 /* BaxterApp/BaxterApp.swift in Sources */,
+				A00000000000000000000014 /* BaxterApp/SettingsModel.swift in Sources */,
+				A00000000000000000000015 /* BaxterApp/BaxterSettingsView.swift in Sources */,
+				A00000000000000000000016 /* BaxterApp/BackupStatusModel.swift in Sources */,
+				A00000000000000000000017 /* BaxterApp/LaunchdController.swift in Sources */,
+				A00000000000000000000018 /* BaxterApp/SettingsTypes.swift in Sources */,
+				A00000000000000000000019 /* BaxterApp/SettingsToml.swift in Sources */,
+				A0000000000000000000001A /* BaxterApp/NotificationSettings.swift in Sources */,
+				A0000000000000000000001B /* BaxterApp/BaxterMenuContentView.swift in Sources */,
+				A0000000000000000000001C /* BaxterApp/BaxterWorkspaceView.swift in Sources */,
+				A0000000000000000000001D /* BaxterApp/MenuLinkButtonStyle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -195,7 +207,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A00000000000000000000061 /* BaxterMenuBarAppTests/SettingsModelTests.swift in Sources */,
+				A00000000000000000000061 /* BaxterAppTests/SettingsModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -204,7 +216,7 @@
 /* Begin PBXTargetDependency section */
 		A00000000000000000000081 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = A00000000000000000000020 /* BaxterMenuBarApp */;
+			target = A00000000000000000000020 /* BaxterApp */;
 			targetProxy = A00000000000000000000080 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -323,7 +335,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterMenuBarApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
@@ -352,7 +364,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterMenuBarApp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
@@ -369,11 +381,11 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterMenuBarAppTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterAppTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaxterMenuBarApp.app/Contents/MacOS/BaxterMenuBarApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaxterApp.app/Contents/MacOS/BaxterApp";
 			};
 			name = Debug;
 		};
@@ -387,18 +399,18 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
-				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterMenuBarAppTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterAppTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaxterMenuBarApp.app/Contents/MacOS/BaxterMenuBarApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaxterApp.app/Contents/MacOS/BaxterApp";
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A00000000000000000000041 /* Build configuration list for PBXProject "BaxterMenuBarApp" */ = {
+		A00000000000000000000041 /* Build configuration list for PBXProject "BaxterApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A00000000000000000000050 /* Debug */,
@@ -407,7 +419,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A00000000000000000000042 /* Build configuration list for PBXNativeTarget "BaxterMenuBarApp" */ = {
+		A00000000000000000000042 /* Build configuration list for PBXNativeTarget "BaxterApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A00000000000000000000052 /* Debug */,
@@ -416,7 +428,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A00000000000000000000043 /* Build configuration list for PBXNativeTarget "BaxterMenuBarAppTests" */ = {
+		A00000000000000000000043 /* Build configuration list for PBXNativeTarget "BaxterAppTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A00000000000000000000054 /* Debug */,
