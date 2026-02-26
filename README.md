@@ -159,6 +159,24 @@ A simple, secure macOS backup utility with an S3 backend.
 - `internal/daemon`: `/v1/status` schedule visibility and `/v1/backup/run` state transition integration tests.
 - `cmd/baxterd`: process-level `--once` integration test verifying manifest/object outputs.
 
+## Swift Style Workflow
+- Scope: only `apps/macos/BaxterApp/**/*.swift` and `apps/macos/BaxterAppTests/**/*.swift`.
+- Install required tools:
+- `brew bundle --file Brewfile --no-upgrade`
+- Upgrade to latest tooling when needed:
+- `brew bundle --file Brewfile --upgrade`
+- Local checks:
+- `./scripts/swift-style.sh lint-check`
+- `./scripts/swift-style.sh format-check`
+- `./scripts/swift-style.sh format-apply`
+- Fast local checks (changed files only):
+- `./scripts/swift-style.sh lint-check --changed`
+- `./scripts/swift-style.sh format-check --changed`
+- `./scripts/swift-style.sh format-apply --changed`
+- CI behavior:
+- PR CI installs with `--no-upgrade` for stable/faster checks.
+- Scheduled workflow `.github/workflows/swift-style-tool-refresh.yml` upgrades tools and auto-opens a PR if formatting diffs appear.
+
 ## Release
 - Full release/install/upgrade/rollback playbook:
 - `docs/release-playbook.md`

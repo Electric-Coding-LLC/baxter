@@ -1,0 +1,4 @@
+--swiftversion 6.0
+--linebreaks lf
+--disable all
+--enable trailingSpace,linebreaks,semicolons

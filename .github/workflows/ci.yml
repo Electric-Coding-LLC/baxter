@@ -26,6 +26,20 @@ jobs:
       - run: govulncheck ./...
       - run: go test ./...
 
+  swift-style:
+    runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Swift style tools
+        run: |
+          set -euo pipefail
+          brew bundle --file Brewfile --no-upgrade
+      - name: SwiftLint check (Baxter app scope)
+        run: ./scripts/swift-style.sh lint-check
+      - name: SwiftFormat check (Baxter app scope)
+        run: ./scripts/swift-style.sh format-check
+
   macos-app-test:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
     timeout-minutes: 45
