@@ -68,7 +68,7 @@ jobs:
         attempt: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/.ci/DerivedData-${{ matrix.attempt }}
-      RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterMenuBarApp-${{ matrix.attempt }}.xcresult
+      RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterApp-${{ matrix.attempt }}.xcresult
     steps:
       - name: Skip attempts above requested iteration count
         id: gate
@@ -88,14 +88,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-stability-${{ matrix.attempt }}-${{ hashFiles('apps/macos/BaxterMenuBarApp.xcodeproj/project.pbxproj', 'apps/macos/BaxterMenuBarApp/**/*.swift', 'apps/macos/BaxterMenuBarAppTests/**/*.swift') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-stability-${{ matrix.attempt }}-${{ hashFiles('apps/macos/BaxterApp.xcodeproj/project.pbxproj', 'apps/macos/BaxterApp/**/*.swift', 'apps/macos/BaxterAppTests/**/*.swift') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-stability-${{ matrix.attempt }}-
       - name: Run macOS app tests
         if: steps.gate.outputs.skip == 'false'
         run: |
           mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
-          xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" test
+          xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" test
       - name: Run launchd IPC smoke check
         if: steps.gate.outputs.skip == 'false'
         env:
