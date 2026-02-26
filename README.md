@@ -168,8 +168,13 @@ A simple, secure macOS backup utility with an S3 backend.
 - `dist/v0.1.0/`
 - Manual RC build (no tag publish):
 - `gh workflow run "Release Candidate" -f version=v0.4.0-rc1`
+- Required-check stability proving run (10 consecutive attempts):
+- `gh workflow run "Required Checks Stability" -f iterations=10`
 - Tag push triggers GitHub Release workflow:
 - `git tag v0.1.0 && git push origin v0.1.0`
+- RC sign-off checklists:
+- `docs/v0.4.0-rc1-validation.md`
+- `docs/v0.4-rc-go-no-go-checklist.md`
 
 ## Release Smoke Matrix
 - CLI backup/restore:
@@ -184,6 +189,8 @@ A simple, secure macOS backup utility with an S3 backend.
 - `go test ./internal/daemon -run TestRunVerifyEndpointSuccessUpdatesStatus -v`
 - launchd/IPC runtime smoke:
 - `./scripts/smoke-launchd-ipc.sh`
+- upgrade-preservation smoke:
+- `./scripts/upgrade-preservation-smoke.sh --before /path/to/baxter-before --after /path/to/baxter-after`
 - macOS app settings:
 - `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' test`
 - Manual verification checklist:

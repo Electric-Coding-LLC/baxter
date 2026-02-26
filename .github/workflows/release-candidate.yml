@@ -46,3 +46,45 @@ jobs:
           path: dist/${{ inputs.version }}
           if-no-files-found: error
           retention-days: 14
+
+  validate-rc-artifacts:
+    runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    needs: build-rc
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download RC artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: baxter-${{ inputs.version }}
+          path: .ci/rc-artifacts
+      - name: Validate RC install/upgrade/rollback path
+        run: |
+          set -euo pipefail
+          EVIDENCE_PATH="$GITHUB_WORKSPACE/.ci/rc-validation-evidence.md"
+          ./scripts/rc-artifact-validation.sh \
+            --artifact-dir "$GITHUB_WORKSPACE/.ci/rc-artifacts" \
+            --version '${{ inputs.version }}' \
+            --evidence "$EVIDENCE_PATH"
+      - name: Collect launchd logs (on failure)
+        if: failure()
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/launchd-logs
+          cp -f "$HOME/Library/Logs/baxterd.out.log" .ci/launchd-logs/ 2>/dev/null || true
+          cp -f "$HOME/Library/Logs/baxterd.err.log" .ci/launchd-logs/ 2>/dev/null || true
+      - name: Upload launchd logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-launchd-logs-${{ github.run_id }}
+          path: .ci/launchd-logs
+          if-no-files-found: warn
+      - name: Upload RC validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-validation-evidence-${{ inputs.version }}-${{ github.run_id }}
+          path: .ci/rc-validation-evidence.md
+          if-no-files-found: warn
+          retention-days: 14

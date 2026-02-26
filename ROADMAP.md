@@ -81,25 +81,30 @@ As of February 25, 2026.
 - Mapped daemon restore error codes to actionable macOS UI guidance and added tests for key restore error states.
 - Added diagnostics bundle export in the macOS app with config/log redaction and test coverage for sensitive-value sanitization.
 
-## Next Sprint
+## Sprint Closeout Status (v0.4 RC)
 
 1. Restore Workspace MVP (macOS app)
+   - Status: complete.
    - Goal: replace restore/settings/diagnostics dialogs with an app-first workflow and a faster, lower-error file-browser experience.
    - Scope: ship a dedicated restore screen with snapshot selector, searchable/expandable file tree, destination folder picker, and run/dry-run actions using existing daemon IPC endpoints; route menu actions (`Restore`, `Settings`, `Diagnostics`) to open the app window at the matching section.
    - Acceptance criteria: users can select snapshot + source paths and complete restore without manual path typing; restore/dry-run failures surface actionable inline errors with daemon error codes preserved; menu actions deep-link to in-app sections and dialog entry points are removed after parity.
 2. RC artifact validation run
+   - Status: automated in `Release Candidate` workflow via artifact validation and evidence upload.
    - Goal: prove release artifacts install and run without source checkout.
    - Scope: run `Release Candidate` for `v0.4.0-rc1`; execute install, first backup, upgrade, and rollback from the playbook on a clean macOS host.
    - Acceptance criteria: all playbook steps pass without ad hoc fixes; evidence is captured in release notes/checklist.
 3. Upgrade preservation regression automation
+   - Status: complete.
    - Goal: prevent config/state loss across upgrades.
    - Scope: add an automated smoke check that seeds config + manifest/object state, upgrades binaries, and verifies state is unchanged.
    - Acceptance criteria: check runs in CI and fails on any config/state drift.
 4. CI rerun stability proving pass
+   - Status: workflow-ready (`Required Checks Stability`, default 10 attempts).
    - Goal: demonstrate required checks are consistently green.
    - Scope: run repeated reruns of required macOS and Go checks; fix remaining flaky points and improve diagnostics where needed.
    - Acceptance criteria: 10 consecutive reruns on `main` pass for required checks.
 5. v0.4 RC go/no-go checklist
+   - Status: complete (checklist and evidence record added under `docs/`).
    - Goal: make release sign-off explicit.
    - Scope: track each v0.4 acceptance criterion as pass/fail with owner notes and blocker status.
    - Acceptance criteria: checklist is complete and all blockers are either resolved or explicitly deferred.

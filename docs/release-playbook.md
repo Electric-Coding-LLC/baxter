@@ -59,6 +59,7 @@ Use rollback when smoke checks fail after upgrade.
    - `go test ./internal/cli -run TestRunBackupAndRestoreEdgeFilenames -v`
    - `go test ./internal/daemon -run TestDaemonErrorContract -v`
    - `go test ./internal/daemon -run TestRestoreRunEndpoint -v`
+   - `./scripts/upgrade-preservation-smoke.sh --before /path/to/baxter-before --after /path/to/baxter-after`
    - `./scripts/smoke-launchd-ipc.sh`
 3. macOS app tests:
    - `xcodebuild -project apps/macos/BaxterMenuBarApp.xcodeproj -scheme BaxterMenuBarApp -destination 'platform=macOS' test`
@@ -76,3 +77,16 @@ For RC builds without publishing a tag-based release, use the `Release Candidate
 2. Wait for completion:
    - `gh run watch`
 3. Download artifacts from the workflow run and run the install/upgrade smoke path above.
+4. The workflow now includes a macOS artifact-validation job that executes install, first backup, upgrade, and rollback using the built artifacts and uploads a `rc-validation-evidence-*` artifact.
+5. Record decision status in:
+   - `docs/v0.4.0-rc1-validation.md`
+   - `docs/v0.4-rc-go-no-go-checklist.md`
+
+## Stability Proving Run
+
+To demonstrate required checks are consistently green, run:
+
+- `gh workflow run "Required Checks Stability" -f iterations=10`
+- `gh run watch`
+
+Attach the resulting workflow URL in `docs/v0.4-rc-go-no-go-checklist.md`.

@@ -82,3 +82,43 @@ jobs:
           name: macos-xcresult-${{ github.run_id }}
           path: ${{ env.RESULT_BUNDLE_PATH }}
           if-no-files-found: warn
+
+  upgrade-preservation-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.13"
+          cache: true
+      - run: go mod download
+      - name: Build before/after CLI binaries
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p .ci/bin
+          before_ref="${BASE_SHA:-}"
+          if [ -z "$before_ref" ]; then
+            if git rev-parse HEAD^ >/dev/null 2>&1; then
+              before_ref="$(git rev-parse HEAD^)"
+            else
+              before_ref="$(git rev-parse HEAD)"
+            fi
+          fi
+          echo "upgrade-preservation before_ref=$before_ref"
+
+          git worktree add --detach .ci/before "$before_ref"
+          trap 'git worktree remove --force .ci/before' EXIT
+
+          (
+            cd .ci/before
+            go mod download
+            go build -o "$GITHUB_WORKSPACE/.ci/bin/baxter-before" ./cmd/baxter
+          )
+          go build -o .ci/bin/baxter-after ./cmd/baxter
+      - name: Run upgrade preservation smoke check
+        run: ./scripts/upgrade-preservation-smoke.sh --before .ci/bin/baxter-before --after .ci/bin/baxter-after

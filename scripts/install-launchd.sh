@@ -9,6 +9,7 @@ BIN_DIR="$APP_SUPPORT_DIR/bin"
 BAXTERD_BIN="$BIN_DIR/baxterd"
 CONFIG_PATH="$APP_SUPPORT_DIR/config.toml"
 IPC_ADDR="127.0.0.1:41820"
+BAXTERD_BINARY_PATH="${BAXTERD_BINARY_PATH:-}"
 
 LAUNCH_AGENTS_DIR="$HOME_DIR/Library/LaunchAgents"
 PLIST_PATH="$LAUNCH_AGENTS_DIR/com.electriccoding.baxterd.plist"
@@ -24,9 +25,17 @@ if [ ! -f "$CONFIG_PATH" ]; then
   exit 1
 fi
 
-pushd "$ROOT_DIR" >/dev/null
-go build -o "$BAXTERD_BIN" ./cmd/baxterd
-popd >/dev/null
+if [ -n "$BAXTERD_BINARY_PATH" ]; then
+  if [ ! -x "$BAXTERD_BINARY_PATH" ]; then
+    echo "BAXTERD_BINARY_PATH must point to an executable file: $BAXTERD_BINARY_PATH"
+    exit 1
+  fi
+  install -m 0755 "$BAXTERD_BINARY_PATH" "$BAXTERD_BIN"
+else
+  pushd "$ROOT_DIR" >/dev/null
+  go build -o "$BAXTERD_BIN" ./cmd/baxterd
+  popd >/dev/null
+fi
 
 sed \
   -e "s|__BAXTERD_BIN__|$BAXTERD_BIN|g" \
