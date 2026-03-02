@@ -48,8 +48,8 @@ jobs:
       RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterApp.xcresult
     steps:
       - uses: actions/checkout@v4
-      - name: Cache Xcode DerivedData
-        uses: actions/cache@v4
+      - name: Restore Xcode DerivedData cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
           key: ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-${{ hashFiles('apps/macos/BaxterApp.xcodeproj/project.pbxproj', 'apps/macos/BaxterApp/**/*.swift', 'apps/macos/BaxterAppTests/**/*.swift') }}
