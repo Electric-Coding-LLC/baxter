@@ -12,6 +12,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      swift_style: ${{ steps.set_outputs.outputs.swift_style }}
+      upgrade_smoke: ${{ steps.set_outputs.outputs.upgrade_smoke }}
+    steps:
+      - name: Default all conditional jobs to run for non-PR events
+        id: defaults
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "swift_style=true" >>"$GITHUB_OUTPUT"
+          echo "upgrade_smoke=true" >>"$GITHUB_OUTPUT"
+      - name: Detect changed paths for PR events
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            swift_style:
+              - 'apps/macos/BaxterApp/**/*.swift'
+              - 'apps/macos/BaxterAppTests/**/*.swift'
+              - '.swiftlint.yml'
+              - '.swiftformat'
+              - 'scripts/swift-style.sh'
+              - 'Brewfile'
+            upgrade_smoke:
+              - 'cmd/baxter/**'
+              - 'internal/backup/**'
+              - 'internal/cli/**'
+              - 'internal/config/**'
+              - 'internal/crypto/**'
+              - 'internal/state/**'
+              - 'internal/storage/**'
+              - 'scripts/upgrade-preservation-smoke.sh'
+              - 'go.mod'
+              - 'go.sum'
+              - 'config.example.toml'
+      - name: Publish effective change flags
+        id: set_outputs
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "swift_style=${{ steps.filter.outputs.swift_style }}" >>"$GITHUB_OUTPUT"
+            echo "upgrade_smoke=${{ steps.filter.outputs.upgrade_smoke }}" >>"$GITHUB_OUTPUT"
+          else
+            echo "swift_style=${{ steps.defaults.outputs.swift_style }}" >>"$GITHUB_OUTPUT"
+            echo "upgrade_smoke=${{ steps.defaults.outputs.upgrade_smoke }}" >>"$GITHUB_OUTPUT"
+          fi
+
   go-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -26,6 +74,22 @@ jobs:
       - run: govulncheck ./...
       - run: go test ./...
 
+  swift-style:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.swift_style == 'true' }}
+    runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Swift style tools
+        run: |
+          set -euo pipefail
+          brew bundle --file Brewfile --no-upgrade
+      - name: SwiftLint check (Baxter app scope)
+        run: ./scripts/swift-style.sh lint-check
+      - name: SwiftFormat check (Baxter app scope)
+        run: ./scripts/swift-style.sh format-check
+
   macos-app-test:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
     timeout-minutes: 45
@@ -34,8 +98,8 @@ jobs:
       RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterApp.xcresult
     steps:
       - uses: actions/checkout@v4
-      - name: Cache Xcode DerivedData
-        uses: actions/cache@v4
+      - name: Restore Xcode DerivedData cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
           key: ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-${{ hashFiles('apps/macos/BaxterApp.xcodeproj/project.pbxproj', 'apps/macos/BaxterApp/**/*.swift', 'apps/macos/BaxterAppTests/**/*.swift') }}
@@ -84,6 +148,8 @@ jobs:
           if-no-files-found: warn
 
   upgrade-preservation-smoke:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.upgrade_smoke == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

@@ -32,6 +32,17 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - `xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -configuration Debug build`
 - Run tests from terminal:
 - `xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' test`
+- Swift style tooling:
+- `brew bundle --file Brewfile --no-upgrade`
+- Optional refresh to latest versions:
+- `brew bundle --file Brewfile --upgrade`
+- `./scripts/swift-style.sh lint-check`
+- `./scripts/swift-style.sh format-check`
+- `./scripts/swift-style.sh format-apply`
+- Fast local checks (changed files only):
+- `./scripts/swift-style.sh lint-check --changed`
+- `./scripts/swift-style.sh format-check --changed`
+- `./scripts/swift-style.sh format-apply --changed`
 - Validate Settings flow:
 - verify folder picker for backup roots
 - verify schedule fields (`daily_time`, `weekly_day`, `weekly_time`) save to config

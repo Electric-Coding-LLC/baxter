@@ -1,0 +1,79 @@
+name: Swift Style Tool Refresh
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  refresh-swift-style-tools:
+    runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upgrade Swift style tools to latest
+        run: |
+          set -euo pipefail
+          brew update
+          brew bundle --file Brewfile --upgrade
+      - name: Show tool versions
+        run: |
+          set -euo pipefail
+          swiftlint version
+          swiftformat --version
+      - name: Write tool versions to step summary
+        run: |
+          set -euo pipefail
+          swiftlint_version="$(swiftlint version | awk 'NR==1{print $1}')"
+          swiftformat_version="$(swiftformat --version | awk 'NR==1{print $1}')"
+          {
+            echo "## Swift Style Tool Refresh"
+            echo "- swiftlint: ${swiftlint_version}"
+            echo "- swiftformat: ${swiftformat_version}"
+          } >>"$GITHUB_STEP_SUMMARY"
+      - name: Apply SwiftFormat with refreshed tools
+        run: |
+          set -euo pipefail
+          ./scripts/swift-style.sh format-apply
+      - name: Validate style checks with refreshed tools
+        run: |
+          set -euo pipefail
+          ./scripts/swift-style.sh lint-check
+          ./scripts/swift-style.sh format-check
+      - name: Detect style changes
+        id: style_changes
+        run: |
+          set -euo pipefail
+          if git status --porcelain -- apps/macos/BaxterApp apps/macos/BaxterAppTests | grep -q .; then
+            echo "has_changes=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >>"$GITHUB_OUTPUT"
+          fi
+      - name: Create or update style refresh PR
+        if: steps.style_changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: refresh Swift style formatting"
+          title: "chore: refresh Swift style formatting"
+          body: |
+            Automated Swift style refresh after upgrading Homebrew-managed tooling.
+
+            - Ran `brew bundle --file Brewfile --upgrade`
+            - Ran `./scripts/swift-style.sh format-apply`
+            - Revalidated with lint and format checks
+          branch: codex/swift-style-tool-refresh
+          delete-branch: true
+      - name: Record no-change summary
+        if: steps.style_changes.outputs.has_changes == 'false'
+        run: |
+          {
+            echo "## Swift Style Tool Refresh"
+            echo "- style changes detected: no"
+          } >>"$GITHUB_STEP_SUMMARY"
