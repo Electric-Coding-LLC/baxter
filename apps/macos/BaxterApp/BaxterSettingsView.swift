@@ -503,19 +503,35 @@ struct BaxterSettingsView: View {
 }
 
 struct BaxterRestoreView: View {
+    private enum RestoreDestinationMode: String {
+        case original
+        case custom
+    }
+
     @ObservedObject var statusModel: BackupStatusModel
+    @ObservedObject var settingsModel: BaxterSettingsModel
     var embedded: Bool = false
-    private let maxVisibleResults = 2000
+    private let restoreRootDirectoryKey = "__root__"
+    private let restorePlaceholderPrefix = "__restore_placeholder__:"
     @State private var restorePrefix = ""
     @State private var restoreContains = ""
     @State private var restorePath = ""
     @State private var restoreToDir = ""
     @State private var restoreOverwrite = false
     @State private var restoreVerifyOnly = false
+    @State private var showRestoreAdvanced = false
+    @State private var restoreDestinationMode: RestoreDestinationMode = .original
+    @State private var isSourceColumnVisible = false
+    @State private var hasAutoLoadedRestore = false
+    @State private var restoreSearchDebounceTask: Task<Void, Never>?
     @State private var browserFilter = ""
     @State private var selectedBrowserPath: String?
-    @State private var sortedRestorePaths: [String] = []
-    @State private var directoryPathCache: Set<String> = []
+    @State private var restoreBrowserRoots: [RestoreBrowserNode] = []
+    @State private var restorePathKinds: [String: Bool] = [:]
+    @State private var loadedRestorePaths: Set<String> = []
+    @State private var loadedRestoreDirectoryPaths: Set<String> = []
+    @State private var loadingRestoreDirectoryPaths: Set<String> = []
+    @State private var restoreRootPrefix = ""
     @State private var isIndexingRestorePaths = false
     @State private var showRestoreConfirmation = false
     @State private var showQuickLook = false
@@ -524,40 +540,42 @@ struct BaxterRestoreView: View {
         VStack(alignment: .leading, spacing: 0) {
             restoreTitle
             restoreToolbar
+            Divider()
             restoreMainLayout
         }
-        .padding(embedded ? 2 : 8)
+        .padding(embedded ? 0 : 8)
         .frame(minWidth: embedded ? nil : 980, minHeight: embedded ? nil : 560)
         .onAppear {
             if statusModel.snapshots.isEmpty && !statusModel.isSnapshotsBusy {
                 statusModel.fetchSnapshots()
             }
+            triggerInitialRestoreLoadIfNeeded()
         }
         .onChange(of: statusModel.selectedSnapshot) { _, _ in
-            selectedBrowserPath = nil
-            restorePath = ""
-            sortedRestorePaths = []
-            directoryPathCache = []
-            statusModel.restorePaths = []
-            statusModel.restorePreviewMessage = "Pick filters, then click Load Files."
+            scheduleAutomaticRestoreSearch(immediate: true)
         }
-        .onChange(of: selectedBrowserPath) { _, selectedPath in
-            if let selectedPath {
-                restorePath = selectedPath
+        .onChange(of: restorePrefix) { _, _ in
+            guard hasAutoLoadedRestore else {
+                return
             }
+            scheduleAutomaticRestoreSearch()
         }
-        .onChange(of: statusModel.restorePaths) { _, restorePaths in
-            indexRestorePaths(restorePaths)
+        .onChange(of: restoreContains) { _, _ in
+            guard hasAutoLoadedRestore else {
+                return
+            }
+            scheduleAutomaticRestoreSearch()
         }
-        .onMoveCommand { direction in
-            handleMoveCommand(direction, visiblePaths: filteredRestorePaths)
+        .onDisappear {
+            restoreSearchDebounceTask?.cancel()
+            restoreSearchDebounceTask = nil
         }
         .alert("Confirm Restore", isPresented: $showRestoreConfirmation) {
             Button("Cancel", role: .cancel) {}
-            Button("Run Restore", role: .destructive) {
+            Button(restoreVerifyOnly ? "Validate" : "Restore", role: restoreVerifyOnly ? nil : .destructive) {
                 statusModel.runRestore(
                     path: restorePath,
-                    toDir: restoreToDir,
+                    toDir: effectiveRestoreToDir,
                     overwrite: restoreOverwrite,
                     verifyOnly: restoreVerifyOnly,
                     snapshot: statusModel.selectedSnapshotRequestValue
@@ -579,50 +597,35 @@ struct BaxterRestoreView: View {
         }
     }
 
-    private var snapshotSummary: some View {
-        Group {
-            if let selectedSnapshot = statusModel.selectedSnapshotSummary {
-                Text("Selected snapshot: \(selectedSnapshot.createdAt) • \(selectedSnapshot.entries) files")
-                    .textSelection(.enabled)
-            } else {
-                Text("Selected snapshot: latest")
-            }
-        }
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder
-    private var snapshotsStatus: some View {
-        if let snapshotsMessage = statusModel.snapshotsMessage {
-            Text(snapshotsMessage)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private var restoreMainLayout: some View {
         HStack(alignment: .top, spacing: 0) {
-            restoreSourceColumn
-                .frame(width: sourceColumnWidth, alignment: .topLeading)
-                .frame(maxHeight: .infinity, alignment: .topLeading)
-
-            Divider()
+            if isSourceColumnVisible {
+                restoreSourceColumn
+                    .frame(width: sourceColumnWidth, alignment: .topLeading)
+                    .frame(maxHeight: .infinity, alignment: .topLeading)
+                Divider()
+            }
 
             restoreBrowserPanel
                 .frame(minWidth: browserPanelMinWidth, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            Divider()
+            if isRestoreActionsPanelVisible {
+                Divider()
 
-            restoreActionsPanel
-                .frame(width: actionsPanelWidth, alignment: .topLeading)
-                .frame(maxHeight: .infinity, alignment: .topLeading)
+                restoreActionsPanel
+                    .frame(width: actionsPanelWidth, alignment: .topLeading)
+                    .frame(maxHeight: .infinity, alignment: .topLeading)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var sourceColumnWidth: CGFloat {
         embedded ? 250 : 280
+    }
+
+    private var sourceFieldLabelWidth: CGFloat {
+        64
     }
 
     private var browserPanelMinWidth: CGFloat {
@@ -636,44 +639,27 @@ struct BaxterRestoreView: View {
     private var restoreToolbar: some View {
         HStack(spacing: 8) {
             Button {
-                // Finder-like nav affordance placeholder.
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    isSourceColumnVisible.toggle()
+                }
             } label: {
-                Image(systemName: "chevron.left")
+                Label(isSourceColumnVisible ? "Hide Source" : "Show Source", systemImage: "sidebar.leading")
             }
             .buttonStyle(.borderless)
-            .disabled(true)
-
-            Button {
-                // Finder-like nav affordance placeholder.
-            } label: {
-                Image(systemName: "chevron.right")
-            }
-            .buttonStyle(.borderless)
-            .disabled(true)
 
             Divider()
                 .frame(height: 16)
 
-            Label("Column View", systemImage: "rectangle.split.3x1")
+            Label("Tree View", systemImage: "list.bullet.indent")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             Spacer()
 
-            if statusModel.isSnapshotsBusy || statusModel.isRestoreBusy || isIndexingRestorePaths {
+            if statusModel.isSnapshotsBusy || statusModel.isRestoreBusy || isLoadingRestoreBrowser {
                 ProgressView()
                     .controlSize(.small)
             }
-
-            Button {
-                presentQuickLook()
-            } label: {
-                Image(systemName: "space")
-            }
-            .buttonStyle(.borderless)
-            .help("Quick Look (Space)")
-            .disabled(activeRestorePath == nil)
-            .keyboardShortcut(.space, modifiers: [])
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
@@ -688,197 +674,229 @@ struct BaxterRestoreView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var restoreSourceColumn: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Source")
                 .font(.headline)
 
-            HStack(spacing: 8) {
-                Text("Snapshot")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker("Snapshot", selection: $statusModel.selectedSnapshot) {
-                    Text("Latest").tag(BackupStatusModel.latestSnapshotSelection)
-                    ForEach(statusModel.snapshots, id: \.id) { snapshot in
-                        Text(snapshotRowLabel(snapshot)).tag(snapshot.id)
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
+                GridRow(alignment: .center) {
+                    Text("Snapshot")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: sourceFieldLabelWidth, alignment: .leading)
+
+                    HStack(spacing: 6) {
+                        Picker("Snapshot", selection: $statusModel.selectedSnapshot) {
+                            Text("Latest").tag(BackupStatusModel.latestSnapshotSelection)
+                            ForEach(statusModel.snapshots, id: \.id) { snapshot in
+                                Text(snapshotRowLabel(snapshot)).tag(snapshot.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
+                        .disabled(statusModel.isSnapshotsBusy)
+
+                        Button {
+                            statusModel.fetchSnapshots()
+                            scheduleAutomaticRestoreSearch(immediate: true)
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                        .help("Refresh snapshots")
+                        .disabled(statusModel.isSnapshotsBusy)
                     }
                 }
-                .labelsHidden()
-                .frame(maxWidth: .infinity)
-                .disabled(statusModel.isSnapshotsBusy)
+
+                GridRow(alignment: .center) {
+                    Text("Prefix")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: sourceFieldLabelWidth, alignment: .leading)
+                    TextField("Optional", text: $restorePrefix)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                }
+
+                GridRow(alignment: .center) {
+                    Text("Contains")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: sourceFieldLabelWidth, alignment: .leading)
+                    TextField("Optional", text: $restoreContains)
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                }
             }
 
-            Button {
-                statusModel.fetchSnapshots()
-            } label: {
-                Label("Refresh Snapshots", systemImage: "arrow.clockwise")
-                    .frame(maxWidth: .infinity)
+            if let sourceNotice = restoreSourceNotice {
+                Text(sourceNotice)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
-            .buttonStyle(.bordered)
-            .disabled(statusModel.isSnapshotsBusy)
-
-            TextField("Prefix filter (optional)", text: $restorePrefix)
-                .textFieldStyle(.roundedBorder)
-            TextField("Contains text (optional)", text: $restoreContains)
-                .textFieldStyle(.roundedBorder)
-
-            Button {
-                searchRestorePaths()
-            } label: {
-                Label("Load Files", systemImage: "magnifyingglass")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(statusModel.isRestoreBusy)
-
-            Divider()
-
-            snapshotSummary
-            snapshotsStatus
 
             Spacer(minLength: 0)
         }
-        .padding(12)
+        .padding(10)
     }
 
     private var restoreBrowserPanel: some View {
-        let visiblePaths = filteredRestorePaths
+        let filteredRoots = filteredRestoreBrowserRoots
+        let visibleRoots = decorateRestoreNodesForLazyExpansion(filteredRoots)
 
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Name")
                     .font(.headline)
                 Spacer()
-                if isIndexingRestorePaths {
+                if isLoadingRestoreBrowser {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("Indexing...")
+                        Text("Loading...")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Text("\(visiblePaths.count) item(s)")
+                    Text("\(countRestoreBrowserNodes(filteredRoots)) item(s)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.top, 8)
+            .padding(.vertical, 8)
 
-            if visiblePaths.isEmpty {
+            if visibleRoots.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "tray")
                         .font(.system(size: 26))
                         .foregroundStyle(.secondary)
                     Text("No matching paths")
                         .font(.headline)
-                    Text("Adjust filters and click Load Files to fetch backup paths.")
+                    Text("Adjust filters in Source and results will refresh automatically.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 20)
             } else {
-                List(selection: $selectedBrowserPath) {
-                    ForEach(visiblePaths, id: \.self) { path in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Label(pathName(for: path), systemImage: iconName(for: path))
-                                .lineLimit(1)
-                            Text(parentPath(for: path))
-                                .font(.caption2.monospaced())
+                List {
+                    OutlineGroup(visibleRoots, children: \.childNodes) { node in
+                        if node.isPlaceholder {
+                            Text("Loading...")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        .padding(.vertical, 2)
-                        .tag(path)
-                        .contextMenu {
-                            Button("Quick Look") {
-                                selectedBrowserPath = path
-                                presentQuickLook()
+                                .onAppear {
+                                    loadRestoreChildrenFromPlaceholder(node.path)
+                                }
+                        } else {
+                            let isSelected = selectedBrowserPath == node.path
+                            HStack(spacing: 6) {
+                                Label(node.name, systemImage: iconName(for: node.path))
+                                    .lineLimit(1)
+                                if loadingRestoreDirectoryPaths.contains(node.path) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
                             }
-                            Button("Use for Restore") {
-                                selectedBrowserPath = path
-                                restorePath = path
+                            .padding(.vertical, 2)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                selectBrowserPath(node.path)
+                            }
+                            .listRowBackground(
+                                isSelected
+                                    ? Color.accentColor.opacity(0.24)
+                                    : Color.clear
+                            )
+                            .contextMenu {
+                                Button("Quick Look") {
+                                    selectBrowserPath(node.path)
+                                    presentQuickLook()
+                                }
+                                Button("Use for Restore") {
+                                    selectBrowserPath(node.path)
+                                }
                             }
                         }
                     }
+                    .listRowSeparator(.hidden)
                 }
                 .listStyle(.plain)
-
-                if hasMoreResults {
-                    Text("Showing first \(maxVisibleResults) matches. Narrow filters for more precise results.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .padding(.trailing, 10)
     }
 
     private var restoreActionsPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Restore")
                 .font(.headline)
 
-            Text("Set destination and run dry-run or restore.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            TextField("Path to restore", text: $restorePath)
-                .font(.system(.body, design: .monospaced))
-                .textFieldStyle(.roundedBorder)
-
             if let selectedPath = activeRestorePath {
-                Text(selectedPath)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-            }
-
-            HStack(spacing: 8) {
-                TextField("Destination root (optional)", text: $restoreToDir)
-                    .textFieldStyle(.roundedBorder)
-                Button("Choose...") {
-                    chooseRestoreDestination()
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: iconName(for: selectedPath))
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text((selectedPath as NSString).lastPathComponent)
+                            .lineLimit(1)
+                        Text(selectedPath)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
                 }
-                .disabled(statusModel.isRestoreBusy)
             }
 
-            Toggle("Overwrite existing files", isOn: $restoreOverwrite)
-            Toggle("Verify only (no writes)", isOn: $restoreVerifyOnly)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Destination")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
-            Button {
-                statusModel.previewRestore(
-                    path: restorePath,
-                    toDir: restoreToDir,
-                    overwrite: restoreOverwrite,
-                    snapshot: statusModel.selectedSnapshotRequestValue
-                )
-            } label: {
-                Label("Dry Run", systemImage: "scope")
-                    .frame(maxWidth: .infinity)
+                Picker("Destination", selection: $restoreDestinationMode) {
+                    Text("Original").tag(RestoreDestinationMode.original)
+                    Text("Custom").tag(RestoreDestinationMode.custom)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .controlSize(.small)
+
+                if restoreDestinationMode == .custom {
+                    HStack(spacing: 8) {
+                        TextField("Destination root", text: $restoreToDir)
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.small)
+                        Button("Choose...") {
+                            chooseRestoreDestination()
+                        }
+                        .disabled(statusModel.isRestoreBusy)
+                    }
+                }
+
+                Toggle("Overwrite existing files", isOn: $restoreOverwrite)
+                    .disabled(restoreVerifyOnly)
+                    .padding(.top, 4)
             }
-            .buttonStyle(.bordered)
-            .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
             Button {
                 showRestoreConfirmation = true
             } label: {
-                Label("Run Restore", systemImage: "arrow.down.doc.fill")
+                Label(restoreVerifyOnly ? "Validate" : "Restore", systemImage: restoreVerifyOnly ? "checkmark.shield" : "arrow.down.doc.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(statusModel.isRestoreBusy || restorePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(!canRunRestore)
+            .padding(.top, 4)
 
             if statusModel.isRestoreBusy {
                 HStack(spacing: 8) {
@@ -890,15 +908,47 @@ struct BaxterRestoreView: View {
                 }
             }
 
-            if let message = statusModel.restorePreviewMessage, !message.isEmpty {
+            if let message = restoreActionStatusMessage {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(restoreMessageColor)
                     .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
-            Divider()
+            DisclosureGroup(isExpanded: $showRestoreAdvanced) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Validate only (read + decrypt, no writes)", isOn: $restoreVerifyOnly)
+
+                    TextField("Manual path override", text: $restorePath)
+                        .font(.system(.body, design: .monospaced))
+                        .textFieldStyle(.roundedBorder)
+
+                    Button {
+                        statusModel.previewRestore(
+                            path: restorePath,
+                            toDir: effectiveRestoreToDir,
+                            overwrite: restoreOverwrite,
+                            snapshot: statusModel.selectedSnapshotRequestValue
+                        )
+                    } label: {
+                        Label("Preview Target", systemImage: "scope")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!canRunRestore)
+
+                    Text("Preview Target maps source to destination only. Validate only reads, decrypts, and checks integrity without writing files.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 2)
+            } label: {
+                Text("Advanced")
+                    .font(.subheadline.weight(.semibold))
+            }
 
             if let lastRestoreAt = statusModel.lastRestoreAt {
                 Text("Last restore: \(lastRestoreAt.formatted(date: .abbreviated, time: .shortened))")
@@ -912,17 +962,9 @@ struct BaxterRestoreView: View {
                     .lineLimit(2)
                     .truncationMode(.middle)
             }
-            if let lastRestoreError = statusModel.lastRestoreError, !lastRestoreError.isEmpty {
-                Text("Last error: \(lastRestoreError)")
-                    .font(.caption2)
-                    .foregroundStyle(.red)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-            }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .padding(.leading, 14)
-        .padding(.vertical, 6)
+        .padding(10)
     }
 
     private func snapshotRowLabel(_ snapshot: SnapshotSummary) -> String {
@@ -932,7 +974,7 @@ struct BaxterRestoreView: View {
 
     private var restoreConfirmationSummary: String {
         let source = restorePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let destination = restoreToDir.trimmingCharacters(in: .whitespacesAndNewlines)
+        let destination = effectiveRestoreToDir
         let snapshot = statusModel.selectedSnapshot == BackupStatusModel.latestSnapshotSelection
             ? "latest"
             : statusModel.selectedSnapshot
@@ -957,9 +999,9 @@ struct BaxterRestoreView: View {
                         .font(.system(size: 30))
                         .foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(pathName(for: previewPath))
+                        Text(restorePathName(previewPath))
                             .font(.title3.weight(.semibold))
-                        Text(parentPath(for: previewPath))
+                        Text(restoreParentPath(previewPath))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -1006,30 +1048,96 @@ struct BaxterRestoreView: View {
         }
     }
 
-    private var filteredRestorePaths: [String] {
-        let query = browserFilter.trimmingCharacters(in: .whitespacesAndNewlines)
-        let source = sortedRestorePaths
-        guard !query.isEmpty else {
-            return Array(source.prefix(maxVisibleResults))
-        }
-        return Array(source.filter { $0.localizedCaseInsensitiveContains(query) }.prefix(maxVisibleResults))
+    private var filteredRestoreBrowserRoots: [RestoreBrowserNode] {
+        filterRestoreBrowserNodes(scopedRestoreBrowserRoots, query: browserFilter)
     }
 
-    private var hasMoreResults: Bool {
-        sortedRestorePaths.count > maxVisibleResults
+    private var isLoadingRestoreBrowser: Bool {
+        !loadingRestoreDirectoryPaths.isEmpty
+    }
+
+    private var filteredRestoreBrowserPaths: [String] {
+        flattenRestoreBrowserNodePaths(filteredRestoreBrowserRoots)
+    }
+
+    private var isRestoreActionsPanelVisible: Bool {
+        activeRestorePath != nil
+    }
+
+    private var scopedRestoreBrowserRoots: [RestoreBrowserNode] {
+        guard !restoreRootPrefix.isEmpty, restoreRootPrefix != "/" else {
+            return restoreBrowserRoots
+        }
+        guard let scopedRoot = findRestoreBrowserNode(
+            path: restoreRootPrefix,
+            nodes: restoreBrowserRoots
+        ) else {
+            return restoreBrowserRoots
+        }
+        return [scopedRoot]
     }
 
     private var restoreMessageColor: Color {
-        let message = statusModel.restorePreviewMessage?.lowercased() ?? ""
+        let message = restoreActionStatusMessage?.lowercased() ?? ""
         if message.contains("failed") || message.contains("error") {
             return .red
         }
         return .secondary
     }
 
+    private var effectiveRestoreToDir: String {
+        guard restoreDestinationMode == .custom else {
+            return ""
+        }
+        return restoreToDir.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canRunRestore: Bool {
+        let source = restorePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !statusModel.isRestoreBusy, !source.isEmpty else {
+            return false
+        }
+        if restoreDestinationMode == .custom {
+            return !effectiveRestoreToDir.isEmpty
+        }
+        return true
+    }
+
+    private var restoreActionStatusMessage: String? {
+        guard let message = statusModel.restorePreviewMessage, !message.isEmpty else {
+            return nil
+        }
+        return isBrowserStatusMessage(message) ? nil : message
+    }
+
+    private var restoreBrowserStatusMessage: String? {
+        guard let message = statusModel.restorePreviewMessage, !message.isEmpty else {
+            return nil
+        }
+        return isBrowserStatusMessage(message) ? message : nil
+    }
+
+    private var restoreSourceNotice: String? {
+        if let snapshotsMessage = statusModel.snapshotsMessage, !snapshotsMessage.isEmpty {
+            let lowered = snapshotsMessage.lowercased()
+            if lowered.contains("failed") || lowered.contains("error") {
+                return snapshotsMessage
+            }
+        }
+        if let browserMessage = restoreBrowserStatusMessage, !browserMessage.isEmpty {
+            return browserMessage
+        }
+        return nil
+    }
+
+    private func isBrowserStatusMessage(_ message: String) -> Bool {
+        let lowered = message.lowercased()
+        return lowered.hasPrefix("loaded ") || lowered.hasPrefix("found ") || lowered.hasPrefix("restore list")
+    }
+
     private func presentQuickLook() {
-        if selectedBrowserPath == nil {
-            selectedBrowserPath = filteredRestorePaths.first
+        if selectedBrowserPath == nil, let firstPath = filteredRestoreBrowserPaths.first {
+            selectBrowserPath(firstPath)
         }
         guard activeRestorePath != nil else {
             return
@@ -1037,68 +1145,221 @@ struct BaxterRestoreView: View {
         showQuickLook = true
     }
 
-    private func handleMoveCommand(_ direction: MoveCommandDirection, visiblePaths: [String]) {
-        guard !visiblePaths.isEmpty else {
+    private func selectBrowserPath(_ path: String) {
+        if isRestorePlaceholderPath(path) {
             return
         }
-        guard direction == .up || direction == .down else {
-            return
+        selectedBrowserPath = path
+        restorePath = path
+        if restorePathKinds[path] == true {
+            loadRestoreChildren(parentPath: path)
         }
-
-        guard let selected = selectedBrowserPath, let currentIndex = visiblePaths.firstIndex(of: selected) else {
-            selectedBrowserPath = visiblePaths.first
-            return
-        }
-
-        let delta = direction == .down ? 1 : -1
-        let nextIndex = max(0, min(visiblePaths.count - 1, currentIndex + delta))
-        selectedBrowserPath = visiblePaths[nextIndex]
     }
 
     private func searchRestorePaths() {
         selectedBrowserPath = nil
         restorePath = ""
-        sortedRestorePaths = []
-        directoryPathCache = []
-        isIndexingRestorePaths = true
-        statusModel.fetchRestoreList(
-            prefix: restorePrefix,
-            contains: restoreContains,
-            snapshot: statusModel.selectedSnapshotRequestValue
-        )
+        restoreBrowserRoots = []
+        restorePathKinds = [:]
+        loadedRestorePaths = []
+        loadedRestoreDirectoryPaths = []
+        loadingRestoreDirectoryPaths = []
+        restoreRootPrefix = resolvedRestoreRootPrefix()
+        loadRestoreChildren(parentPath: nil)
     }
 
-    private func pathName(for path: String) -> String {
-        let lastPath = URL(fileURLWithPath: path).lastPathComponent
-        return lastPath.isEmpty ? path : lastPath
+    private func triggerInitialRestoreLoadIfNeeded() {
+        guard !hasAutoLoadedRestore else {
+            return
+        }
+        hasAutoLoadedRestore = true
+        scheduleAutomaticRestoreSearch(immediate: true)
     }
 
-    private func parentPath(for path: String) -> String {
-        let parent = URL(fileURLWithPath: path).deletingLastPathComponent().path
-        return parent.isEmpty ? "/" : parent
+    private func scheduleAutomaticRestoreSearch(immediate: Bool = false) {
+        restoreSearchDebounceTask?.cancel()
+        restoreSearchDebounceTask = Task {
+            if !immediate {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+            }
+            guard !Task.isCancelled else {
+                return
+            }
+            await MainActor.run {
+                searchRestorePaths()
+                restoreSearchDebounceTask = nil
+            }
+        }
     }
 
     private func iconName(for path: String) -> String {
-        directoryPathCache.contains(path) ? "folder" : "doc"
+        restorePathKinds[path] == true ? "folder" : "doc"
     }
 
     private func indexRestorePaths(_ restorePaths: [String]) {
         if restorePaths.isEmpty {
-            sortedRestorePaths = []
-            directoryPathCache = []
+            restoreBrowserRoots = []
+            restorePathKinds = [:]
             isIndexingRestorePaths = false
             return
         }
 
         Task.detached(priority: .userInitiated) {
-            let sorted = restorePaths.sorted()
-            let directories = buildDirectoryPaths(restorePaths: restorePaths)
+            let index = buildRestoreBrowserIndex(paths: restorePaths, maxPaths: 0)
             await MainActor.run {
-                self.sortedRestorePaths = sorted
-                self.directoryPathCache = directories
+                self.restoreBrowserRoots = index.rootNodes
+                self.restorePathKinds = index.isDirectoryByPath
                 self.isIndexingRestorePaths = false
             }
         }
+    }
+
+    private func loadRestoreChildren(parentPath: String?) {
+        let directoryKey = parentPath ?? restoreRootDirectoryKey
+        if loadingRestoreDirectoryPaths.contains(directoryKey) || loadedRestoreDirectoryPaths.contains(directoryKey) {
+            return
+        }
+        loadingRestoreDirectoryPaths.insert(directoryKey)
+        isIndexingRestorePaths = true
+
+        Task {
+            do {
+                let prefix = parentPath ?? restoreRootPrefix
+                let paths = try await statusModel.fetchRestorePaths(
+                    prefix: prefix,
+                    contains: restoreContains,
+                    snapshot: statusModel.selectedSnapshotRequestValue,
+                    childrenOnly: true
+                )
+                await MainActor.run {
+                    loadingRestoreDirectoryPaths.remove(directoryKey)
+                    loadedRestoreDirectoryPaths.insert(directoryKey)
+                    mergeRestorePaths(paths)
+                    if let parentPath {
+                        statusModel.restorePreviewMessage = "Loaded \(paths.count) child path(s) under \(parentPath)."
+                    } else {
+                        statusModel.restorePreviewMessage = "Loaded \(paths.count) path(s). Select a folder to load more."
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    loadingRestoreDirectoryPaths.remove(directoryKey)
+                    isIndexingRestorePaths = false
+                    statusModel.restorePreviewMessage = "Restore list failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func mergeRestorePaths(_ paths: [String]) {
+        for path in paths {
+            loadedRestorePaths.insert(path)
+        }
+        indexRestorePaths(Array(loadedRestorePaths))
+    }
+
+    private func decorateRestoreNodesForLazyExpansion(_ nodes: [RestoreBrowserNode]) -> [RestoreBrowserNode] {
+        nodes.map(decorateRestoreNodeForLazyExpansion(_:))
+    }
+
+    private func decorateRestoreNodeForLazyExpansion(_ node: RestoreBrowserNode) -> RestoreBrowserNode {
+        if node.isPlaceholder {
+            return node
+        }
+
+        let decoratedChildren = node.children.map(decorateRestoreNodeForLazyExpansion(_:))
+        guard node.isDirectory else {
+            return RestoreBrowserNode(
+                path: node.path,
+                name: node.name,
+                isDirectory: node.isDirectory,
+                children: decoratedChildren
+            )
+        }
+
+        let shouldInjectPlaceholder = !loadedRestoreDirectoryPaths.contains(node.path) && !loadingRestoreDirectoryPaths.contains(node.path)
+        if shouldInjectPlaceholder {
+            return RestoreBrowserNode(
+                path: node.path,
+                name: node.name,
+                isDirectory: node.isDirectory,
+                children: [makeRestorePlaceholderNode(parentPath: node.path)]
+            )
+        }
+
+        return RestoreBrowserNode(
+            path: node.path,
+            name: node.name,
+            isDirectory: node.isDirectory,
+            children: decoratedChildren
+        )
+    }
+
+    private func makeRestorePlaceholderNode(parentPath: String) -> RestoreBrowserNode {
+        RestoreBrowserNode(
+            path: "\(restorePlaceholderPrefix)\(parentPath)",
+            name: "Loading...",
+            isDirectory: false,
+            children: [],
+            isPlaceholder: true
+        )
+    }
+
+    private func isRestorePlaceholderPath(_ path: String) -> Bool {
+        path.hasPrefix(restorePlaceholderPrefix)
+    }
+
+    private func restoreParentPathForPlaceholder(_ path: String) -> String? {
+        guard isRestorePlaceholderPath(path) else {
+            return nil
+        }
+        let parentPath = String(path.dropFirst(restorePlaceholderPrefix.count))
+        return parentPath.isEmpty ? nil : parentPath
+    }
+
+    private func loadRestoreChildrenFromPlaceholder(_ path: String) {
+        guard let parentPath = restoreParentPathForPlaceholder(path) else {
+            return
+        }
+        loadRestoreChildren(parentPath: parentPath)
+    }
+
+    private func normalizedRestorePrefix(_ rawPrefix: String) -> String {
+        var value = rawPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value == "/" {
+            return value
+        }
+        while value.count > 1, value.hasSuffix("/") {
+            value.removeLast()
+        }
+        return value
+    }
+
+    private func resolvedRestoreRootPrefix() -> String {
+        let explicitPrefix = normalizedRestorePrefix(restorePrefix)
+        if !explicitPrefix.isEmpty {
+            return explicitPrefix
+        }
+
+        let backupRoots = settingsModel.backupRoots
+            .map(normalizedRestorePrefix(_:))
+            .filter { !$0.isEmpty }
+        if backupRoots.count == 1 {
+            return backupRoots[0]
+        }
+        return ""
+    }
+
+    private func findRestoreBrowserNode(path: String, nodes: [RestoreBrowserNode]) -> RestoreBrowserNode? {
+        for node in nodes {
+            if node.path == path {
+                return node
+            }
+            if let found = findRestoreBrowserNode(path: path, nodes: node.children) {
+                return found
+            }
+        }
+        return nil
     }
 
     private func chooseRestoreDestination() {
@@ -1118,31 +1379,9 @@ struct BaxterRestoreView: View {
         guard response == .OK, let selectedURL = panel.urls.first else {
             return
         }
+        restoreDestinationMode = .custom
         restoreToDir = selectedURL.path
     }
-}
-
-private func buildDirectoryPaths(restorePaths: [String]) -> Set<String> {
-    var folders: Set<String> = []
-    for path in restorePaths {
-        let isAbsolute = path.hasPrefix("/")
-        let components = path.split(separator: "/").map(String.init)
-        guard components.count > 1 else {
-            continue
-        }
-        var currentPath = ""
-        for component in components.dropLast() {
-            if isAbsolute {
-                currentPath += "/\(component)"
-            } else if currentPath.isEmpty {
-                currentPath = component
-            } else {
-                currentPath += "/\(component)"
-            }
-            folders.insert(currentPath)
-        }
-    }
-    return folders
 }
 
 private struct SettingsCard<Content: View>: View {

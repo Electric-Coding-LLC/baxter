@@ -149,6 +149,119 @@ struct RestoreListPayload: Decodable {
     let paths: [String]
 }
 
+struct RestoreBrowserNode: Identifiable, Hashable {
+    let path: String
+    let name: String
+    let isDirectory: Bool
+    let children: [RestoreBrowserNode]
+    let isPlaceholder: Bool
+
+    var id: String { path }
+    var childNodes: [RestoreBrowserNode]? { children.isEmpty ? nil : children }
+
+    init(
+        path: String,
+        name: String,
+        isDirectory: Bool,
+        children: [RestoreBrowserNode],
+        isPlaceholder: Bool = false
+    ) {
+        self.path = path
+        self.name = name
+        self.isDirectory = isDirectory
+        self.children = children
+        self.isPlaceholder = isPlaceholder
+    }
+}
+
+struct RestoreBrowserIndex {
+    let rootNodes: [RestoreBrowserNode]
+    let isDirectoryByPath: [String: Bool]
+    let didTruncate: Bool
+}
+
+func buildRestoreBrowserIndex(paths: [String], maxPaths: Int) -> RestoreBrowserIndex {
+    var explicitDirectoryPaths: Set<String> = []
+    var normalizedPaths: Set<String> = []
+
+    for rawPath in paths {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let normalized = normalizedRestorePath(trimmed) else {
+            continue
+        }
+        normalizedPaths.insert(normalized)
+        if trimmed != "/", trimmed.hasSuffix("/") {
+            explicitDirectoryPaths.insert(normalized)
+        }
+    }
+
+    let sortedPaths = normalizedPaths.sorted()
+    let truncated = maxPaths > 0 && sortedPaths.count > maxPaths
+    let limitedPaths = maxPaths > 0 ? Array(sortedPaths.prefix(maxPaths)) : sortedPaths
+
+    let root = MutableRestoreBrowserNode(path: "", name: "", isDirectory: true)
+    for path in limitedPaths {
+        insertRestorePath(path, treatLeafAsDirectory: explicitDirectoryPaths.contains(path), root: root)
+    }
+
+    var isDirectoryByPath: [String: Bool] = [:]
+    let rootNodes = finalizeRestoreBrowserNodes(
+        Array(root.children.values),
+        isDirectoryByPath: &isDirectoryByPath
+    )
+    return RestoreBrowserIndex(
+        rootNodes: rootNodes,
+        isDirectoryByPath: isDirectoryByPath,
+        didTruncate: truncated
+    )
+}
+
+func filterRestoreBrowserNodes(_ nodes: [RestoreBrowserNode], query: String) -> [RestoreBrowserNode] {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else {
+        return nodes
+    }
+    return nodes.compactMap { filterRestoreBrowserNode($0, query: trimmedQuery) }
+}
+
+func flattenRestoreBrowserNodePaths(_ nodes: [RestoreBrowserNode]) -> [String] {
+    var paths: [String] = []
+    appendRestoreBrowserNodePaths(nodes, into: &paths)
+    return paths
+}
+
+func countRestoreBrowserNodes(_ nodes: [RestoreBrowserNode]) -> Int {
+    nodes.reduce(0) { partialResult, node in
+        partialResult + 1 + countRestoreBrowserNodes(node.children)
+    }
+}
+
+func restorePathName(_ path: String) -> String {
+    if path == "/" {
+        return "/"
+    }
+    return path
+        .split(separator: "/", omittingEmptySubsequences: true)
+        .last
+        .map(String.init) ?? path
+}
+
+func restoreParentPath(_ path: String) -> String {
+    let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedPath.isEmpty, trimmedPath != "/" else {
+        return "/"
+    }
+
+    let isAbsolute = trimmedPath.hasPrefix("/")
+    let components = trimmedPath.split(separator: "/", omittingEmptySubsequences: true)
+    guard components.count > 1 else {
+        return "/"
+    }
+
+    let parent = components.dropLast().joined(separator: "/")
+    return isAbsolute ? "/\(parent)" : parent
+}
+
 struct SnapshotSummary: Decodable, Identifiable, Hashable {
     let id: String
     let createdAt: String
@@ -239,5 +352,124 @@ extension IPCError: LocalizedError {
         case .reloadUnavailable:
             return "Reload endpoint unavailable."
         }
+    }
+}
+
+private final class MutableRestoreBrowserNode {
+    let path: String
+    let name: String
+    var isDirectory: Bool
+    var children: [String: MutableRestoreBrowserNode] = [:]
+
+    init(path: String, name: String, isDirectory: Bool) {
+        self.path = path
+        self.name = name
+        self.isDirectory = isDirectory
+    }
+}
+
+private func normalizedRestorePath(_ rawPath: String) -> String? {
+    guard !rawPath.isEmpty else {
+        return nil
+    }
+
+    if rawPath == "/" {
+        return rawPath
+    }
+
+    var normalized = rawPath
+    while normalized.count > 1, normalized.hasSuffix("/") {
+        normalized.removeLast()
+    }
+    return normalized.isEmpty ? nil : normalized
+}
+
+private func insertRestorePath(
+    _ path: String,
+    treatLeafAsDirectory: Bool,
+    root: MutableRestoreBrowserNode
+) {
+    guard path != "/" else {
+        return
+    }
+
+    let isAbsolute = path.hasPrefix("/")
+    let components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+    guard !components.isEmpty else {
+        return
+    }
+
+    var parent = root
+    var currentPath = ""
+    for (index, component) in components.enumerated() {
+        let isLeaf = index == components.count - 1
+        let shouldBeDirectory = !isLeaf || treatLeafAsDirectory
+        if isAbsolute {
+            currentPath += "/\(component)"
+        } else if currentPath.isEmpty {
+            currentPath = component
+        } else {
+            currentPath += "/\(component)"
+        }
+
+        let child = parent.children[currentPath] ?? MutableRestoreBrowserNode(
+            path: currentPath,
+            name: component,
+            isDirectory: shouldBeDirectory
+        )
+        child.isDirectory = child.isDirectory || shouldBeDirectory
+        parent.children[currentPath] = child
+        parent = child
+    }
+}
+
+private func finalizeRestoreBrowserNodes(
+    _ nodes: [MutableRestoreBrowserNode],
+    isDirectoryByPath: inout [String: Bool]
+) -> [RestoreBrowserNode] {
+    let sortedNodes = nodes.sorted(by: compareRestoreBrowserNodes)
+    return sortedNodes.map { mutableNode in
+        let children = finalizeRestoreBrowserNodes(
+            Array(mutableNode.children.values),
+            isDirectoryByPath: &isDirectoryByPath
+        )
+        isDirectoryByPath[mutableNode.path] = mutableNode.isDirectory || !children.isEmpty
+        return RestoreBrowserNode(
+            path: mutableNode.path,
+            name: mutableNode.name,
+            isDirectory: mutableNode.isDirectory || !children.isEmpty,
+            children: children
+        )
+    }
+}
+
+private func compareRestoreBrowserNodes(_ lhs: MutableRestoreBrowserNode, _ rhs: MutableRestoreBrowserNode) -> Bool {
+    if lhs.isDirectory != rhs.isDirectory {
+        return lhs.isDirectory && !rhs.isDirectory
+    }
+    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+}
+
+private func filterRestoreBrowserNode(_ node: RestoreBrowserNode, query: String) -> RestoreBrowserNode? {
+    let matchingChildren = node.children.compactMap { filterRestoreBrowserNode($0, query: query) }
+    let matchesNode = node.name.localizedCaseInsensitiveContains(query) || node.path.localizedCaseInsensitiveContains(query)
+    if matchesNode {
+        return node
+    }
+    guard !matchingChildren.isEmpty else {
+        return nil
+    }
+    return RestoreBrowserNode(
+        path: node.path,
+        name: node.name,
+        isDirectory: node.isDirectory,
+        children: matchingChildren
+    )
+}
+
+private func appendRestoreBrowserNodePaths(_ nodes: [RestoreBrowserNode], into paths: inout [String]) {
+    for node in nodes {
+        paths.append(node.path)
+        appendRestoreBrowserNodePaths(node.children, into: &paths)
     }
 }

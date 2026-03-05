@@ -25,7 +25,7 @@ enum BaxterWorkspaceSection: String, CaseIterable, Hashable, Identifiable {
         case .restore:
             return "Browse snapshots and restore files with confidence."
         case .settings:
-            return "Tune backup, verify, storage, and encryption behavior."
+            return "Tune backup, verify, storage, and encrypti on behavior."
         case .diagnostics:
             return "Inspect runtime state and export support bundles."
         }
@@ -56,16 +56,6 @@ struct BaxterWorkspaceView: View {
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Baxter")
-                        .font(.system(.headline, design: .rounded).weight(.semibold))
-                    Text("Workspace")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.top, 10)
-
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(BaxterWorkspaceSection.allCases) { section in
@@ -91,24 +81,27 @@ struct BaxterWorkspaceView: View {
                         }
                     }
                     .padding(.horizontal, 8)
+                    .padding(.top, 10)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .navigationSplitViewColumnWidth(min: 230, ideal: 250, max: 280)
         } detail: {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(router.selectedSection.title)
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                    Text(router.selectedSection.subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                if router.selectedSection != .restore {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(router.selectedSection.title)
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                        Text(router.selectedSection.subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Group {
                     switch router.selectedSection {
                     case .restore:
-                        BaxterRestoreView(statusModel: statusModel, embedded: true)
+                        BaxterRestoreView(statusModel: statusModel, settingsModel: settingsModel, embedded: true)
                     case .settings:
                         BaxterSettingsView(model: settingsModel, statusModel: statusModel, embedded: true)
                     case .diagnostics:
@@ -117,12 +110,103 @@ struct BaxterWorkspaceView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.horizontal, router.selectedSection == .restore ? 0 : 18)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 1400, minHeight: 760)
+        .background {
+            WorkspaceWindowTitleSync(title: router.selectedSection.title, trailingTitle: "Baxter")
+                .frame(width: 0, height: 0)
+        }
+    }
+}
+
+private struct WorkspaceWindowTitleSync: NSViewRepresentable {
+    let title: String
+    let trailingTitle: String
+
+    final class Coordinator {
+        weak var window: NSWindow?
+        weak var trailingLabel: NSTextField?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            guard let window = view.window else {
+                return
+            }
+            synchronizeWindow(window, coordinator: context.coordinator)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            guard let window = nsView.window else {
+                return
+            }
+            synchronizeWindow(window, coordinator: context.coordinator)
+        }
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.trailingLabel?.removeFromSuperview()
+    }
+
+    private func synchronizeWindow(_ window: NSWindow, coordinator: Coordinator) {
+        removeRightTitlebarAccessories(from: window)
+        window.title = title
+        installOrUpdateTrailingLabel(on: window, coordinator: coordinator)
+    }
+
+    private func removeRightTitlebarAccessories(from window: NSWindow) {
+        let indexedAccessories = Array(window.titlebarAccessoryViewControllers.enumerated())
+        for (index, accessory) in indexedAccessories.reversed() where accessory.layoutAttribute == .right {
+            window.removeTitlebarAccessoryViewController(at: index)
+        }
+    }
+
+    private func installOrUpdateTrailingLabel(on window: NSWindow, coordinator: Coordinator) {
+        guard let titlebarView = window.standardWindowButton(.closeButton)?.superview else {
+            return
+        }
+
+        let label: NSTextField
+        if let existing = coordinator.trailingLabel, existing.superview === titlebarView {
+            label = existing
+        } else {
+            let created = NSTextField(labelWithString: trailingTitle)
+            created.identifier = NSUserInterfaceItemIdentifier("baxter.trailing.title.label")
+            created.font = NSFont.systemFont(
+                ofSize: NSFont.titleBarFont(ofSize: NSFont.systemFontSize).pointSize,
+                weight: .semibold
+            )
+            created.textColor = .labelColor
+            created.alignment = .right
+            created.lineBreakMode = .byTruncatingTail
+            created.translatesAutoresizingMaskIntoConstraints = false
+
+            titlebarView.addSubview(created)
+            NSLayoutConstraint.activate([
+                created.trailingAnchor.constraint(equalTo: titlebarView.trailingAnchor, constant: -24),
+                created.centerYAnchor.constraint(equalTo: titlebarView.centerYAnchor)
+            ])
+
+            coordinator.trailingLabel = created
+            coordinator.window = window
+            label = created
+        }
+
+        label.stringValue = trailingTitle
+        label.sizeToFit()
     }
 }
 

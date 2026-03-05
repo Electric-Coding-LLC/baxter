@@ -108,7 +108,13 @@ func (d *Daemon) handleRestoreList(w http.ResponseWriter, r *http.Request) {
 
 	prefix := strings.TrimSpace(r.URL.Query().Get("prefix"))
 	contains := strings.TrimSpace(r.URL.Query().Get("contains"))
+	childrenOnly := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("children")), "true") ||
+		strings.TrimSpace(r.URL.Query().Get("children")) == "1"
+
 	paths := filterRestorePaths(m.Entries, prefix, contains)
+	if childrenOnly {
+		paths = filterRestoreChildrenPaths(m.Entries, prefix, contains)
+	}
 	d.writeJSON(w, http.StatusOK, restoreListResponse{Paths: paths})
 }
 
