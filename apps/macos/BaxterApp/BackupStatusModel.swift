@@ -378,42 +378,60 @@ final class BackupStatusModel: ObservableObject {
             isRestoreBusy = true
             defer { isRestoreBusy = false }
             do {
-                var components = URLComponents(url: baseURL.appendingPathComponent("v1/restore/list"), resolvingAgainstBaseURL: false)
-                var queryItems: [URLQueryItem] = []
-                let trimmedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedPrefix.isEmpty {
-                    queryItems.append(URLQueryItem(name: "prefix", value: trimmedPrefix))
-                }
-                let trimmedContains = contains.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedContains.isEmpty {
-                    queryItems.append(URLQueryItem(name: "contains", value: trimmedContains))
-                }
-                let trimmedSnapshot = snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedSnapshot.isEmpty {
-                    queryItems.append(URLQueryItem(name: "snapshot", value: trimmedSnapshot))
-                }
-                components?.queryItems = queryItems.isEmpty ? nil : queryItems
-
-                guard let url = components?.url else {
-                    throw IPCError.badResponse
-                }
-                var request = URLRequest(url: url)
-                request.httpMethod = "GET"
-                applyIPCAuthHeader(to: &request)
-                let (data, response) = try await urlSession.data(for: request)
-                guard let http = response as? HTTPURLResponse else {
-                    throw IPCError.badResponse
-                }
-                guard http.statusCode == 200 else {
-                    throw decodeDaemonError(data: data, statusCode: http.statusCode)
-                }
-                let decoded = try JSONDecoder().decode(RestoreListPayload.self, from: data)
-                restorePaths = decoded.paths
-                restorePreviewMessage = "Found \(decoded.paths.count) path(s)."
+                let paths = try await fetchRestorePaths(
+                    prefix: prefix,
+                    contains: contains,
+                    snapshot: snapshot,
+                    childrenOnly: false
+                )
+                restorePaths = paths
+                restorePreviewMessage = "Found \(paths.count) path(s)."
             } catch {
                 restorePreviewMessage = "Restore list failed: \(error.localizedDescription)"
             }
         }
+    }
+
+    func fetchRestorePaths(
+        prefix: String,
+        contains: String,
+        snapshot: String,
+        childrenOnly: Bool
+    ) async throws -> [String] {
+        var components = URLComponents(url: baseURL.appendingPathComponent("v1/restore/list"), resolvingAgainstBaseURL: false)
+        var queryItems: [URLQueryItem] = []
+        let trimmedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPrefix.isEmpty {
+            queryItems.append(URLQueryItem(name: "prefix", value: trimmedPrefix))
+        }
+        let trimmedContains = contains.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedContains.isEmpty {
+            queryItems.append(URLQueryItem(name: "contains", value: trimmedContains))
+        }
+        let trimmedSnapshot = snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedSnapshot.isEmpty {
+            queryItems.append(URLQueryItem(name: "snapshot", value: trimmedSnapshot))
+        }
+        if childrenOnly {
+            queryItems.append(URLQueryItem(name: "children", value: "1"))
+        }
+        components?.queryItems = queryItems.isEmpty ? nil : queryItems
+
+        guard let url = components?.url else {
+            throw IPCError.badResponse
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        applyIPCAuthHeader(to: &request)
+        let (data, response) = try await urlSession.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw IPCError.badResponse
+        }
+        guard http.statusCode == 200 else {
+            throw decodeDaemonError(data: data, statusCode: http.statusCode)
+        }
+        let decoded = try JSONDecoder().decode(RestoreListPayload.self, from: data)
+        return decoded.paths
     }
 
     func fetchSnapshots(limit: Int = 50) {

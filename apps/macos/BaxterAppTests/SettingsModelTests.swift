@@ -348,6 +348,38 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Baxter-Token"), "token-123")
     }
 
+    func testFetchRestorePathsChildrenModeIncludesChildrenQueryItem() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("{\"paths\":[\"/Users/me/actions-runner/_work/\"]}".utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            autoStartPolling: false
+        )
+
+        let paths = try await model.fetchRestorePaths(
+            prefix: "/Users/me/actions-runner",
+            contains: "",
+            snapshot: "snap-children",
+            childrenOnly: true
+        )
+        XCTAssertEqual(paths, ["/Users/me/actions-runner/_work/"])
+
+        let request = try XCTUnwrap(
+            MockURLProtocol.requests().first { $0.url?.path == "/v1/restore/list" }
+        )
+        let queryItems = URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(queryItems.first(where: { $0.name == "prefix" })?.value, "/Users/me/actions-runner")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "snapshot" })?.value, "snap-children")
+        XCTAssertEqual(queryItems.first(where: { $0.name == "children" })?.value, "1")
+    }
+
     func testPreviewRestoreSendsSnapshotInRequestBody() async throws {
         MockURLProtocol.requestHandler = { request in
             let response = try XCTUnwrap(
@@ -724,6 +756,86 @@ final class DiagnosticsBundleBuilderTests: XCTestCase {
         XCTAssertFalse(bundle.contents.contains("out-line-0001"))
         XCTAssertTrue(bundle.contents.contains("out-line-0140"))
         XCTAssertTrue(bundle.contents.contains("err-line-2"))
+    }
+}
+
+final class RestoreBrowserIndexTests: XCTestCase {
+    func testBuildRestoreBrowserIndexBuildsFolderTree() {
+        let index = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/notes/todo.txt",
+                "/docs/notes/ideas.md",
+                "/docs/photo.jpg",
+                "/music/song.mp3",
+            ],
+            maxPaths: 2_000
+        )
+
+        XCTAssertEqual(index.rootNodes.map(\.path), ["/docs", "/music"])
+        XCTAssertEqual(index.isDirectoryByPath["/docs"], true)
+        XCTAssertEqual(index.isDirectoryByPath["/docs/notes"], true)
+        XCTAssertEqual(index.isDirectoryByPath["/docs/photo.jpg"], false)
+        XCTAssertEqual(index.isDirectoryByPath["/music/song.mp3"], false)
+        XCTAssertFalse(index.didTruncate)
+    }
+
+    func testFilterRestoreBrowserNodesKeepsAncestorFolders() {
+        let index = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/notes/todo.txt",
+                "/docs/notes/ideas.md",
+                "/docs/photo.jpg",
+            ],
+            maxPaths: 2_000
+        )
+
+        let filtered = filterRestoreBrowserNodes(index.rootNodes, query: "todo")
+        XCTAssertEqual(
+            flattenRestoreBrowserNodePaths(filtered),
+            ["/docs", "/docs/notes", "/docs/notes/todo.txt"]
+        )
+    }
+
+    func testFilterRestoreBrowserNodesIncludesDescendantsWhenFolderMatches() {
+        let index = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/notes/todo.txt",
+                "/docs/notes/ideas.md",
+                "/docs/photo.jpg",
+            ],
+            maxPaths: 2_000
+        )
+
+        let filtered = filterRestoreBrowserNodes(index.rootNodes, query: "docs")
+        XCTAssertEqual(
+            flattenRestoreBrowserNodePaths(filtered),
+            ["/docs", "/docs/notes", "/docs/notes/ideas.md", "/docs/notes/todo.txt", "/docs/photo.jpg"]
+        )
+    }
+
+    func testBuildRestoreBrowserIndexTruncatesByMaxPaths() {
+        let index = buildRestoreBrowserIndex(
+            paths: [
+                "gamma.txt",
+                "alpha.txt",
+                "beta.txt",
+            ],
+            maxPaths: 2
+        )
+
+        XCTAssertTrue(index.didTruncate)
+        XCTAssertEqual(flattenRestoreBrowserNodePaths(index.rootNodes), ["alpha.txt", "beta.txt"])
+    }
+
+    func testRestorePathHelpersHandleAbsoluteAndRelativePaths() {
+        XCTAssertEqual(restorePathName("/docs/notes/todo.txt"), "todo.txt")
+        XCTAssertEqual(restorePathName("/"), "/")
+        XCTAssertEqual(restorePathName("docs/notes.txt"), "notes.txt")
+
+        XCTAssertEqual(restoreParentPath("/docs/notes/todo.txt"), "/docs/notes")
+        XCTAssertEqual(restoreParentPath("/docs"), "/")
+        XCTAssertEqual(restoreParentPath("docs/notes.txt"), "docs")
+        XCTAssertEqual(restoreParentPath("notes.txt"), "/")
     }
 }
 

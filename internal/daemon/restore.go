@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"baxter/internal/backup"
@@ -75,6 +76,97 @@ func filterRestorePaths(entries []backup.ManifestEntry, prefix string, contains 
 		paths = append(paths, path)
 	}
 	return paths
+}
+
+func filterRestoreChildrenPaths(entries []backup.ManifestEntry, prefix string, contains string) []string {
+	cleanPrefix := filepath.Clean(strings.TrimSpace(prefix))
+	if cleanPrefix == "." {
+		cleanPrefix = ""
+	}
+	contains = strings.TrimSpace(contains)
+
+	children := make(map[string]bool)
+	for _, entry := range entries {
+		path := filepath.Clean(entry.Path)
+		if path == "." {
+			continue
+		}
+		if cleanPrefix != "" && !pathHasPrefix(path, cleanPrefix) {
+			continue
+		}
+		if contains != "" && !strings.Contains(entry.Path, contains) {
+			continue
+		}
+
+		childPath, isDirectory, ok := immediateRestoreChild(path, cleanPrefix)
+		if !ok {
+			continue
+		}
+		children[childPath] = children[childPath] || isDirectory
+	}
+
+	paths := make([]string, 0, len(children))
+	for childPath, isDirectory := range children {
+		if isDirectory {
+			paths = append(paths, childPath+string(filepath.Separator))
+			continue
+		}
+		paths = append(paths, childPath)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func pathHasPrefix(path string, prefix string) bool {
+	if prefix == "" {
+		return true
+	}
+	relPath, err := filepath.Rel(prefix, path)
+	if err != nil {
+		return false
+	}
+	if relPath == "." {
+		return true
+	}
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
+}
+
+func immediateRestoreChild(path string, prefix string) (string, bool, bool) {
+	if prefix != "" {
+		relPath, err := filepath.Rel(prefix, path)
+		if err != nil || relPath == "." || relPath == "" {
+			return "", false, false
+		}
+		if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+			return "", false, false
+		}
+
+		parts := strings.Split(relPath, string(filepath.Separator))
+		if len(parts) == 0 || parts[0] == "" {
+			return "", false, false
+		}
+		childPath := filepath.Clean(filepath.Join(prefix, parts[0]))
+		return childPath, len(parts) > 1, true
+	}
+
+	isAbsolute := filepath.IsAbs(path)
+	trimmed := strings.TrimPrefix(path, string(filepath.Separator))
+	if trimmed == "" {
+		return "", false, false
+	}
+
+	first, rest, _ := strings.Cut(trimmed, string(filepath.Separator))
+	if first == "" {
+		return "", false, false
+	}
+	childPath := first
+	if isAbsolute {
+		childPath = string(filepath.Separator) + first
+	}
+	return childPath, rest != "", true
 }
 
 func resolvedRestorePath(sourcePath string, toDir string) (string, error) {

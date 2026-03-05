@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -390,6 +391,50 @@ func TestRestoreListEndpointWithSnapshotSelector(t *testing.T) {
 	}
 	if len(resp.Paths) != 1 || resp.Paths[0] != "/Users/me/Documents/report.txt" {
 		t.Fatalf("unexpected paths: %#v", resp.Paths)
+	}
+}
+
+func TestRestoreListEndpointChildrenMode(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	manifestPath := testManifestPath(t)
+	m := &backup.Manifest{
+		CreatedAt: time.Now().UTC(),
+		Entries: []backup.ManifestEntry{
+			{Path: "/Users/me/actions-runner/_work/baxter/README.md"},
+			{Path: "/Users/me/actions-runner/config.sh"},
+			{Path: "/Users/me/actions-runner/env.sh"},
+			{Path: "/Users/me/actions-runner/bin/runner"},
+		},
+	}
+	if err := backup.SaveManifest(manifestPath, m); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	d := New(config.DefaultConfig())
+	req := httptest.NewRequest(http.MethodGet, "/v1/restore/list?prefix=/Users/me/actions-runner&children=1", nil)
+	rr := httptest.NewRecorder()
+
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var resp restoreListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	want := []string{
+		"/Users/me/actions-runner/_work/",
+		"/Users/me/actions-runner/bin/",
+		"/Users/me/actions-runner/config.sh",
+		"/Users/me/actions-runner/env.sh",
+	}
+	if !reflect.DeepEqual(resp.Paths, want) {
+		t.Fatalf("unexpected paths: got %#v want %#v", resp.Paths, want)
 	}
 }
 
