@@ -18,6 +18,12 @@
 		A0000000000000000000001B /* BaxterApp/BaxterMenuContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* BaxterApp/BaxterMenuContentView.swift */; };
 		A0000000000000000000001C /* BaxterApp/BaxterWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* BaxterApp/BaxterWorkspaceView.swift */; };
 		A0000000000000000000001D /* BaxterApp/MenuLinkButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000B /* BaxterApp/MenuLinkButtonStyle.swift */; };
+		A00000000000000000000090 /* BaxterApp/BaxterRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000096 /* BaxterApp/BaxterRestoreView.swift */; };
+		A00000000000000000000091 /* BaxterApp/BaxterRestoreView+Browser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000097 /* BaxterApp/BaxterRestoreView+Browser.swift */; };
+		A00000000000000000000092 /* BaxterApp/SettingsViewComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000098 /* BaxterApp/SettingsViewComponents.swift */; };
+		A00000000000000000000093 /* BaxterApp/BackupStatusModel+Lifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000099 /* BaxterApp/BackupStatusModel+Lifecycle.swift */; };
+		A00000000000000000000094 /* BaxterApp/BackupStatusModel+Restore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000009A /* BaxterApp/BackupStatusModel+Restore.swift */; };
+		A00000000000000000000095 /* BaxterApp/BackupStatusModel+Status.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000009B /* BaxterApp/BackupStatusModel+Status.swift */; };
 		A00000000000000000000061 /* BaxterAppTests/SettingsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000071 /* BaxterAppTests/SettingsModelTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -43,6 +49,12 @@
 		A00000000000000000000009 /* BaxterApp/BaxterMenuContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterMenuContentView.swift; sourceTree = "<group>"; };
 		A0000000000000000000000A /* BaxterApp/BaxterWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterWorkspaceView.swift; sourceTree = "<group>"; };
 		A0000000000000000000000B /* BaxterApp/MenuLinkButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/MenuLinkButtonStyle.swift; sourceTree = "<group>"; };
+		A00000000000000000000096 /* BaxterApp/BaxterRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterRestoreView.swift; sourceTree = "<group>"; };
+		A00000000000000000000097 /* BaxterApp/BaxterRestoreView+Browser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/BaxterRestoreView+Browser.swift"; sourceTree = "<group>"; };
+		A00000000000000000000098 /* BaxterApp/SettingsViewComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/SettingsViewComponents.swift; sourceTree = "<group>"; };
+		A00000000000000000000099 /* BaxterApp/BackupStatusModel+Lifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/BackupStatusModel+Lifecycle.swift"; sourceTree = "<group>"; };
+		A0000000000000000000009A /* BaxterApp/BackupStatusModel+Restore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/BackupStatusModel+Restore.swift"; sourceTree = "<group>"; };
+		A0000000000000000000009B /* BaxterApp/BackupStatusModel+Status.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/BackupStatusModel+Status.swift"; sourceTree = "<group>"; };
 		A00000000000000000000021 /* BaxterApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaxterApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000071 /* BaxterAppTests/SettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterAppTests/SettingsModelTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000072 /* BaxterAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaxterAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -89,6 +101,12 @@
 				A00000000000000000000009 /* BaxterApp/BaxterMenuContentView.swift */,
 				A0000000000000000000000A /* BaxterApp/BaxterWorkspaceView.swift */,
 				A0000000000000000000000B /* BaxterApp/MenuLinkButtonStyle.swift */,
+				A00000000000000000000096 /* BaxterApp/BaxterRestoreView.swift */,
+				A00000000000000000000097 /* BaxterApp/BaxterRestoreView+Browser.swift */,
+				A00000000000000000000098 /* BaxterApp/SettingsViewComponents.swift */,
+				A00000000000000000000099 /* BaxterApp/BackupStatusModel+Lifecycle.swift */,
+				A0000000000000000000009A /* BaxterApp/BackupStatusModel+Restore.swift */,
+				A0000000000000000000009B /* BaxterApp/BackupStatusModel+Status.swift */,
 			);
 			path = .;
 			sourceTree = SOURCE_ROOT;
@@ -200,6 +218,12 @@
 				A0000000000000000000001B /* BaxterApp/BaxterMenuContentView.swift in Sources */,
 				A0000000000000000000001C /* BaxterApp/BaxterWorkspaceView.swift in Sources */,
 				A0000000000000000000001D /* BaxterApp/MenuLinkButtonStyle.swift in Sources */,
+				A00000000000000000000090 /* BaxterApp/BaxterRestoreView.swift in Sources */,
+				A00000000000000000000091 /* BaxterApp/BaxterRestoreView+Browser.swift in Sources */,
+				A00000000000000000000092 /* BaxterApp/SettingsViewComponents.swift in Sources */,
+				A00000000000000000000093 /* BaxterApp/BackupStatusModel+Lifecycle.swift in Sources */,
+				A00000000000000000000094 /* BaxterApp/BackupStatusModel+Restore.swift in Sources */,
+				A00000000000000000000095 /* BaxterApp/BackupStatusModel+Status.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

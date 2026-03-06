@@ -257,6 +257,69 @@ func TestRestorePathFromOlderSnapshotAfterDeletion(t *testing.T) {
 	}
 }
 
+func TestRestorePathFromOlderSnapshotAfterModification(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	originalContent := []byte("snapshot v1")
+	updatedContent := []byte("snapshot v2")
+	if err := os.WriteFile(sourcePath, originalContent, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "test-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+	cfg.S3.Bucket = ""
+
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("initial run backup failed: %v", err)
+	}
+
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("resolve snapshot dir: %v", err)
+	}
+	snapshots, err := backup.ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(snapshots) == 0 {
+		t.Fatal("expected at least one snapshot")
+	}
+	oldestSnapshotID := snapshots[len(snapshots)-1].ID
+
+	if err := os.WriteFile(sourcePath, updatedContent, 0o600); err != nil {
+		t.Fatalf("update source file: %v", err)
+	}
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("second run backup failed: %v", err)
+	}
+
+	if err := restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot, Snapshot: oldestSnapshotID}); err != nil {
+		t.Fatalf("restore from old snapshot failed: %v", err)
+	}
+
+	trimmed := strings.TrimPrefix(filepath.Clean(sourcePath), string(filepath.Separator))
+	restoredPath := filepath.Join(restoreRoot, trimmed)
+	restoredContent, err := os.ReadFile(restoredPath)
+	if err != nil {
+		t.Fatalf("read restored content: %v", err)
+	}
+	if !bytes.Equal(restoredContent, originalContent) {
+		t.Fatalf("restored content mismatch: got %q want %q", string(restoredContent), string(originalContent))
+	}
+}
+
 func TestRestorePathReportsMissingObjectClearly(t *testing.T) {
 	homeDir := t.TempDir()
 	srcRoot := filepath.Join(t.TempDir(), "src")
@@ -288,7 +351,19 @@ func TestRestorePathReportsMissingObjectClearly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("object store from config: %v", err)
 	}
-	if err := store.DeleteObject(backup.ObjectKeyForPath(sourcePath)); err != nil {
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	manifest, err := backup.LoadManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	entry, err := backup.FindEntryByPath(manifest, sourcePath)
+	if err != nil {
+		t.Fatalf("find manifest entry: %v", err)
+	}
+	if err := store.DeleteObject(backup.ResolveObjectKey(entry)); err != nil {
 		t.Fatalf("delete object: %v", err)
 	}
 

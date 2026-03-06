@@ -115,6 +115,6 @@ func addManifestObjectKeys(target map[string]struct{}, m *Manifest) {
 		return
 	}
 	for _, entry := range m.Entries {
-		target[ObjectKeyForPath(entry.Path)] = struct{}{}
+		target[ResolveObjectKey(entry)] = struct{}{}
 	}
 }

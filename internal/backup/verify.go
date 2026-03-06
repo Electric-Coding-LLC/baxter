@@ -47,7 +47,7 @@ func VerifyManifestEntriesWithKeys(entries []ManifestEntry, keys [][]byte, store
 
 	result := VerifyResult{Checked: len(entries)}
 	for _, entry := range entries {
-		payload, err := store.GetObject(ObjectKeyForPath(entry.Path))
+		payload, err := store.GetObject(ResolveObjectKey(entry))
 		if err != nil {
 			if isMissingObjectError(err) {
 				result.Missing++
