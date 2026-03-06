@@ -94,7 +94,19 @@ func TestRunVerifyDetectsMissingObjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("object store: %v", err)
 	}
-	if err := store.DeleteObject(backup.ObjectKeyForPath(sourcePath)); err != nil {
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	manifest, err := backup.LoadManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	entry, err := backup.FindEntryByPath(manifest, sourcePath)
+	if err != nil {
+		t.Fatalf("find manifest entry: %v", err)
+	}
+	if err := store.DeleteObject(backup.ResolveObjectKey(entry)); err != nil {
 		t.Fatalf("delete object: %v", err)
 	}
 

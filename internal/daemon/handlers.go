@@ -231,7 +231,7 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := store.GetObject(backup.ObjectKeyForPath(entry.Path))
+	payload, err := store.GetObject(backup.ResolveObjectKey(entry))
 	if err != nil {
 		d.setLastRestoreError(err.Error())
 		statusCode, code, message := classifyRestoreReadObjectError(entry.Path, err)

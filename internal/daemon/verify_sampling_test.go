@@ -53,6 +53,7 @@ func TestFilterManifestEntriesByPrefix(t *testing.T) {
 	entries := []backup.ManifestEntry{
 		{Path: "/Users/me/Documents/report.txt"},
 		{Path: "/Users/me/Documents/notes/todo.md"},
+		{Path: "/Users/me/Documents-archive/report.txt"},
 		{Path: "/Users/me/Pictures/photo.jpg"},
 	}
 

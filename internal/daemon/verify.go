@@ -93,7 +93,7 @@ func filterManifestEntriesByPrefix(entries []backup.ManifestEntry, prefix string
 
 	filtered := make([]backup.ManifestEntry, 0, len(entries))
 	for _, entry := range entries {
-		if strings.HasPrefix(filepath.Clean(entry.Path), cleanPrefix) {
+		if backup.PathHasPrefix(entry.Path, cleanPrefix) {
 			filtered = append(filtered, entry)
 		}
 	}

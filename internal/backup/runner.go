@@ -58,19 +58,19 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 	if err != nil {
 		return RunResult{}, fmt.Errorf("build manifest: %w", err)
 	}
+	AssignObjectKeys(previous, current)
 
 	plan := PlanChanges(previous, current)
 	for _, entry := range plan.NewOrChanged {
-		plain, err := os.ReadFile(entry.Path)
+		plain, err := readEntryContent(entry)
 		if err != nil {
-			return RunResult{}, fmt.Errorf("read file %s: %w", entry.Path, err)
+			return RunResult{}, err
 		}
 		encrypted, err := crypto.EncryptBytes(opts.EncryptionKey, plain)
 		if err != nil {
 			return RunResult{}, fmt.Errorf("encrypt file %s: %w", entry.Path, err)
 		}
-		objectKey := ObjectKeyForPath(entry.Path)
-		if err := putObjectWithRetry(opts.Store, objectKey, encrypted, opts.effectiveUploadMaxAttempts()); err != nil {
+		if err := putObjectWithRetry(opts.Store, entry.ObjectKey, encrypted, opts.effectiveUploadMaxAttempts()); err != nil {
 			return RunResult{}, fmt.Errorf("store object %s: %w", entry.Path, err)
 		}
 	}
@@ -117,4 +117,18 @@ func putObjectWithRetry(store storage.ObjectStore, key string, data []byte, maxA
 		}
 	}
 	return lastErr
+}
+
+func readEntryContent(entry ManifestEntry) ([]byte, error) {
+	plain, err := os.ReadFile(entry.Path)
+	if err != nil {
+		return nil, fmt.Errorf("read file %s: %w", entry.Path, err)
+	}
+	if int64(len(plain)) != entry.Size {
+		return nil, fmt.Errorf("source file changed during backup: %s size mismatch", entry.Path)
+	}
+	if err := VerifyEntryContent(entry, plain); err != nil {
+		return nil, fmt.Errorf("source file changed during backup: %w", err)
+	}
+	return plain, nil
 }

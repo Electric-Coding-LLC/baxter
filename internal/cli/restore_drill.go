@@ -104,7 +104,7 @@ func runRestoreDrillEntry(tempDir string, entry backup.ManifestEntry, decryption
 		return fmt.Errorf("resolve target: %w", err)
 	}
 
-	payload, err := store.GetObject(backup.ObjectKeyForPath(entry.Path))
+	payload, err := store.GetObject(backup.ResolveObjectKey(entry))
 	if err != nil {
 		return fmt.Errorf("read object: %w", err)
 	}

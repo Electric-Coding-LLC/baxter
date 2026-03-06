@@ -67,7 +67,7 @@ func filterRestorePaths(entries []backup.ManifestEntry, prefix string, contains 
 	paths := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		path := entry.Path
-		if cleanPrefix != "" && !strings.HasPrefix(filepath.Clean(path), cleanPrefix) {
+		if !backup.PathHasPrefix(path, cleanPrefix) {
 			continue
 		}
 		if contains != "" && !strings.Contains(path, contains) {
@@ -118,20 +118,7 @@ func filterRestoreChildrenPaths(entries []backup.ManifestEntry, prefix string, c
 }
 
 func pathHasPrefix(path string, prefix string) bool {
-	if prefix == "" {
-		return true
-	}
-	relPath, err := filepath.Rel(prefix, path)
-	if err != nil {
-		return false
-	}
-	if relPath == "." {
-		return true
-	}
-	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
-		return false
-	}
-	return true
+	return backup.PathHasPrefix(path, prefix)
 }
 
 func immediateRestoreChild(path string, prefix string) (string, bool, bool) {

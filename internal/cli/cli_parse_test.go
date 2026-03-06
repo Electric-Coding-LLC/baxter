@@ -148,12 +148,25 @@ func TestFilterRestorePaths(t *testing.T) {
 		{Path: "/Users/me/Documents/report.txt"},
 		{Path: "/Users/me/Pictures/photo.jpg"},
 		{Path: "/Users/me/Documents/notes.md"},
+		{Path: "/Users/me/Documents-archive/old.txt"},
 	}
 
 	got := filterRestorePaths(entries, restoreListOptions{
 		Prefix:   "/Users/me/Documents",
 		Contains: "report",
 	})
+	if len(got) != 1 || got[0] != "/Users/me/Documents/report.txt" {
+		t.Fatalf("unexpected filter result: %+v", got)
+	}
+}
+
+func TestFilterRestorePathsMatchesPathSegmentsOnly(t *testing.T) {
+	entries := []backup.ManifestEntry{
+		{Path: "/Users/me/Documents/report.txt"},
+		{Path: "/Users/me/Documents-archive/report.txt"},
+	}
+
+	got := filterRestorePaths(entries, restoreListOptions{Prefix: "/Users/me/Documents"})
 	if len(got) != 1 || got[0] != "/Users/me/Documents/report.txt" {
 		t.Fatalf("unexpected filter result: %+v", got)
 	}

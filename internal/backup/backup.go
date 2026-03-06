@@ -11,15 +11,17 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
 type ManifestEntry struct {
-	Path    string      `json:"path"`
-	Size    int64       `json:"size"`
-	Mode    fs.FileMode `json:"mode"`
-	ModTime time.Time   `json:"mod_time"`
-	SHA256  string      `json:"sha256"`
+	Path      string      `json:"path"`
+	Size      int64       `json:"size"`
+	Mode      fs.FileMode `json:"mode"`
+	ModTime   time.Time   `json:"mod_time"`
+	SHA256    string      `json:"sha256"`
+	ObjectKey string      `json:"object_key,omitempty"`
 }
 
 type Manifest struct {
@@ -175,6 +177,62 @@ func fileSHA256(path string) (string, error) {
 func ObjectKeyForPath(path string) string {
 	sum := sha256.Sum256([]byte(filepath.Clean(path)))
 	return hex.EncodeToString(sum[:]) + ".enc"
+}
+
+func ObjectKeyForContentSHA256(sha string) string {
+	return "sha256/" + strings.ToLower(strings.TrimSpace(sha)) + ".enc"
+}
+
+func ResolveObjectKey(entry ManifestEntry) string {
+	if key := strings.TrimSpace(entry.ObjectKey); key != "" {
+		return key
+	}
+	return ObjectKeyForPath(entry.Path)
+}
+
+func AssignObjectKeys(previous, current *Manifest) {
+	if current == nil {
+		return
+	}
+
+	prevMap := make(map[string]ManifestEntry, len(previous.Entries))
+	if previous != nil {
+		for _, entry := range previous.Entries {
+			prevMap[filepath.Clean(entry.Path)] = entry
+		}
+	}
+
+	for i := range current.Entries {
+		entry := &current.Entries[i]
+		prev, ok := prevMap[filepath.Clean(entry.Path)]
+		if ok && prev.SHA256 == entry.SHA256 && prev.Size == entry.Size {
+			entry.ObjectKey = ResolveObjectKey(prev)
+			continue
+		}
+		entry.ObjectKey = ObjectKeyForContentSHA256(entry.SHA256)
+	}
+}
+
+func PathHasPrefix(path string, prefix string) bool {
+	cleanPrefix := filepath.Clean(strings.TrimSpace(prefix))
+	if cleanPrefix == "." {
+		cleanPrefix = ""
+	}
+	if cleanPrefix == "" {
+		return true
+	}
+
+	relPath, err := filepath.Rel(cleanPrefix, filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	if relPath == "." {
+		return true
+	}
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
 }
 
 func FindEntryByPath(m *Manifest, requestedPath string) (ManifestEntry, error) {

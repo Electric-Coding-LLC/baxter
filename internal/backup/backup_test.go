@@ -65,3 +65,59 @@ func TestVerifyEntryContent(t *testing.T) {
 		t.Fatal("expected checksum mismatch error")
 	}
 }
+
+func TestAssignObjectKeysPreservesLegacyReferenceForUnchangedEntries(t *testing.T) {
+	prev := &Manifest{
+		Entries: []ManifestEntry{{
+			Path:   "/Users/me/Documents/report.txt",
+			Size:   7,
+			SHA256: "same-sha",
+		}},
+	}
+	curr := &Manifest{
+		Entries: []ManifestEntry{{
+			Path:   "/Users/me/Documents/report.txt",
+			Size:   7,
+			SHA256: "same-sha",
+		}},
+	}
+
+	AssignObjectKeys(prev, curr)
+
+	if got, want := curr.Entries[0].ObjectKey, ObjectKeyForPath(prev.Entries[0].Path); got != want {
+		t.Fatalf("object key mismatch: got %q want %q", got, want)
+	}
+}
+
+func TestAssignObjectKeysUsesContentAddressForChangedEntries(t *testing.T) {
+	prev := &Manifest{
+		Entries: []ManifestEntry{{
+			Path:      "/Users/me/Documents/report.txt",
+			Size:      7,
+			SHA256:    "old-sha",
+			ObjectKey: ObjectKeyForPath("/Users/me/Documents/report.txt"),
+		}},
+	}
+	curr := &Manifest{
+		Entries: []ManifestEntry{{
+			Path:   "/Users/me/Documents/report.txt",
+			Size:   8,
+			SHA256: strings.Repeat("a", 64),
+		}},
+	}
+
+	AssignObjectKeys(prev, curr)
+
+	if got, want := curr.Entries[0].ObjectKey, ObjectKeyForContentSHA256(curr.Entries[0].SHA256); got != want {
+		t.Fatalf("object key mismatch: got %q want %q", got, want)
+	}
+}
+
+func TestPathHasPrefixMatchesPathSegmentsOnly(t *testing.T) {
+	if !PathHasPrefix("/Users/me/Documents/report.txt", "/Users/me/Documents") {
+		t.Fatal("expected nested document path to match prefix")
+	}
+	if PathHasPrefix("/Users/me/Documents-archive/report.txt", "/Users/me/Documents") {
+		t.Fatal("expected sibling prefix lookalike to be excluded")
+	}
+}

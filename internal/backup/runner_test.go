@@ -414,7 +414,16 @@ func TestRunStoresVersionedCompressedPayload(t *testing.T) {
 		t.Fatalf("run backup: %v", err)
 	}
 
-	payload, err := store.GetObject(ObjectKeyForPath(filePath))
+	manifest, err := LoadManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	entry, err := FindEntryByPath(manifest, filePath)
+	if err != nil {
+		t.Fatalf("find manifest entry: %v", err)
+	}
+
+	payload, err := store.GetObject(ResolveObjectKey(entry))
 	if err != nil {
 		t.Fatalf("read stored object: %v", err)
 	}
@@ -426,5 +435,31 @@ func TestRunStoresVersionedCompressedPayload(t *testing.T) {
 	}
 	if payload[1] != 1 {
 		t.Fatalf("unexpected compression marker: got %d want 1", payload[1])
+	}
+}
+
+func TestReadEntryContentRejectsChangedFile(t *testing.T) {
+	root := t.TempDir()
+	filePath := filepath.Join(root, "doc.txt")
+	original := []byte("original")
+	if err := os.WriteFile(filePath, original, 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	manifest, err := BuildManifest([]string{root})
+	if err != nil {
+		t.Fatalf("build manifest: %v", err)
+	}
+	entry, err := FindEntryByPath(manifest, filePath)
+	if err != nil {
+		t.Fatalf("find manifest entry: %v", err)
+	}
+
+	if err := os.WriteFile(filePath, []byte("updated"), 0o600); err != nil {
+		t.Fatalf("update file: %v", err)
+	}
+
+	if _, err := readEntryContent(entry); err == nil {
+		t.Fatal("expected changed file to be rejected")
 	}
 }

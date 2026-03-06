@@ -51,7 +51,7 @@ func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) 
 		return err
 	}
 
-	payload, err := store.GetObject(backup.ObjectKeyForPath(entry.Path))
+	payload, err := store.GetObject(backup.ResolveObjectKey(entry))
 	if err != nil {
 		switch {
 		case storage.IsNotFound(err):
