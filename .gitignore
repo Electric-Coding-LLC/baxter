@@ -1,5 +1,6 @@
 .codex/
 .DS_Store
+/dist/
 *.xcuserstate
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcworkspace/xcuserdata/
