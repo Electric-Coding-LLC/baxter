@@ -22,10 +22,13 @@ weekly_time = "09:00"
 # Leave bucket empty to use local object storage only.
 # Set bucket+region to enable S3 object storage.
 # Leave endpoint empty for AWS S3. Use a full https URL for S3-compatible providers.
+# Set aws_profile when you want Baxter to use a named profile from ~/.aws/config
+# and ~/.aws/credentials without relying on shell-only AWS_PROFILE exports.
 endpoint = ""
 region = ""
 bucket = ""
 prefix = "baxter/"
+aws_profile = ""
 
 [encryption]
 # CLI key resolution order:

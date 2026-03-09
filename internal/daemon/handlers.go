@@ -179,15 +179,15 @@ func (d *Daemon) handleRestoreDryRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, targetPath, err := d.resolveRestoreTarget(requestedPath, req.ToDir, req.Snapshot)
+	plan, err := d.resolveRestoreTarget(requestedPath, req.ToDir, req.Snapshot)
 	if err != nil {
 		d.writeRestoreError(w, err)
 		return
 	}
 
 	d.writeJSON(w, http.StatusOK, restoreDryRunResponse{
-		SourcePath: entry.Path,
-		TargetPath: targetPath,
+		SourcePath: plan.SourcePath,
+		TargetPath: plan.TargetPath,
 		Overwrite:  req.Overwrite,
 	})
 }
@@ -209,7 +209,7 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, targetPath, err := d.resolveRestoreTarget(requestedPath, req.ToDir, req.Snapshot)
+	plan, err := d.resolveRestoreTarget(requestedPath, req.ToDir, req.Snapshot)
 	if err != nil {
 		d.setLastRestoreError(err.Error())
 		d.writeRestoreError(w, err)
@@ -231,67 +231,64 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := store.GetObject(backup.ResolveObjectKey(entry))
-	if err != nil {
-		d.setLastRestoreError(err.Error())
-		statusCode, code, message := classifyRestoreReadObjectError(entry.Path, err)
-		d.writeError(w, statusCode, code, message)
-		return
+	if !req.Overwrite && !req.VerifyOnly {
+		for _, target := range plan.Targets {
+			if _, err := os.Stat(target.TargetPath); err == nil {
+				msg := fmt.Sprintf("target exists: %s (use overwrite=true to replace)", target.TargetPath)
+				d.setLastRestoreError(msg)
+				d.writeError(w, http.StatusBadRequest, "target_exists", msg)
+				return
+			} else if !os.IsNotExist(err) {
+				d.setLastRestoreError(err.Error())
+				d.writeError(w, http.StatusBadRequest, "write_failed", err.Error())
+				return
+			}
+		}
 	}
 
-	plain, err := crypto.DecryptBytesWithAnyKey(keys.candidates, payload)
-	if err != nil {
-		d.setLastRestoreError(err.Error())
-		d.writeError(w, http.StatusBadRequest, "decrypt_failed", fmt.Sprintf("decrypt object: %v", err))
-		return
-	}
-	if err := backup.VerifyEntryContent(entry, plain); err != nil {
-		d.setLastRestoreError(err.Error())
-		d.writeError(w, http.StatusBadRequest, "integrity_check_failed", err.Error())
-		return
-	}
-
-	if req.VerifyOnly {
-		d.setRestoreSuccess(entry.Path)
-		d.writeJSON(w, http.StatusOK, restoreRunResponse{
-			SourcePath: entry.Path,
-			TargetPath: targetPath,
-			Verified:   true,
-			Wrote:      false,
-		})
-		return
-	}
-
-	if !req.Overwrite {
-		if _, err := os.Stat(targetPath); err == nil {
-			msg := fmt.Sprintf("target exists: %s (use overwrite=true to replace)", targetPath)
-			d.setLastRestoreError(msg)
-			d.writeError(w, http.StatusBadRequest, "target_exists", msg)
+	for _, target := range plan.Targets {
+		payload, err := store.GetObject(backup.ResolveObjectKey(target.Entry))
+		if err != nil {
+			d.setLastRestoreError(err.Error())
+			statusCode, code, message := classifyRestoreReadObjectError(target.Entry.Path, err)
+			d.writeError(w, statusCode, code, message)
 			return
-		} else if !os.IsNotExist(err) {
+		}
+
+		plain, err := crypto.DecryptBytesWithAnyKey(keys.candidates, payload)
+		if err != nil {
+			d.setLastRestoreError(err.Error())
+			d.writeError(w, http.StatusBadRequest, "decrypt_failed", fmt.Sprintf("decrypt object: %v", err))
+			return
+		}
+		if err := backup.VerifyEntryContent(target.Entry, plain); err != nil {
+			d.setLastRestoreError(err.Error())
+			d.writeError(w, http.StatusBadRequest, "integrity_check_failed", err.Error())
+			return
+		}
+
+		if req.VerifyOnly {
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(target.TargetPath), 0o755); err != nil {
+			d.setLastRestoreError(err.Error())
+			d.writeError(w, http.StatusBadRequest, "write_failed", err.Error())
+			return
+		}
+		if err := os.WriteFile(target.TargetPath, plain, target.Entry.Mode.Perm()); err != nil {
 			d.setLastRestoreError(err.Error())
 			d.writeError(w, http.StatusBadRequest, "write_failed", err.Error())
 			return
 		}
 	}
 
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-		d.setLastRestoreError(err.Error())
-		d.writeError(w, http.StatusBadRequest, "write_failed", err.Error())
-		return
-	}
-	if err := os.WriteFile(targetPath, plain, entry.Mode.Perm()); err != nil {
-		d.setLastRestoreError(err.Error())
-		d.writeError(w, http.StatusBadRequest, "write_failed", err.Error())
-		return
-	}
-
-	d.setRestoreSuccess(entry.Path)
+	d.setRestoreSuccess(plan.SourcePath)
 	d.writeJSON(w, http.StatusOK, restoreRunResponse{
-		SourcePath: entry.Path,
-		TargetPath: targetPath,
+		SourcePath: plan.SourcePath,
+		TargetPath: plan.TargetPath,
 		Verified:   true,
-		Wrote:      true,
+		Wrote:      !req.VerifyOnly,
 	})
 }
 

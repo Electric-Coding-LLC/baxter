@@ -42,6 +42,13 @@ enum LaunchdController {
             .path
     }
 
+    private static var cliBinaryPath: String {
+        URL(fileURLWithPath: appSupportDir)
+            .appendingPathComponent("bin")
+            .appendingPathComponent("baxter")
+            .path
+    }
+
     private static var configPath: String {
         URL(fileURLWithPath: appSupportDir)
             .appendingPathComponent("config.toml")
@@ -62,32 +69,7 @@ enum LaunchdController {
     }
 
     static func install() async throws -> String {
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: configPath) else {
-            throw LaunchdError.missingConfig(configPath)
-        }
-
-        try fileManager.createDirectory(
-            at: URL(fileURLWithPath: daemonBinaryPath).deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-            attributes: nil
-        )
-        try fileManager.createDirectory(
-            at: URL(fileURLWithPath: plistPath).deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-            attributes: nil
-        )
-
-        let binaryPath = try await ensureDaemonBinary()
-        let plistData = try launchAgentPlistData(
-            daemonBinaryPath: binaryPath,
-            configPath: configPath,
-            ipcAddress: ipcAddress,
-            homePath: fileManager.homeDirectoryForCurrentUser.path,
-            ipcToken: ProcessInfo.processInfo.environment["BAXTER_IPC_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        try plistData.write(to: URL(fileURLWithPath: plistPath), options: .atomic)
-
+        _ = try await prepareLaunchdInstallAssets()
         _ = try await runLaunchctlAllowFailure(["bootout", serviceTarget])
         _ = try await runLaunchctl(["bootstrap", domainTarget, plistPath])
         _ = try await runLaunchctl(["enable", serviceTarget])
@@ -96,9 +78,7 @@ enum LaunchdController {
     }
 
     static func start() async throws -> String {
-        guard FileManager.default.fileExists(atPath: plistPath) else {
-            return try await install()
-        }
+        _ = try await prepareLaunchdInstallAssets()
 
         let state = await queryState()
         if state == .running {
@@ -173,8 +153,41 @@ enum LaunchdController {
         }.value
     }
 
+    private static func prepareLaunchdInstallAssets() async throws -> String {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: configPath) else {
+            throw LaunchdError.missingConfig(configPath)
+        }
+
+        try fileManager.createDirectory(
+            at: URL(fileURLWithPath: daemonBinaryPath).deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        try fileManager.createDirectory(
+            at: URL(fileURLWithPath: plistPath).deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        let binaryPath = try await ensureDaemonBinary()
+        let plistData = try launchAgentPlistData(
+            daemonBinaryPath: binaryPath,
+            configPath: configPath,
+            ipcAddress: ipcAddress,
+            homePath: fileManager.homeDirectoryForCurrentUser.path,
+            ipcToken: ProcessInfo.processInfo.environment["BAXTER_IPC_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        try plistData.write(to: URL(fileURLWithPath: plistPath), options: .atomic)
+        return binaryPath
+    }
+
     private static func ensureDaemonBinary() async throws -> String {
         let fileManager = FileManager.default
+        if try installBundledHelpersIfAvailable(),
+           fileManager.isExecutableFile(atPath: daemonBinaryPath) {
+            return daemonBinaryPath
+        }
         if fileManager.isExecutableFile(atPath: daemonBinaryPath) {
             return daemonBinaryPath
         }
@@ -191,6 +204,53 @@ enum LaunchdController {
             throw LaunchdError.daemonBinaryMissing(daemonBinaryPath)
         }
         return daemonBinaryPath
+    }
+
+    private static func installBundledHelpersIfAvailable() throws -> Bool {
+        let daemonInstalled = try installBundledBinary(
+            named: "baxterd",
+            destinationPath: daemonBinaryPath
+        )
+        let cliInstalled = try installBundledBinary(
+            named: "baxter",
+            destinationPath: cliBinaryPath
+        )
+        return daemonInstalled || cliInstalled
+    }
+
+    private static func installBundledBinary(named name: String, destinationPath: String) throws -> Bool {
+        guard let bundledPath = bundledBinaryPath(named: name) else {
+            return false
+        }
+
+        let fileManager = FileManager.default
+        let destinationURL = URL(fileURLWithPath: destinationPath)
+        try fileManager.createDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        let tempURL = destinationURL.deletingLastPathComponent()
+            .appendingPathComponent(".\(name).tmp-\(UUID().uuidString)")
+        if fileManager.fileExists(atPath: tempURL.path) {
+            try fileManager.removeItem(at: tempURL)
+        }
+        try fileManager.copyItem(atPath: bundledPath, toPath: tempURL.path)
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tempURL.path)
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try fileManager.removeItem(at: destinationURL)
+        }
+        try fileManager.moveItem(at: tempURL, to: destinationURL)
+        return true
+    }
+
+    private static func bundledBinaryPath(named name: String) -> String? {
+        guard let resourceURL = Bundle.main.resourceURL else {
+            return nil
+        }
+        let path = resourceURL.appendingPathComponent("bin").appendingPathComponent(name).path
+        return FileManager.default.isExecutableFile(atPath: path) ? path : nil
     }
 
     private static func resolveRepositoryRoot() -> URL? {
@@ -243,6 +303,8 @@ enum LaunchdController {
             args.append(token)
         }
 
+        let environmentVariables = launchEnvironmentVariables(homePath: homePath)
+
         let plist: [String: Any] = [
             "Label": label,
             "ProgramArguments": args,
@@ -250,6 +312,7 @@ enum LaunchdController {
             "KeepAlive": true,
             "StandardOutPath": "\(homePath)/Library/Logs/baxterd.out.log",
             "StandardErrorPath": "\(homePath)/Library/Logs/baxterd.err.log",
+            "EnvironmentVariables": environmentVariables,
         ]
 
         do {
@@ -261,6 +324,45 @@ enum LaunchdController {
         } catch {
             throw LaunchdError.executionFailed("Failed to generate launchd plist: \(error.localizedDescription)")
         }
+    }
+
+    private static func launchEnvironmentVariables(homePath: String) -> [String: String] {
+        let env = ProcessInfo.processInfo.environment
+        var variables: [String: String] = [
+            "HOME": homePath,
+        ]
+        if let configuredProfile = configuredAWSProfile(), !configuredProfile.isEmpty {
+            variables["AWS_PROFILE"] = configuredProfile
+            variables["AWS_SDK_LOAD_CONFIG"] = "1"
+        }
+
+        for key in [
+            "AWS_PROFILE",
+            "AWS_SDK_LOAD_CONFIG",
+            "AWS_REGION",
+            "AWS_DEFAULT_REGION",
+            "AWS_SHARED_CREDENTIALS_FILE",
+            "AWS_CONFIG_FILE",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+        ] {
+            let value = env[key]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !value.isEmpty {
+                variables[key] = value
+            }
+        }
+
+        return variables
+    }
+
+    private static func configuredAWSProfile() -> String? {
+        guard let configText = try? String(contentsOfFile: configPath, encoding: .utf8) else {
+            return nil
+        }
+        let profile = decodeBaxterConfig(from: configText).s3AWSProfile
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return profile.isEmpty ? nil : profile
     }
 }
 
@@ -282,9 +384,9 @@ private enum LaunchdError: LocalizedError {
         case .missingConfig(let path):
             return "Config not found at \(path). Open Settings and save config first."
         case .repoRootNotFound:
-            return "Unable to auto-build baxterd. Set BAXTER_REPO_ROOT to your repo path or install launchd manually."
+            return "Unable to find a bundled baxterd or auto-build one from the repo. Set BAXTER_REPO_ROOT for dev builds or install from the packaged app."
         case .daemonBinaryMissing(let path):
-            return "baxterd binary missing at \(path) after build."
+            return "baxterd binary missing at \(path) after install/build."
         case .executionFailed(let reason):
             return "Failed to execute launchctl: \(reason)"
         case .commandFailed(_, let arguments, let stderr):

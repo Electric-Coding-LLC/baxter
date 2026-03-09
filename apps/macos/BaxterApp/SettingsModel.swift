@@ -14,6 +14,7 @@ final class BaxterSettingsModel: ObservableObject {
     @Published var s3Region: String = ""
     @Published var s3Bucket: String = ""
     @Published var s3Prefix: String = "baxter/"
+    @Published var s3AWSProfile: String = ""
     @Published var keychainService: String = "baxter"
     @Published var keychainAccount: String = "default"
     @Published var verifySchedule: BackupSchedule = .manual
@@ -218,6 +219,7 @@ final class BaxterSettingsModel: ObservableObject {
         s3Region = config.s3Region
         s3Bucket = config.s3Bucket
         s3Prefix = config.s3Prefix
+        s3AWSProfile = config.s3AWSProfile
         keychainService = config.keychainService
         keychainAccount = config.keychainAccount
         verifySchedule = config.verifySchedule
@@ -285,6 +287,7 @@ final class BaxterSettingsModel: ObservableObject {
             s3Region: s3Region.trimmingCharacters(in: .whitespacesAndNewlines),
             s3Bucket: s3Bucket.trimmingCharacters(in: .whitespacesAndNewlines),
             s3Prefix: s3Prefix.trimmingCharacters(in: .whitespacesAndNewlines),
+            s3AWSProfile: s3AWSProfile.trimmingCharacters(in: .whitespacesAndNewlines),
             keychainService: keychainService.trimmingCharacters(in: .whitespacesAndNewlines),
             keychainAccount: keychainAccount.trimmingCharacters(in: .whitespacesAndNewlines),
             verifySchedule: verifySchedule,

@@ -27,6 +27,12 @@ GOOS=darwin GOARCH=arm64 go build -o "$DIST_DIR/baxterd-darwin-arm64" ./cmd/baxt
 GOOS=linux GOARCH=amd64 go build -o "$DIST_DIR/baxter-linux-amd64" ./cmd/baxter
 GOOS=linux GOARCH=amd64 go build -o "$DIST_DIR/baxterd-linux-amd64" ./cmd/baxterd
 
+if [ "$(uname -s)" = "Darwin" ] && command -v xcodebuild >/dev/null 2>&1; then
+  "$ROOT_DIR/scripts/package-macos-app.sh" --output-dir "$DIST_DIR"
+else
+  echo "Skipping macOS app packaging (requires macOS with Xcode)."
+fi
+
 popd >/dev/null
 
 (cd "$DIST_DIR" && shasum -a 256 * > SHA256SUMS)

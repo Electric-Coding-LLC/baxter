@@ -191,6 +191,67 @@ func TestRunBackupAndRestoreNestedPaths(t *testing.T) {
 	}
 }
 
+func TestRestoreDirectoryPathRestoresSubtree(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+	docsRoot := filepath.Join(srcRoot, "docs")
+
+	if err := os.MkdirAll(filepath.Join(docsRoot, "reports"), 0o755); err != nil {
+		t.Fatalf("mkdir docs reports: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(srcRoot, "photos"), 0o755); err != nil {
+		t.Fatalf("mkdir photos: %v", err)
+	}
+
+	reportPath := filepath.Join(docsRoot, "reports", "q1.txt")
+	notePath := filepath.Join(docsRoot, "notes.txt")
+	otherPath := filepath.Join(srcRoot, "photos", "ignore.bin")
+	if err := os.WriteFile(reportPath, []byte("quarterly report"), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	if err := os.WriteFile(notePath, []byte("notes"), 0o600); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+	if err := os.WriteFile(otherPath, []byte("photo-bytes"), 0o600); err != nil {
+		t.Fatalf("write other file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "directory-restore-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("run backup failed: %v", err)
+	}
+
+	if err := restorePath(cfg, docsRoot, restoreOptions{ToDir: restoreRoot}); err != nil {
+		t.Fatalf("restore directory failed: %v", err)
+	}
+
+	trimmedReportPath := strings.TrimPrefix(filepath.Clean(reportPath), string(filepath.Separator))
+	trimmedNotePath := strings.TrimPrefix(filepath.Clean(notePath), string(filepath.Separator))
+	trimmedOtherPath := strings.TrimPrefix(filepath.Clean(otherPath), string(filepath.Separator))
+
+	if got, err := os.ReadFile(filepath.Join(restoreRoot, trimmedReportPath)); err != nil {
+		t.Fatalf("read restored report: %v", err)
+	} else if string(got) != "quarterly report" {
+		t.Fatalf("unexpected report content: %q", string(got))
+	}
+	if got, err := os.ReadFile(filepath.Join(restoreRoot, trimmedNotePath)); err != nil {
+		t.Fatalf("read restored note: %v", err)
+	} else if string(got) != "notes" {
+		t.Fatalf("unexpected note content: %q", string(got))
+	}
+	if _, err := os.Stat(filepath.Join(restoreRoot, trimmedOtherPath)); !os.IsNotExist(err) {
+		t.Fatalf("unexpected restore outside subtree, stat err=%v", err)
+	}
+}
+
 func TestRestorePathFromOlderSnapshotAfterDeletion(t *testing.T) {
 	homeDir := t.TempDir()
 	srcRoot := filepath.Join(t.TempDir(), "src")

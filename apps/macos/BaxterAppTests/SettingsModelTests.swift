@@ -170,6 +170,7 @@ final class SettingsModelTests: XCTestCase {
         region = ""
         bucket = ""
         prefix = "baxter/"
+        aws_profile = "baxter"
 
         [encryption]
         keychain_service = "baxter"
@@ -187,6 +188,7 @@ final class SettingsModelTests: XCTestCase {
 
         let config = decodeBaxterConfig(from: toml)
         XCTAssertEqual(config.excludeGlobs, ["[0-9]*.log", "*.tmp"])
+        XCTAssertEqual(config.s3AWSProfile, "baxter")
     }
 
     func testVerifyDailyScheduleRequiresValidTime() {

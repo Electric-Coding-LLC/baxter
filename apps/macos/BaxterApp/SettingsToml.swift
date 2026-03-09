@@ -92,6 +92,8 @@ func decodeBaxterConfig(from text: String) -> BaxterConfig {
             config.s3Bucket = value
         case ("s3", "prefix"):
             config.s3Prefix = value
+        case ("s3", "aws_profile"):
+            config.s3AWSProfile = value
         case ("encryption", "keychain_service"):
             config.keychainService = value
         case ("encryption", "keychain_account"):
@@ -164,6 +166,7 @@ func encodeBaxterConfig(_ config: BaxterConfig) -> String {
     lines.append("region = \"\(escapeTomlString(config.s3Region))\"")
     lines.append("bucket = \"\(escapeTomlString(config.s3Bucket))\"")
     lines.append("prefix = \"\(escapeTomlString(config.s3Prefix))\"")
+    lines.append("aws_profile = \"\(escapeTomlString(config.s3AWSProfile))\"")
     lines.append("")
     lines.append("[encryption]")
     lines.append("keychain_service = \"\(escapeTomlString(config.keychainService))\"")
