@@ -108,6 +108,9 @@ func NewS3Client(cfg appconfig.S3Config) (*S3Client, error) {
 		awsconfig.WithRetryMode(aws.RetryModeStandard),
 		awsconfig.WithRetryMaxAttempts(defaultRetryMaxAttempts),
 	}
+	if profile := strings.TrimSpace(cfg.AWSProfile); profile != "" {
+		loadOpts = append(loadOpts, awsconfig.WithSharedConfigProfile(profile))
+	}
 
 	if endpoint != "" {
 		resolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {

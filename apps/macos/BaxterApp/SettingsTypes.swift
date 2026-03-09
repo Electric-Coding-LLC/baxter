@@ -40,6 +40,7 @@ struct BaxterConfig {
     var s3Region: String
     var s3Bucket: String
     var s3Prefix: String
+    var s3AWSProfile: String
     var keychainService: String
     var keychainAccount: String
     var verifySchedule: BackupSchedule
@@ -62,6 +63,7 @@ struct BaxterConfig {
         s3Region: "",
         s3Bucket: "",
         s3Prefix: "baxter/",
+        s3AWSProfile: "",
         keychainService: "baxter",
         keychainAccount: "default",
         verifySchedule: .manual,
@@ -85,6 +87,7 @@ enum SettingsField: Hashable {
     case s3Region
     case s3Bucket
     case s3Prefix
+    case s3AWSProfile
     case keychainService
     case keychainAccount
     case verifyDailyTime

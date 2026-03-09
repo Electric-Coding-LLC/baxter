@@ -36,6 +36,9 @@ func TestLoadMissingFileReturnsDefaults(t *testing.T) {
 	if cfg.S3.Prefix != "baxter/" {
 		t.Fatalf("unexpected default s3 prefix: got %q want %q", cfg.S3.Prefix, "baxter/")
 	}
+	if cfg.S3.AWSProfile != "" {
+		t.Fatalf("unexpected default s3 aws_profile: got %q want empty", cfg.S3.AWSProfile)
+	}
 	if cfg.Encryption.KeychainService != "baxter" {
 		t.Fatalf("unexpected keychain service: got %q want %q", cfg.Encryption.KeychainService, "baxter")
 	}
@@ -75,6 +78,7 @@ func TestLoadAppliesDefaultsAndNormalizes(t *testing.T) {
 		"bucket = \"example-bucket\"",
 		"region = \"us-east-1\"",
 		"prefix = \"custom\"",
+		"aws_profile = \" baxter \"",
 		"",
 		"[encryption]",
 		"keychain_service = \"\"",
@@ -100,6 +104,9 @@ func TestLoadAppliesDefaultsAndNormalizes(t *testing.T) {
 
 	if cfg.S3.Prefix != "custom/" {
 		t.Fatalf("expected normalized prefix: got %q want %q", cfg.S3.Prefix, "custom/")
+	}
+	if cfg.S3.AWSProfile != "baxter" {
+		t.Fatalf("expected normalized aws_profile: got %q want %q", cfg.S3.AWSProfile, "baxter")
 	}
 	if cfg.DailyTime != "07:30" {
 		t.Fatalf("expected normalized daily_time: got %q", cfg.DailyTime)

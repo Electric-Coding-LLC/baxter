@@ -47,9 +47,24 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-rc-macos-app:
+    runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package BaxterApp RC artifact
+        run: ./scripts/package-macos-app.sh --output-dir "dist/${{ inputs.version }}"
+      - name: Upload RC app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: baxter-app-${{ inputs.version }}
+          path: dist/${{ inputs.version }}/Baxter-darwin-arm64.zip
+          if-no-files-found: error
+          retention-days: 14
+
   validate-rc-artifacts:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
-    needs: build-rc
+    needs: [build-rc, build-rc-macos-app]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -58,6 +73,16 @@ jobs:
         with:
           name: baxter-${{ inputs.version }}
           path: .ci/rc-artifacts
+      - name: Download RC app artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: baxter-app-${{ inputs.version }}
+          path: .ci/rc-app-artifact
+      - name: Validate RC app artifact unzip
+        run: |
+          set -euo pipefail
+          unzip -q .ci/rc-app-artifact/Baxter-darwin-arm64.zip -d .ci/rc-app-unpacked
+          test -d .ci/rc-app-unpacked/Baxter.app
       - name: Validate RC install/upgrade/rollback path
         run: |
           set -euo pipefail

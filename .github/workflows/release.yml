@@ -6,10 +6,8 @@ on:
       - "v*"
 
 jobs:
-  build-and-release:
+  build-cli-daemon:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -33,12 +31,40 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -o "$DIST_DIR/baxterd-linux-amd64" ./cmd/baxterd
 
           (cd "$DIST_DIR" && sha256sum * > SHA256SUMS)
+      - name: Upload CLI/daemon release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: baxter-release-cli-${{ github.ref_name }}
+          path: dist/${{ github.ref_name }}
+          if-no-files-found: error
+
+  build-macos-app:
+    runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package BaxterApp release artifact
+        run: ./scripts/package-macos-app.sh --output-dir "dist/${GITHUB_REF_NAME}"
+      - name: Upload macOS app release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: baxter-release-app-${{ github.ref_name }}
+          path: dist/${{ github.ref_name }}/Baxter-darwin-arm64.zip
+          if-no-files-found: error
+
+  publish-release:
+    runs-on: ubuntu-latest
+    needs: [build-cli-daemon, build-macos-app]
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: baxter-release-*
+          path: .ci/release-assets
+          merge-multiple: true
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/${{ github.ref_name }}/baxter-darwin-arm64
-            dist/${{ github.ref_name }}/baxterd-darwin-arm64
-            dist/${{ github.ref_name }}/baxter-linux-amd64
-            dist/${{ github.ref_name }}/baxterd-linux-amd64
-            dist/${{ github.ref_name }}/SHA256SUMS
+          files: .ci/release-assets/*

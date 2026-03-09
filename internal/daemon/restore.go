@@ -19,29 +19,50 @@ var (
 	errRestoreTargetInvalid = errors.New("invalid restore target")
 )
 
-func (d *Daemon) resolveRestoreTarget(requestedPath string, toDir string, snapshotSelector string) (backup.ManifestEntry, string, error) {
+type restoreTarget struct {
+	Entry      backup.ManifestEntry
+	TargetPath string
+}
+
+type restoreTargetPlan struct {
+	SourcePath string
+	TargetPath string
+	Targets    []restoreTarget
+}
+
+func (d *Daemon) resolveRestoreTarget(requestedPath string, toDir string, snapshotSelector string) (restoreTargetPlan, error) {
 	m, err := d.loadManifestForRestore(snapshotSelector)
 	if err != nil {
-		return backup.ManifestEntry{}, "", fmt.Errorf("%w: load manifest: %v", errRestoreManifestLoad, err)
+		return restoreTargetPlan{}, fmt.Errorf("%w: load manifest: %v", errRestoreManifestLoad, err)
 	}
 
-	entry, err := backup.FindEntryByPath(m, requestedPath)
+	selection, err := backup.ResolveRestoreSelection(m, requestedPath)
 	if err != nil {
-		absPath, absErr := filepath.Abs(requestedPath)
-		if absErr != nil {
-			return backup.ManifestEntry{}, "", fmt.Errorf("%w: %v", errRestorePathLookup, err)
-		}
-		entry, err = backup.FindEntryByPath(m, absPath)
+		return restoreTargetPlan{}, fmt.Errorf("%w: %v", errRestorePathLookup, err)
+	}
+
+	targetPath, err := resolvedRestorePath(selection.SourcePath, toDir)
+	if err != nil {
+		return restoreTargetPlan{}, fmt.Errorf("%w: %v", errRestoreTargetInvalid, err)
+	}
+
+	targets := make([]restoreTarget, 0, len(selection.Entries))
+	for _, entry := range selection.Entries {
+		entryTargetPath, err := resolvedRestorePath(entry.Path, toDir)
 		if err != nil {
-			return backup.ManifestEntry{}, "", fmt.Errorf("%w: %v", errRestorePathLookup, err)
+			return restoreTargetPlan{}, fmt.Errorf("%w: %v", errRestoreTargetInvalid, err)
 		}
+		targets = append(targets, restoreTarget{
+			Entry:      entry,
+			TargetPath: entryTargetPath,
+		})
 	}
 
-	targetPath, err := resolvedRestorePath(entry.Path, toDir)
-	if err != nil {
-		return backup.ManifestEntry{}, "", fmt.Errorf("%w: %v", errRestoreTargetInvalid, err)
-	}
-	return entry, targetPath, nil
+	return restoreTargetPlan{
+		SourcePath: selection.SourcePath,
+		TargetPath: targetPath,
+		Targets:    targets,
+	}, nil
 }
 
 func (d *Daemon) writeRestoreError(w http.ResponseWriter, err error) {

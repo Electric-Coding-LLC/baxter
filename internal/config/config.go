@@ -25,10 +25,11 @@ type Config struct {
 }
 
 type S3Config struct {
-	Endpoint string `toml:"endpoint"`
-	Region   string `toml:"region"`
-	Bucket   string `toml:"bucket"`
-	Prefix   string `toml:"prefix"`
+	Endpoint   string `toml:"endpoint"`
+	Region     string `toml:"region"`
+	Bucket     string `toml:"bucket"`
+	Prefix     string `toml:"prefix"`
+	AWSProfile string `toml:"aws_profile"`
 }
 
 type EncryptionConfig struct {
@@ -191,6 +192,7 @@ func (c *Config) Normalize() {
 	c.Verify.WeeklyDay = strings.ToLower(strings.TrimSpace(c.Verify.WeeklyDay))
 	c.Verify.WeeklyTime = strings.TrimSpace(c.Verify.WeeklyTime)
 	c.Verify.Prefix = strings.TrimSpace(c.Verify.Prefix)
+	c.S3.AWSProfile = strings.TrimSpace(c.S3.AWSProfile)
 }
 
 func (c *Config) Validate() error {

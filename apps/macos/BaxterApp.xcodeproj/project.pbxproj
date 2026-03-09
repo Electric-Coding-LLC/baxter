@@ -55,7 +55,7 @@
 		A00000000000000000000099 /* BaxterApp/BackupStatusModel+Lifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/BackupStatusModel+Lifecycle.swift"; sourceTree = "<group>"; };
 		A0000000000000000000009A /* BaxterApp/BackupStatusModel+Restore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/BackupStatusModel+Restore.swift"; sourceTree = "<group>"; };
 		A0000000000000000000009B /* BaxterApp/BackupStatusModel+Status.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/BackupStatusModel+Status.swift"; sourceTree = "<group>"; };
-		A00000000000000000000021 /* BaxterApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BaxterApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000021 /* Baxter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Baxter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000071 /* BaxterAppTests/SettingsModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterAppTests/SettingsModelTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000072 /* BaxterAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaxterAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -114,7 +114,7 @@
 		A00000000000000000000032 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000021 /* BaxterApp.app */,
+				A00000000000000000000021 /* Baxter.app */,
 				A00000000000000000000072 /* BaxterAppTests.xctest */,
 			);
 			name = Products;
@@ -144,7 +144,7 @@
 			);
 			name = BaxterApp;
 			productName = BaxterApp;
-			productReference = A00000000000000000000021 /* BaxterApp.app */;
+			productReference = A00000000000000000000021 /* Baxter.app */;
 			productType = "com.apple.product-type.application";
 		};
 		A00000000000000000000070 /* BaxterAppTests */ = {
@@ -360,7 +360,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterApp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Baxter;
+				PRODUCT_MODULE_NAME = BaxterApp;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
 			};
@@ -389,7 +390,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterApp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Baxter;
+				PRODUCT_MODULE_NAME = BaxterApp;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
 			};
@@ -409,7 +411,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaxterApp.app/Contents/MacOS/BaxterApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Baxter.app/Contents/MacOS/Baxter";
 			};
 			name = Debug;
 		};
@@ -427,7 +429,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BaxterApp.app/Contents/MacOS/BaxterApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Baxter.app/Contents/MacOS/Baxter";
 			};
 			name = Release;
 		};

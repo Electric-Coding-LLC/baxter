@@ -376,6 +376,13 @@ struct BaxterSettingsView: View {
                                         model.validateDraft()
                                     }
                             }
+                            SettingRow(label: "AWS Profile", error: model.validationMessage(for: .s3AWSProfile)) {
+                                TextField("baxter (optional)", text: $model.s3AWSProfile)
+                                    .font(.system(.body, design: .monospaced))
+                                    .onChange(of: model.s3AWSProfile) { _, _ in
+                                        model.validateDraft()
+                                    }
+                            }
                             Text(model.s3ModeHint)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

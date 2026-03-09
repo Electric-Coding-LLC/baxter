@@ -187,6 +187,119 @@ func TestRestoreRunEndpointVerifyOnlyDoesNotWrite(t *testing.T) {
 	}
 }
 
+func TestRestoreRunEndpointRestoresDirectorySubtree(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+	docsRoot := filepath.Join(srcRoot, "docs")
+	if err := os.MkdirAll(filepath.Join(docsRoot, "reports"), 0o755); err != nil {
+		t.Fatalf("mkdir docs reports: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(srcRoot, "photos"), 0o755); err != nil {
+		t.Fatalf("mkdir photos: %v", err)
+	}
+
+	reportPath := filepath.Join(docsRoot, "reports", "q1.txt")
+	notePath := filepath.Join(docsRoot, "notes.txt")
+	otherPath := filepath.Join(srcRoot, "photos", "ignore.bin")
+	if err := os.WriteFile(reportPath, []byte("quarterly report"), 0o600); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	if err := os.WriteFile(notePath, []byte("notes"), 0o600); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+	if err := os.WriteFile(otherPath, []byte("photo-bytes"), 0o600); err != nil {
+		t.Fatalf("write other file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "daemon-directory-restore-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("manifest snapshots dir: %v", err)
+	}
+	objectsDir, err := state.ObjectStoreDir()
+	if err != nil {
+		t.Fatalf("object store dir: %v", err)
+	}
+	store, err := storage.NewFromConfig(cfg.S3, objectsDir)
+	if err != nil {
+		t.Fatalf("new object store: %v", err)
+	}
+	_, err = backup.Run(cfg, backup.RunOptions{
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: cfg.Retention.ManifestSnapshots,
+		EncryptionKey:     crypto.KeyFromPassphrase("daemon-directory-restore-passphrase"),
+		Store:             store,
+	})
+	if err != nil {
+		t.Fatalf("run backup: %v", err)
+	}
+
+	d := New(cfg)
+	restoreAt := time.Date(2026, time.February, 8, 12, 37, 0, 0, time.UTC)
+	d.clockNow = func() time.Time { return restoreAt }
+
+	body := bytes.NewBufferString(`{"path":"` + docsRoot + `","to_dir":"` + restoreRoot + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/run", body)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var restoreResp restoreRunResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &restoreResp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !restoreResp.Verified || !restoreResp.Wrote {
+		t.Fatalf("unexpected restore flags: verified=%t wrote=%t", restoreResp.Verified, restoreResp.Wrote)
+	}
+	if restoreResp.SourcePath != docsRoot {
+		t.Fatalf("unexpected source path: got %q want %q", restoreResp.SourcePath, docsRoot)
+	}
+
+	trimmedDocsRoot := strings.TrimPrefix(filepath.Clean(docsRoot), string(filepath.Separator))
+	expectedTarget := filepath.Join(restoreRoot, trimmedDocsRoot)
+	if restoreResp.TargetPath != expectedTarget {
+		t.Fatalf("unexpected target path: got %q want %q", restoreResp.TargetPath, expectedTarget)
+	}
+
+	trimmedReportPath := strings.TrimPrefix(filepath.Clean(reportPath), string(filepath.Separator))
+	trimmedNotePath := strings.TrimPrefix(filepath.Clean(notePath), string(filepath.Separator))
+	trimmedOtherPath := strings.TrimPrefix(filepath.Clean(otherPath), string(filepath.Separator))
+
+	if got, err := os.ReadFile(filepath.Join(restoreRoot, trimmedReportPath)); err != nil {
+		t.Fatalf("read restored report: %v", err)
+	} else if string(got) != "quarterly report" {
+		t.Fatalf("unexpected report content: %q", string(got))
+	}
+	if got, err := os.ReadFile(filepath.Join(restoreRoot, trimmedNotePath)); err != nil {
+		t.Fatalf("read restored note: %v", err)
+	} else if string(got) != "notes" {
+		t.Fatalf("unexpected note content: %q", string(got))
+	}
+	if _, err := os.Stat(filepath.Join(restoreRoot, trimmedOtherPath)); !os.IsNotExist(err) {
+		t.Fatalf("unexpected restore outside subtree, stat err=%v", err)
+	}
+
+	status := d.snapshot()
+	if status.LastRestorePath != docsRoot {
+		t.Fatalf("unexpected last_restore_path: got %q want %q", status.LastRestorePath, docsRoot)
+	}
+}
+
 func TestRestoreRunEndpointRejectsExistingTargetWithoutOverwrite(t *testing.T) {
 	homeDir := t.TempDir()
 	srcRoot := filepath.Join(t.TempDir(), "src")
