@@ -10,7 +10,6 @@ struct BaxterRestoreView: View {
     @ObservedObject var settingsModel: BaxterSettingsModel
     var embedded: Bool = false
     let restoreRootDirectoryKey = "__root__"
-    let restorePlaceholderPrefix = "__restore_placeholder__:"
     @State var restorePrefix = ""
     @State var restoreContains = ""
     @State var restorePath = ""
@@ -20,6 +19,7 @@ struct BaxterRestoreView: View {
     @State var showRestoreAdvanced = false
     @State var restoreDestinationMode: RestoreDestinationMode = .original
     @State var isSourceColumnVisible = false
+    @State var expandedBrowserPaths: Set<String> = []
     @State var hasAutoLoadedRestore = false
     @State var restoreSearchDebounceTask: Task<Void, Never>?
     @State var browserFilter = ""
@@ -246,7 +246,7 @@ struct BaxterRestoreView: View {
 
     private var restoreBrowserPanel: some View {
         let filteredRoots = filteredRestoreBrowserRoots
-        let visibleRoots = decorateRestoreNodesForLazyExpansion(filteredRoots)
+        let isFiltering = !browserFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -270,7 +270,7 @@ struct BaxterRestoreView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
 
-            if visibleRoots.isEmpty {
+            if filteredRoots.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "tray")
                         .font(.system(size: 26))
@@ -284,51 +284,23 @@ struct BaxterRestoreView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 20)
             } else {
-                List {
-                    OutlineGroup(visibleRoots, children: \.childNodes) { node in
-                        if node.isPlaceholder {
-                            Text("Loading...")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .onAppear {
-                                    loadRestoreChildrenFromPlaceholder(node.path)
-                                }
-                        } else {
-                            let isSelected = selectedBrowserPath == node.path
-                            HStack(spacing: 6) {
-                                Label(node.name, systemImage: iconName(for: node.path))
-                                    .lineLimit(1)
-                                if loadingRestoreDirectoryPaths.contains(node.path) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                }
-                            }
-                            .padding(.vertical, 2)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                selectBrowserPath(node.path)
-                            }
-                            .listRowBackground(
-                                isSelected
-                                    ? Color.accentColor.opacity(0.24)
-                                    : Color.clear
-                            )
-                            .contextMenu {
-                                Button("Quick Look") {
-                                    selectBrowserPath(node.path)
-                                    presentQuickLook()
-                                }
-                                Button("Use for Restore") {
-                                    selectBrowserPath(node.path)
-                                }
-                            }
-                        }
-                    }
-                    .listRowSeparator(.hidden)
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .background(Color.clear)
+                RestoreBrowserTree(
+                    roots: filteredRoots,
+                    selectedPath: selectedBrowserPath,
+                    expandedPaths: $expandedBrowserPaths,
+                    loadingDirectoryPaths: loadingRestoreDirectoryPaths,
+                    forceExpanded: isFiltering,
+                    iconName: iconName(for:),
+                    iconColor: iconColor(for:),
+                    onClearSelection: clearBrowserSelection,
+                    onSelect: selectBrowserPath,
+                    onToggleExpansion: setBrowserNodeExpanded(path:isExpanded:),
+                    onQuickLook: { path in
+                        selectBrowserPath(path)
+                        presentQuickLook()
+                    },
+                    onUseForRestore: selectBrowserPath
+                )
             }
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
@@ -342,7 +314,7 @@ struct BaxterRestoreView: View {
             if let selectedPath = activeRestorePath {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: iconName(for: selectedPath))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(iconColor(for: selectedPath))
                     VStack(alignment: .leading, spacing: 2) {
                         Text((selectedPath as NSString).lastPathComponent)
                             .lineLimit(1)
