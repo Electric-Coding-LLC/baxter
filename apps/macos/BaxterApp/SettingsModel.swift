@@ -27,11 +27,13 @@ final class BaxterSettingsModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var errorMessage: String?
     @Published private(set) var configExists: Bool = false
+    @Published private(set) var hasUnsavedChanges: Bool = false
     @Published private(set) var validationErrors: [SettingsField: String] = [:]
     @Published private(set) var backupRootWarnings: [String: String] = [:]
+    private var persistedConfig: BaxterConfig = .default
 
     var canSave: Bool {
-        validationErrors.isEmpty
+        validationErrors.isEmpty && hasUnsavedChanges
     }
 
     var hasConfiguredKeySource: Bool {
@@ -90,6 +92,7 @@ final class BaxterSettingsModel: ObservableObject {
                 statusMessage = "Config not found. Showing defaults."
             }
             apply(config)
+            persistedConfig = draftConfig()
             validateDraft()
             errorMessage = nil
         } catch {
@@ -116,6 +119,8 @@ final class BaxterSettingsModel: ObservableObject {
             )
             try text.write(to: configURL, atomically: true, encoding: .utf8)
 
+            persistedConfig = config
+            hasUnsavedChanges = false
             statusMessage = "Saved settings to \(configURL.path)"
             errorMessage = nil
             configExists = true
@@ -128,6 +133,7 @@ final class BaxterSettingsModel: ObservableObject {
         let config = draftConfig()
         backupRootWarnings = backupRootIssues(for: config.backupRoots)
         validationErrors = validationIssues(for: config, backupRootWarnings: backupRootWarnings)
+        hasUnsavedChanges = config != persistedConfig
     }
 
     func chooseBackupRoots() {

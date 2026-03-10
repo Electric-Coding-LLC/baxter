@@ -28,7 +28,7 @@ enum StorageModeOption: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-struct BaxterConfig {
+struct BaxterConfig: Equatable {
     var backupRoots: [String]
     var excludePaths: [String]
     var excludeGlobs: [String]
