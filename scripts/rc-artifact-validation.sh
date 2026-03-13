@@ -110,9 +110,9 @@ run_logged_step() {
 
 {
   printf '# RC Artifact Validation Evidence\n\n'
-  printf '- Version: `%s`\n' "$version"
-  printf '- Date (UTC): `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '- Host: `%s`\n\n' "$(sw_vers -productVersion 2>/dev/null || uname -a)"
+  printf -- '- Version: `%s`\n' "$version"
+  printf -- '- Date (UTC): `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf -- '- Host: `%s`\n\n' "$(sw_vers -productVersion 2>/dev/null || uname -a)"
 } >"$evidence_path"
 
 run_logged_step "Verify artifact checksums" bash -lc "cd '$artifact_dir' && shasum -a 256 -c SHA256SUMS"
