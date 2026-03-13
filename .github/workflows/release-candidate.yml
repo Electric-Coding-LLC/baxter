@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.8"
           cache: true
@@ -40,7 +40,7 @@ jobs:
           BAXTER_RELEASE_SKIP_TESTS: "1"
         run: ./scripts/release.sh '${{ inputs.version }}'
       - name: Upload RC artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: baxter-${{ inputs.version }}
           path: dist/${{ inputs.version }}
@@ -51,11 +51,11 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Package BaxterApp RC artifact
         run: ./scripts/package-macos-app.sh --output-dir "dist/${{ inputs.version }}"
       - name: Upload RC app artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: baxter-app-${{ inputs.version }}
           path: dist/${{ inputs.version }}/Baxter-darwin-arm64.zip
@@ -67,14 +67,14 @@ jobs:
     needs: [build-rc, build-rc-macos-app]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Download RC artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: baxter-${{ inputs.version }}
           path: .ci/rc-artifacts
       - name: Download RC app artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: baxter-app-${{ inputs.version }}
           path: .ci/rc-app-artifact
@@ -100,14 +100,14 @@ jobs:
           cp -f "$HOME/Library/Logs/baxterd.err.log" .ci/launchd-logs/ 2>/dev/null || true
       - name: Upload launchd logs (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rc-launchd-logs-${{ github.run_id }}
           path: .ci/launchd-logs
           if-no-files-found: warn
       - name: Upload RC validation evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rc-validation-evidence-${{ inputs.version }}-${{ github.run_id }}
           path: .ci/rc-validation-evidence.md

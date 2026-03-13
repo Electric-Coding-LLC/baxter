@@ -9,8 +9,8 @@ jobs:
   build-cli-daemon:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.8"
           cache: true
@@ -32,7 +32,7 @@ jobs:
 
           (cd "$DIST_DIR" && sha256sum * > SHA256SUMS)
       - name: Upload CLI/daemon release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: baxter-release-cli-${{ github.ref_name }}
           path: dist/${{ github.ref_name }}
@@ -42,11 +42,11 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Package BaxterApp release artifact
         run: ./scripts/package-macos-app.sh --output-dir "dist/${GITHUB_REF_NAME}"
       - name: Upload macOS app release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: baxter-release-app-${{ github.ref_name }}
           path: dist/${{ github.ref_name }}/Baxter-darwin-arm64.zip
@@ -59,7 +59,7 @@ jobs:
       contents: write
     steps:
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: baxter-release-*
           path: .ci/release-assets
