@@ -131,7 +131,7 @@ func hydrateLatestWithMetadata(store storage.ObjectStore, metadata recovery.Meta
 	if err != nil {
 		return HydrateResult{}, err
 	}
-	key, err := remoteManifestKey(resolvePassphrase, salt)
+	key, err := remoteManifestKey(resolvePassphrase, metadata)
 	if err != nil {
 		return HydrateResult{}, err
 	}
@@ -174,7 +174,7 @@ func readVerifiedMetadata(cfg *config.Config, store storage.ObjectStore) (recove
 	return metadata, nil
 }
 
-func remoteManifestKey(resolvePassphrase PassphraseResolver, salt []byte) ([]byte, error) {
+func remoteManifestKey(resolvePassphrase PassphraseResolver, metadata recovery.Metadata) ([]byte, error) {
 	if resolvePassphrase == nil {
 		return nil, fmt.Errorf("passphrase resolver is required")
 	}
@@ -182,7 +182,11 @@ func remoteManifestKey(resolvePassphrase PassphraseResolver, salt []byte) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	return crypto.KeyFromPassphraseWithSalt(passphrase, salt), nil
+	keySet, err := recovery.KeySetFromMetadata(metadata, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	return keySet.Primary, nil
 }
 
 func readRemoteSnapshotManifest(store storage.ObjectStore, snapshotID string, key []byte) (*backup.Manifest, error) {

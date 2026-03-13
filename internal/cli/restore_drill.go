@@ -47,11 +47,11 @@ func runRestoreDrill(cfg *config.Config, opts restoreDrillOptions) error {
 		entries = entries[:opts.Limit]
 	}
 
-	keySet, err := encryptionKeys(cfg)
+	store, err := objectStoreFromConfig(cfg)
 	if err != nil {
 		return err
 	}
-	store, err := objectStoreFromConfig(cfg)
+	keySet, err := accessEncryptionKeys(cfg, store)
 	if err != nil {
 		return err
 	}

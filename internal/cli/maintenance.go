@@ -99,11 +99,11 @@ func runVerify(cfg *config.Config, opts verifyOptions) error {
 		entries = entries[:opts.Limit]
 	}
 
-	keys, err := encryptionKeys(cfg)
+	store, err := objectStoreFromConfig(cfg)
 	if err != nil {
 		return err
 	}
-	store, err := objectStoreFromConfig(cfg)
+	keys, err := accessEncryptionKeys(cfg, store)
 	if err != nil {
 		return err
 	}

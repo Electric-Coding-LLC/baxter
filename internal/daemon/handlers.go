@@ -224,7 +224,7 @@ func (d *Daemon) handleRestoreRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	keys, err := encryptionKeys(cfg)
+	keys, err := accessEncryptionKeys(cfg, store)
 	if err != nil {
 		d.setLastRestoreError(err.Error())
 		d.writeError(w, http.StatusBadRequest, "restore_key_unavailable", err.Error())

@@ -1,6 +1,7 @@
 package recovery
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -17,9 +18,13 @@ func TestWriteReadMetadataRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate salt: %v", err)
 	}
+	wrappedMasterKey, err := crypto.WrapKey(crypto.KeyFromPassphraseWithSalt("secret-passphrase", salt), bytes.Repeat([]byte{0x42}, 32))
+	if err != nil {
+		t.Fatalf("wrap master key: %v", err)
+	}
 
 	now := time.Date(2026, time.March, 12, 17, 0, 0, 0, time.UTC)
-	metadata, err := NewMetadata("primary-backup", salt, "20260312T170000.000000000Z", now)
+	metadata, err := NewMetadata("primary-backup", salt, "20260312T170000.000000000Z", wrappedMasterKey, now)
 	if err != nil {
 		t.Fatalf("new metadata: %v", err)
 	}
@@ -40,6 +45,9 @@ func TestWriteReadMetadataRoundTrip(t *testing.T) {
 	}
 	if got.LatestSnapshotID != metadata.LatestSnapshotID {
 		t.Fatalf("latest_snapshot_id mismatch: got %q want %q", got.LatestSnapshotID, metadata.LatestSnapshotID)
+	}
+	if got.WrappedMasterKey != metadata.WrappedMasterKey {
+		t.Fatalf("wrapped_master_key mismatch: got %q want %q", got.WrappedMasterKey, metadata.WrappedMasterKey)
 	}
 	if got.KDF != metadata.KDF {
 		t.Fatalf("kdf mismatch: got %#v want %#v", got.KDF, metadata.KDF)
@@ -88,7 +96,7 @@ func TestNewMetadataUsesCurrentKDFSettings(t *testing.T) {
 	}
 
 	now := time.Date(2026, time.March, 12, 18, 30, 0, 0, time.UTC)
-	metadata, err := NewMetadata("dogfood", salt, "", now)
+	metadata, err := NewMetadata("dogfood", salt, "", nil, now)
 	if err != nil {
 		t.Fatalf("new metadata: %v", err)
 	}
@@ -157,5 +165,30 @@ func TestReadMetadataRejectsUnknownSchemaVersion(t *testing.T) {
 	_, err = ReadMetadata(store)
 	if !errors.Is(err, ErrInvalidMetadata) {
 		t.Fatalf("expected ErrInvalidMetadata, got %v", err)
+	}
+}
+
+func TestValidateMetadataRejectsInvalidWrappedMasterKey(t *testing.T) {
+	metadata := Metadata{
+		SchemaVersion:    1,
+		BackupSetID:      "primary",
+		CreatedAt:        time.Date(2026, time.March, 12, 18, 30, 0, 0, time.UTC),
+		UpdatedAt:        time.Date(2026, time.March, 12, 18, 30, 0, 0, time.UTC),
+		WrappedMasterKey: "zz-not-hex",
+		KDF: KDFMetadata{
+			Algorithm:  "argon2id",
+			SaltHex:    "00112233445566778899aabbccddeeff",
+			Iterations: 3,
+			MemoryKiB:  64 * 1024,
+			Threads:    4,
+		},
+	}
+
+	err := ValidateMetadata(metadata)
+	if !errors.Is(err, ErrInvalidMetadata) {
+		t.Fatalf("expected ErrInvalidMetadata, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "wrapped_master_key") {
+		t.Fatalf("expected wrapped master key error, got %v", err)
 	}
 }

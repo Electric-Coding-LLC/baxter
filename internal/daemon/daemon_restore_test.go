@@ -65,7 +65,7 @@ func TestRestoreRunEndpoint(t *testing.T) {
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
 		KDFSalt:           daemonTestKDFSalt,
-		BackupSetID:       "local-test",
+		BackupSetID:       recovery.BackupSetID(cfg),
 		Store:             store,
 	})
 	if err != nil {
@@ -160,7 +160,7 @@ func TestRestoreRunEndpointVerifyOnlyDoesNotWrite(t *testing.T) {
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
 		KDFSalt:           daemonTestKDFSalt,
-		BackupSetID:       "local-test",
+		BackupSetID:       recovery.BackupSetID(cfg),
 		Store:             store,
 	})
 	if err != nil {
@@ -231,12 +231,17 @@ func TestRestoreRunEndpointFallsBackToRemoteMetadataWhenLocalCacheMissing(t *tes
 	if err != nil {
 		t.Fatalf("new object store: %v", err)
 	}
+	keySet, err := recovery.NewWrappedKeySet("daemon-restore-fallback-passphrase", daemonTestKDFSalt)
+	if err != nil {
+		t.Fatalf("create wrapped key set: %v", err)
+	}
 	_, err = backup.Run(cfg, backup.RunOptions{
 		ManifestPath:      manifestPath,
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
-		EncryptionKey:     crypto.KeyFromPassphraseWithSalt("daemon-restore-fallback-passphrase", daemonTestKDFSalt),
+		EncryptionKey:     keySet.Primary,
 		KDFSalt:           daemonTestKDFSalt,
+		WrappedMasterKey:  keySet.WrappedMasterKey,
 		BackupSetID:       recovery.BackupSetID(cfg),
 		Store:             store,
 	})
@@ -324,7 +329,7 @@ func TestRestoreRunEndpointRestoresDirectorySubtree(t *testing.T) {
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-directory-restore-passphrase"),
 		KDFSalt:           daemonTestKDFSalt,
-		BackupSetID:       "local-test",
+		BackupSetID:       recovery.BackupSetID(cfg),
 		Store:             store,
 	})
 	if err != nil {
@@ -426,7 +431,7 @@ func TestRestoreRunEndpointRejectsExistingTargetWithoutOverwrite(t *testing.T) {
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
 		KDFSalt:           daemonTestKDFSalt,
-		BackupSetID:       "local-test",
+		BackupSetID:       recovery.BackupSetID(cfg),
 		Store:             store,
 	})
 	if err != nil {
@@ -501,7 +506,7 @@ func TestRestoreRunEndpointChecksumMismatchDoesNotOverwrite(t *testing.T) {
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
 		KDFSalt:           daemonTestKDFSalt,
-		BackupSetID:       "local-test",
+		BackupSetID:       recovery.BackupSetID(cfg),
 		Store:             store,
 	})
 	if err != nil {
@@ -595,7 +600,7 @@ func TestRestoreRunEndpointReturnsObjectMissingCode(t *testing.T) {
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
 		KDFSalt:           daemonTestKDFSalt,
-		BackupSetID:       "local-test",
+		BackupSetID:       recovery.BackupSetID(cfg),
 		Store:             store,
 	})
 	if err != nil {

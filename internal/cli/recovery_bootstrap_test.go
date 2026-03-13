@@ -128,7 +128,7 @@ func TestBootstrapRecoveryCacheRejectsWrongPassphrase(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected bootstrap to fail with wrong passphrase")
 	}
-	if !strings.Contains(err.Error(), "decrypt remote snapshot manifest") {
+	if !strings.Contains(err.Error(), "unwrap master key") {
 		t.Fatalf("unexpected wrong passphrase error: %v", err)
 	}
 }
@@ -157,7 +157,7 @@ func seedRemoteRecoveryState(t *testing.T, cfg *config.Config, store storage.Obj
 		t.Fatalf("generate salt: %v", err)
 	}
 
-	keys, err := deriveEncryptionKeysWithSalt(passphrase, salt)
+	keys, err := recovery.NewWrappedKeySet(passphrase, salt)
 	if err != nil {
 		t.Fatalf("derive keys: %v", err)
 	}
@@ -166,8 +166,9 @@ func seedRemoteRecoveryState(t *testing.T, cfg *config.Config, store storage.Obj
 		ManifestPath:      manifestPath,
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: 30,
-		EncryptionKey:     keys.primary,
+		EncryptionKey:     keys.Primary,
 		KDFSalt:           salt,
+		WrappedMasterKey:  keys.WrappedMasterKey,
 		BackupSetID:       recovery.BackupSetID(cfg),
 		Store:             store,
 	}); err != nil {

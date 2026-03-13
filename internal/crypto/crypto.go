@@ -63,11 +63,37 @@ func NewKDFSalt() ([]byte, error) {
 	return salt, nil
 }
 
+func NewMasterKey() ([]byte, error) {
+	key := make([]byte, derivedKeyLength)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
 func ValidateKDFSalt(salt []byte) error {
 	if len(salt) != kdfSaltLength {
 		return errors.New("invalid KDF salt length")
 	}
 	return nil
+}
+
+func WrapKey(kek []byte, key []byte) ([]byte, error) {
+	if len(key) != derivedKeyLength {
+		return nil, errors.New("invalid master key length")
+	}
+	return EncryptBytes(kek, key)
+}
+
+func UnwrapKey(kek []byte, wrapped []byte) ([]byte, error) {
+	key, err := DecryptBytes(kek, wrapped)
+	if err != nil {
+		return nil, err
+	}
+	if len(key) != derivedKeyLength {
+		return nil, errors.New("invalid master key length")
+	}
+	return key, nil
 }
 
 func DecryptBytesWithAnyKey(keys [][]byte, payload []byte) ([]byte, error) {

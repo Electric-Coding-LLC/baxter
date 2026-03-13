@@ -57,13 +57,13 @@ func (d *Daemon) performVerify(ctx context.Context, cfg *config.Config) (backup.
 		entries = entries[:cfg.Verify.Limit]
 	}
 
-	keys, err := encryptionKeys(cfg)
-	if err != nil {
-		return backup.VerifyResult{}, err
-	}
 	store, err := d.objectStore(cfg)
 	if err != nil {
 		return backup.VerifyResult{}, fmt.Errorf("create object store: %w", err)
+	}
+	keys, err := accessEncryptionKeys(cfg, store)
+	if err != nil {
+		return backup.VerifyResult{}, err
 	}
 
 	result, err := backup.VerifyManifestEntriesWithKeys(entries, keys.candidates, store)

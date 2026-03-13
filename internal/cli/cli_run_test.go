@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -113,6 +115,35 @@ func TestRunBackupStatusPrintsManifestObjectAndSnapshotCounts(t *testing.T) {
 	}
 	if !strings.Contains(out, "created_at="+createdAt.Format("2006-01-02 15:04:05Z07:00")) {
 		t.Fatalf("status output missing created_at: %q", out)
+	}
+}
+
+func TestRunBackupRejectsMissingRecoveryMetadataForExistingLocalState(t *testing.T) {
+	setCLIHome(t)
+	t.Setenv(passphraseEnv, "backup-passphrase")
+
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcRoot, "doc.txt"), []byte("payload"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	if _, err := encryptionKey(cfg); err != nil {
+		t.Fatalf("seed local kdf state: %v", err)
+	}
+
+	err := runBackup(cfg)
+	if err == nil {
+		t.Fatal("expected backup to fail without recovery metadata")
+	}
+	if !strings.Contains(err.Error(), "recovery metadata not found for existing backup set") {
+		t.Fatalf("unexpected backup error: %v", err)
 	}
 }
 
