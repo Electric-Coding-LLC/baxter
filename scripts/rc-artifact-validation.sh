@@ -110,19 +110,19 @@ run_logged_step() {
 
 {
   printf '# RC Artifact Validation Evidence\n\n'
-  printf '- Version: `%s`\n' "$version"
-  printf '- Date (UTC): `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '- Host: `%s`\n\n' "$(sw_vers -productVersion 2>/dev/null || uname -a)"
+  printf -- '- Version: `%s`\n' "$version"
+  printf -- '- Date (UTC): `%s`\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf -- '- Host: `%s`\n\n' "$(sw_vers -productVersion 2>/dev/null || uname -a)"
 } >"$evidence_path"
 
 run_logged_step "Verify artifact checksums" bash -lc "cd '$artifact_dir' && shasum -a 256 -c SHA256SUMS"
+chmod 0755 "$baxter_artifact" "$baxterd_artifact"
 
 mkdir -p "$bin_dir"
 install -m 0755 "$baxter_artifact" "$baxter_installed"
-install -m 0755 "$baxterd_artifact" "$baxterd_installed"
 
 run_logged_step "Initialize config for first backup" bash -lc "cd '$repo_root' && ./scripts/init-config.sh '$backup_root'"
-run_logged_step "Install and start launchd daemon (initial install)" bash -lc "cd '$repo_root' && BAXTERD_BINARY_PATH='$baxterd_installed' ./scripts/install-launchd.sh"
+run_logged_step "Install and start launchd daemon (initial install)" bash -lc "cd '$repo_root' && BAXTERD_BINARY_PATH='$baxterd_artifact' ./scripts/install-launchd.sh"
 run_logged_step "Run launchd IPC smoke check (initial install)" bash -lc "cd '$repo_root' && ./scripts/smoke-launchd-ipc.sh"
 run_logged_step "Run first backup from installed CLI" "$baxter_installed" backup run
 run_logged_step "Read backup status from installed CLI" "$baxter_installed" backup status
@@ -131,17 +131,15 @@ run_logged_step "Stop daemon before upgrade" bash -lc "cd '$repo_root' && ./scri
 cp "$baxter_installed" "$bin_dir/baxter.prev"
 cp "$baxterd_installed" "$bin_dir/baxterd.prev"
 install -m 0755 "$baxter_artifact" "$baxter_installed"
-install -m 0755 "$baxterd_artifact" "$baxterd_installed"
 
-run_logged_step "Install and start launchd daemon (upgrade path)" bash -lc "cd '$repo_root' && BAXTERD_BINARY_PATH='$baxterd_installed' ./scripts/install-launchd.sh"
+run_logged_step "Install and start launchd daemon (upgrade path)" bash -lc "cd '$repo_root' && BAXTERD_BINARY_PATH='$baxterd_artifact' ./scripts/install-launchd.sh"
 run_logged_step "Run launchd IPC smoke check (post-upgrade)" bash -lc "cd '$repo_root' && ./scripts/smoke-launchd-ipc.sh"
 run_logged_step "Read backup status after upgrade" "$baxter_installed" backup status
 
 run_logged_step "Stop daemon before rollback" bash -lc "cd '$repo_root' && ./scripts/uninstall-launchd.sh"
 install -m 0755 "$bin_dir/baxter.prev" "$baxter_installed"
-install -m 0755 "$bin_dir/baxterd.prev" "$baxterd_installed"
 
-run_logged_step "Install and start launchd daemon (rollback path)" bash -lc "cd '$repo_root' && BAXTERD_BINARY_PATH='$baxterd_installed' ./scripts/install-launchd.sh"
+run_logged_step "Install and start launchd daemon (rollback path)" bash -lc "cd '$repo_root' && BAXTERD_BINARY_PATH='$bin_dir/baxterd.prev' ./scripts/install-launchd.sh"
 run_logged_step "Run launchd IPC smoke check (post-rollback)" bash -lc "cd '$repo_root' && ./scripts/smoke-launchd-ipc.sh"
 run_logged_step "Read backup status after rollback" "$baxter_installed" backup status
 
