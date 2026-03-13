@@ -136,6 +136,47 @@ func TestDecryptRejectsUnknownCompressionAlgorithm(t *testing.T) {
 	}
 }
 
+func TestWrapUnwrapKeyRoundTrip(t *testing.T) {
+	kek := KeyFromPassphrase("wrap-passphrase")
+	masterKey, err := NewMasterKey()
+	if err != nil {
+		t.Fatalf("generate master key: %v", err)
+	}
+
+	wrapped, err := WrapKey(kek, masterKey)
+	if err != nil {
+		t.Fatalf("wrap key: %v", err)
+	}
+	if bytes.Equal(wrapped, masterKey) {
+		t.Fatal("wrapped master key should not match plaintext")
+	}
+
+	unwrapped, err := UnwrapKey(kek, wrapped)
+	if err != nil {
+		t.Fatalf("unwrap key: %v", err)
+	}
+	if !bytes.Equal(unwrapped, masterKey) {
+		t.Fatal("unwrapped master key mismatch")
+	}
+}
+
+func TestUnwrapKeyRejectsWrongKEK(t *testing.T) {
+	kek := KeyFromPassphrase("wrap-passphrase")
+	wrongKEK := KeyFromPassphrase("other-passphrase")
+	masterKey, err := NewMasterKey()
+	if err != nil {
+		t.Fatalf("generate master key: %v", err)
+	}
+
+	wrapped, err := WrapKey(kek, masterKey)
+	if err != nil {
+		t.Fatalf("wrap key: %v", err)
+	}
+	if _, err := UnwrapKey(wrongKEK, wrapped); err == nil {
+		t.Fatal("expected unwrap failure with wrong kek")
+	}
+}
+
 func encryptV2ForTest(key []byte, plaintext []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {

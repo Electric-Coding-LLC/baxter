@@ -2,19 +2,16 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
 	"baxter/internal/recovery"
 	"baxter/internal/state"
+	"baxter/internal/storage"
 )
 
 func runBackup(cfg *config.Config) error {
-	keys, err := encryptionKeys(cfg)
-	if err != nil {
-		return err
-	}
-
 	manifestPath, err := state.ManifestPath()
 	if err != nil {
 		return err
@@ -28,6 +25,14 @@ func runBackup(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	allowCreateWrappedIfMissing, err := freshBackupState(manifestPath, snapshotDir, store)
+	if err != nil {
+		return err
+	}
+	keys, err := backupEncryptionKeys(cfg, store, allowCreateWrappedIfMissing)
+	if err != nil {
+		return err
+	}
 
 	result, err := backup.Run(cfg, backup.RunOptions{
 		ManifestPath:       manifestPath,
@@ -36,6 +41,7 @@ func runBackup(cfg *config.Config) error {
 		SnapshotMaxAgeDays: cfg.Retention.ManifestMaxAgeDays,
 		EncryptionKey:      keys.primary,
 		KDFSalt:            keys.salt,
+		WrappedMasterKey:   keys.wrapped,
 		BackupSetID:        recovery.BackupSetID(cfg),
 		Store:              store,
 	})
@@ -45,6 +51,27 @@ func runBackup(cfg *config.Config) error {
 
 	fmt.Printf("backup complete: uploaded=%d removed=%d total=%d\n", result.Uploaded, result.Removed, result.Total)
 	return nil
+}
+
+func freshBackupState(manifestPath string, snapshotDir string, store storage.ObjectStore) (bool, error) {
+	saltPath, err := state.KDFSaltPath()
+	if err != nil {
+		return false, err
+	}
+	snapshots, err := backup.ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		return false, err
+	}
+	keys, err := store.ListKeys()
+	if err != nil {
+		return false, err
+	}
+	return !fileExists(manifestPath) && len(snapshots) == 0 && !fileExists(saltPath) && len(keys) == 0, nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func backupStatus(cfg *config.Config) error {

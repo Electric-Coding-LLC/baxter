@@ -28,6 +28,10 @@ func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) 
 	if err != nil {
 		return err
 	}
+	keys, err := accessEncryptionKeys(cfg, store)
+	if err != nil {
+		return err
+	}
 
 	targetPath, err := resolvedRestorePath(selection.SourcePath, opts.ToDir)
 	if err != nil {
@@ -37,11 +41,6 @@ func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) 
 	if opts.DryRun {
 		fmt.Printf("restore dry-run: source=%s target=%s overwrite=%t\n", selection.SourcePath, targetPath, opts.Overwrite)
 		return nil
-	}
-
-	keys, err := encryptionKeys(cfg)
-	if err != nil {
-		return err
 	}
 
 	type restoreTarget struct {

@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ type RunOptions struct {
 	UploadMaxAttempts  int
 	EncryptionKey      []byte
 	KDFSalt            []byte
+	WrappedMasterKey   []byte
 	BackupSetID        string
 	Store              storage.ObjectStore
 }
@@ -165,10 +167,18 @@ func writeRecoveryMetadata(opts RunOptions, latestSnapshotID string, now time.Ti
 		if metadata.KDF.SaltHex != hex.EncodeToString(opts.KDFSalt) {
 			return fmt.Errorf("recovery metadata kdf salt mismatch")
 		}
+		if len(opts.WrappedMasterKey) > 0 {
+			if existing, err := metadata.WrappedMasterKeyBytes(); err != nil {
+				return err
+			} else if len(existing) > 0 && !bytes.Equal(existing, opts.WrappedMasterKey) {
+				return fmt.Errorf("recovery metadata wrapped master key mismatch")
+			}
+			metadata.WrappedMasterKey = hex.EncodeToString(opts.WrappedMasterKey)
+		}
 		metadata.LatestSnapshotID = latestSnapshotID
 		metadata.UpdatedAt = now.UTC()
 	case errors.Is(err, recovery.ErrMetadataNotFound):
-		metadata, err = recovery.NewMetadata(opts.BackupSetID, opts.KDFSalt, latestSnapshotID, now)
+		metadata, err = recovery.NewMetadata(opts.BackupSetID, opts.KDFSalt, latestSnapshotID, opts.WrappedMasterKey, now)
 		if err != nil {
 			return fmt.Errorf("build recovery metadata: %w", err)
 		}

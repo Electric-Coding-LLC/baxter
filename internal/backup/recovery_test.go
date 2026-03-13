@@ -18,7 +18,10 @@ func TestRunWritesEncryptedRemoteSnapshotAndRecoveryMetadata(t *testing.T) {
 	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
 	snapshotDir := filepath.Join(t.TempDir(), "manifests")
 	objectsDir := filepath.Join(t.TempDir(), "objects")
-	key := []byte("01234567890123456789012345678901")
+	keySet, err := recovery.NewWrappedKeySet("backup-recovery-passphrase", testKDFSalt)
+	if err != nil {
+		t.Fatalf("create wrapped key set: %v", err)
+	}
 
 	filePath := filepath.Join(root, "doc.txt")
 	if err := os.WriteFile(filePath, []byte("hello"), 0o600); err != nil {
@@ -38,8 +41,9 @@ func TestRunWritesEncryptedRemoteSnapshotAndRecoveryMetadata(t *testing.T) {
 		ManifestPath:      manifestPath,
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: 30,
-		EncryptionKey:     key,
+		EncryptionKey:     keySet.Primary,
 		KDFSalt:           testKDFSalt,
+		WrappedMasterKey:  keySet.WrappedMasterKey,
 		BackupSetID:       recovery.BackupSetID(cfg),
 		Store:             store,
 	}); err != nil {
@@ -66,7 +70,7 @@ func TestRunWritesEncryptedRemoteSnapshotAndRecoveryMetadata(t *testing.T) {
 		t.Fatal("remote snapshot manifest should be encrypted")
 	}
 
-	plainManifest, err := crypto.DecryptBytes(key, encryptedManifest)
+	plainManifest, err := crypto.DecryptBytes(keySet.Primary, encryptedManifest)
 	if err != nil {
 		t.Fatalf("decrypt remote snapshot: %v", err)
 	}
@@ -92,6 +96,9 @@ func TestRunWritesEncryptedRemoteSnapshotAndRecoveryMetadata(t *testing.T) {
 	}
 	if metadata.LatestSnapshotID != snapshots[0].ID {
 		t.Fatalf("unexpected latest snapshot id: got %q want %q", metadata.LatestSnapshotID, snapshots[0].ID)
+	}
+	if metadata.WrappedMasterKey == "" {
+		t.Fatal("expected wrapped master key in recovery metadata")
 	}
 }
 

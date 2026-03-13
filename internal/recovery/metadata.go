@@ -36,6 +36,7 @@ type Metadata struct {
 	CreatedAt        time.Time   `json:"created_at"`
 	UpdatedAt        time.Time   `json:"updated_at"`
 	LatestSnapshotID string      `json:"latest_snapshot_id,omitempty"`
+	WrappedMasterKey string      `json:"wrapped_master_key,omitempty"`
 	KDF              KDFMetadata `json:"kdf"`
 }
 
@@ -54,7 +55,25 @@ func MetadataObjectKey() string {
 	return metadataObjectKey
 }
 
-func NewMetadata(backupSetID string, salt []byte, latestSnapshotID string, now time.Time) (Metadata, error) {
+func (metadata Metadata) HasWrappedMasterKey() bool {
+	return strings.TrimSpace(metadata.WrappedMasterKey) != ""
+}
+
+func (metadata Metadata) WrappedMasterKeyBytes() ([]byte, error) {
+	if !metadata.HasWrappedMasterKey() {
+		return nil, nil
+	}
+	wrapped, err := hex.DecodeString(strings.TrimSpace(metadata.WrappedMasterKey))
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid wrapped_master_key: %v", ErrInvalidMetadata, err)
+	}
+	if len(wrapped) == 0 {
+		return nil, fmt.Errorf("%w: wrapped_master_key is required", ErrInvalidMetadata)
+	}
+	return wrapped, nil
+}
+
+func NewMetadata(backupSetID string, salt []byte, latestSnapshotID string, wrappedMasterKey []byte, now time.Time) (Metadata, error) {
 	trimmedBackupSetID := strings.TrimSpace(backupSetID)
 	if trimmedBackupSetID == "" {
 		return Metadata{}, fmt.Errorf("%w: backup_set_id is required", ErrInvalidMetadata)
@@ -73,6 +92,7 @@ func NewMetadata(backupSetID string, salt []byte, latestSnapshotID string, now t
 		CreatedAt:        now.UTC(),
 		UpdatedAt:        now.UTC(),
 		LatestSnapshotID: strings.TrimSpace(latestSnapshotID),
+		WrappedMasterKey: hex.EncodeToString(wrappedMasterKey),
 		KDF: KDFMetadata{
 			Algorithm:  params.Algorithm,
 			SaltHex:    hex.EncodeToString(salt),
@@ -141,6 +161,9 @@ func ValidateMetadata(metadata Metadata) error {
 		return fmt.Errorf("%w: unsupported kdf algorithm %q", ErrInvalidMetadata, metadata.KDF.Algorithm)
 	}
 	if _, err := metadata.KDFSalt(); err != nil {
+		return err
+	}
+	if _, err := metadata.WrappedMasterKeyBytes(); err != nil {
 		return err
 	}
 	if metadata.KDF.Iterations == 0 {
