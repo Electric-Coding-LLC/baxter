@@ -103,7 +103,12 @@ struct BaxterWorkspaceView: View {
                     case .restore:
                         BaxterRestoreView(statusModel: statusModel, settingsModel: settingsModel, embedded: true)
                     case .settings:
-                        BaxterSettingsView(model: settingsModel, statusModel: statusModel, embedded: true)
+                        BaxterSettingsView(
+                            model: settingsModel,
+                            statusModel: statusModel,
+                            onRecoveryConnected: { router.selectedSection = .restore },
+                            embedded: true
+                        )
                     case .diagnostics:
                         BaxterDiagnosticsView(statusModel: statusModel, settingsModel: settingsModel, embedded: true)
                     }

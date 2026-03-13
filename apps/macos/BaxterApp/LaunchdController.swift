@@ -105,6 +105,25 @@ enum LaunchdController {
         }
     }
 
+    static func runRecoveryBootstrap(passphrase: String) async throws -> String {
+        let trimmedPassphrase = passphrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPassphrase.isEmpty else {
+            throw LaunchdError.missingPassphrase
+        }
+        guard hasConfigFile() else {
+            throw LaunchdError.missingConfig(configPath)
+        }
+
+        let binaryPath = try await ensureCLIBinary()
+        let result = try await runProcess(
+            executable: binaryPath,
+            arguments: ["recovery", "bootstrap"],
+            environment: ["BAXTER_PASSPHRASE": trimmedPassphrase]
+        )
+        let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return output.isEmpty ? "Recovery bootstrap complete." : output
+    }
+
     private static func runLaunchctl(_ arguments: [String]) async throws -> CommandResult {
         try await runProcess(executable: "/bin/launchctl", arguments: arguments)
     }
@@ -113,11 +132,17 @@ enum LaunchdController {
         try await runProcessAllowFailure(executable: "/bin/launchctl", arguments: arguments)
     }
 
-    private static func runProcess(executable: String, arguments: [String], currentDirectory: URL? = nil) async throws -> CommandResult {
+    private static func runProcess(
+        executable: String,
+        arguments: [String],
+        currentDirectory: URL? = nil,
+        environment: [String: String] = [:]
+    ) async throws -> CommandResult {
         let result = try await runProcessAllowFailure(
             executable: executable,
             arguments: arguments,
-            currentDirectory: currentDirectory
+            currentDirectory: currentDirectory,
+            environment: environment
         )
         if result.status != 0 {
             throw LaunchdError.commandFailed(command: executable, arguments: arguments, stderr: result.stderr)
@@ -125,7 +150,12 @@ enum LaunchdController {
         return result
     }
 
-    private static func runProcessAllowFailure(executable: String, arguments: [String], currentDirectory: URL? = nil) async throws -> CommandResult {
+    private static func runProcessAllowFailure(
+        executable: String,
+        arguments: [String],
+        currentDirectory: URL? = nil,
+        environment: [String: String] = [:]
+    ) async throws -> CommandResult {
         try await Task.detached(priority: .userInitiated) {
             let process = Process()
             let outputPipe = Pipe()
@@ -134,6 +164,9 @@ enum LaunchdController {
             process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = arguments
             process.currentDirectoryURL = currentDirectory
+            if !environment.isEmpty {
+                process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+            }
             process.standardOutput = outputPipe
             process.standardError = errorPipe
 
@@ -204,6 +237,30 @@ enum LaunchdController {
             throw LaunchdError.daemonBinaryMissing(daemonBinaryPath)
         }
         return daemonBinaryPath
+    }
+
+    private static func ensureCLIBinary() async throws -> String {
+        let fileManager = FileManager.default
+        if try installBundledHelpersIfAvailable(),
+           fileManager.isExecutableFile(atPath: cliBinaryPath) {
+            return cliBinaryPath
+        }
+        if fileManager.isExecutableFile(atPath: cliBinaryPath) {
+            return cliBinaryPath
+        }
+        guard let repoRoot = resolveRepositoryRoot() else {
+            throw LaunchdError.repoRootNotFound
+        }
+
+        _ = try await runProcess(
+            executable: "/usr/bin/env",
+            arguments: ["go", "build", "-o", cliBinaryPath, "./cmd/baxter"],
+            currentDirectory: repoRoot
+        )
+        guard fileManager.isExecutableFile(atPath: cliBinaryPath) else {
+            throw LaunchdError.cliBinaryMissing(cliBinaryPath)
+        }
+        return cliBinaryPath
     }
 
     private static func installBundledHelpersIfAvailable() throws -> Bool {
@@ -374,8 +431,10 @@ private struct CommandResult {
 
 private enum LaunchdError: LocalizedError {
     case missingConfig(String)
+    case missingPassphrase
     case repoRootNotFound
     case daemonBinaryMissing(String)
+    case cliBinaryMissing(String)
     case executionFailed(String)
     case commandFailed(command: String, arguments: [String], stderr: String)
 
@@ -383,16 +442,21 @@ private enum LaunchdError: LocalizedError {
         switch self {
         case .missingConfig(let path):
             return "Config not found at \(path). Open Settings and save config first."
+        case .missingPassphrase:
+            return "Passphrase is required."
         case .repoRootNotFound:
-            return "Unable to find a bundled baxterd or auto-build one from the repo. Set BAXTER_REPO_ROOT for dev builds or install from the packaged app."
+            return "Unable to find bundled Baxter helpers or auto-build them from the repo. Set BAXTER_REPO_ROOT for dev builds or install from the packaged app."
         case .daemonBinaryMissing(let path):
             return "baxterd binary missing at \(path) after install/build."
+        case .cliBinaryMissing(let path):
+            return "baxter binary missing at \(path) after install/build."
         case .executionFailed(let reason):
-            return "Failed to execute launchctl: \(reason)"
-        case .commandFailed(_, let arguments, let stderr):
+            return "Failed to execute command: \(reason)"
+        case .commandFailed(let command, let arguments, let stderr):
+            let executable = URL(fileURLWithPath: command).lastPathComponent
             let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             if detail.isEmpty {
-                return "launchctl \(arguments.joined(separator: " ")) failed."
+                return "\(executable) \(arguments.joined(separator: " ")) failed."
             }
             return detail
         }

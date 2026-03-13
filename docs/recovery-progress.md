@@ -35,7 +35,7 @@ That means losing the machine can also mean losing the metadata needed to restor
 | R4 | Restore fallback to remote metadata | done | Shared manifest loading now falls back to remote recovery metadata and rehydrates local cache when local restore state is missing or stale. |
 | R5 | Backup master key wrapping | done | New backups now generate wrapped master keys, encrypt objects/manifests with them, and resolve them through recovery metadata with legacy decrypt fallback. |
 | R6 | Legacy backup-set migration | done | Existing S3-backed sets now adopt recovery metadata and wrapped keys on the next backup without reuploading unchanged objects, while keeping legacy decrypt fallback. |
-| R7 | App recovery UX | not started | Add a first-run `Connect Existing Backup` flow after CLI path is proven. |
+| R7 | App recovery UX | done | The macOS app now offers `Connect Existing Backup`, saves the passphrase to the configured keychain item, bootstraps recovery metadata through the CLI helper, and lands in Restore. |
 
 Status values:
 
@@ -169,13 +169,13 @@ Definition of done:
 
 ## Next Chunk
 
-Current recommended next chunk: `R7`
+Current recommended next chunk: `none`
 
 Why:
 
-- R6 is now complete.
-- The remaining recovery roadmap item is app onboarding for an existing backup set.
-- Backend recovery primitives are now in place for the app flow to build on.
+- R7 is now complete.
+- The app can onboard an existing backup set without CLI-only recovery steps.
+- The recovery roadmap items in this document are complete.
 
 ## Validation Checklist
 

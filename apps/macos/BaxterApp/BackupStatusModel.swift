@@ -64,6 +64,8 @@ final class BackupStatusModel: ObservableObject {
     @Published var selectedSnapshot: String = latestSnapshotSelection
     @Published var isSnapshotsBusy: Bool = false
     @Published var snapshotsMessage: String?
+    @Published var recoveryMessage: String?
+    @Published var isRecoveryBusy: Bool = false
     @Published var notifyOnSuccess: Bool = false {
         didSet {
             notificationSettings.notifyOnSuccess = notifyOnSuccess
@@ -76,6 +78,8 @@ final class BackupStatusModel: ObservableObject {
     let queryLaunchdState: () async -> DaemonServiceState
     let startLaunchd: () async throws -> String
     let stopLaunchd: () async throws -> String
+    let storePassphraseInKeychain: (String, String, String) async throws -> Void
+    let runRecoveryBootstrap: (String) async throws -> String
     let hasConfigFile: () -> Bool
     let nowProvider: () -> Date
     let notificationSettings: NotificationSettingsStore
@@ -99,6 +103,12 @@ final class BackupStatusModel: ObservableObject {
         queryLaunchdState: @escaping () async -> DaemonServiceState = { await LaunchdController.queryState() },
         startLaunchd: @escaping () async throws -> String = { try await LaunchdController.start() },
         stopLaunchd: @escaping () async throws -> String = { try await LaunchdController.stop() },
+        storePassphraseInKeychain: @escaping (String, String, String) async throws -> Void = { passphrase, service, account in
+            try await KeychainPassphraseStore.store(passphrase: passphrase, service: service, account: account)
+        },
+        runRecoveryBootstrap: @escaping (String) async throws -> String = { passphrase in
+            try await LaunchdController.runRecoveryBootstrap(passphrase: passphrase)
+        },
         hasConfigFile: @escaping () -> Bool = { LaunchdController.hasConfigFile() },
         nowProvider: @escaping () -> Date = Date.init,
         notificationSettings: NotificationSettingsStore = .shared,
@@ -111,6 +121,8 @@ final class BackupStatusModel: ObservableObject {
         self.queryLaunchdState = queryLaunchdState
         self.startLaunchd = startLaunchd
         self.stopLaunchd = stopLaunchd
+        self.storePassphraseInKeychain = storePassphraseInKeychain
+        self.runRecoveryBootstrap = runRecoveryBootstrap
         self.hasConfigFile = hasConfigFile
         self.nowProvider = nowProvider
         self.notificationSettings = notificationSettings
