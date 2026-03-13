@@ -39,6 +39,17 @@ type Metadata struct {
 	KDF              KDFMetadata `json:"kdf"`
 }
 
+func (metadata Metadata) KDFSalt() ([]byte, error) {
+	salt, err := hex.DecodeString(strings.TrimSpace(metadata.KDF.SaltHex))
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid salt_hex: %v", ErrInvalidMetadata, err)
+	}
+	if err := crypto.ValidateKDFSalt(salt); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidMetadata, err)
+	}
+	return salt, nil
+}
+
 func MetadataObjectKey() string {
 	return metadataObjectKey
 }
@@ -129,12 +140,8 @@ func ValidateMetadata(metadata Metadata) error {
 	if metadata.KDF.Algorithm != crypto.CurrentKDFParams().Algorithm {
 		return fmt.Errorf("%w: unsupported kdf algorithm %q", ErrInvalidMetadata, metadata.KDF.Algorithm)
 	}
-	salt, err := hex.DecodeString(strings.TrimSpace(metadata.KDF.SaltHex))
-	if err != nil {
-		return fmt.Errorf("%w: invalid salt_hex: %v", ErrInvalidMetadata, err)
-	}
-	if err := crypto.ValidateKDFSalt(salt); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidMetadata, err)
+	if _, err := metadata.KDFSalt(); err != nil {
+		return err
 	}
 	if metadata.KDF.Iterations == 0 {
 		return fmt.Errorf("%w: kdf iterations must be > 0", ErrInvalidMetadata)

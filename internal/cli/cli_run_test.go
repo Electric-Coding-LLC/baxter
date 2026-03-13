@@ -33,6 +33,8 @@ func TestRunRejectsUnknownCommands(t *testing.T) {
 		{name: "unknown top-level", args: []string{"nope"}, want: "usage: baxter"},
 		{name: "missing backup subcommand", args: []string{"backup"}, want: "missing backup subcommand"},
 		{name: "unknown backup subcommand", args: []string{"backup", "nope"}, want: "unknown backup subcommand"},
+		{name: "missing recovery subcommand", args: []string{"recovery"}, want: "missing recovery subcommand"},
+		{name: "unknown recovery subcommand", args: []string{"recovery", "nope"}, want: "unknown recovery subcommand"},
 		{name: "unknown snapshot subcommand", args: []string{"snapshot", "nope"}, want: "unknown snapshot subcommand"},
 	}
 
