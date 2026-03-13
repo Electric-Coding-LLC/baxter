@@ -87,11 +87,21 @@ func Run(args []string) error {
 			return err
 		}
 		return runRestoreDrill(cfg, opts)
+	case "recovery":
+		if len(rest) < 2 {
+			return errors.New("missing recovery subcommand (bootstrap)")
+		}
+		switch rest[1] {
+		case "bootstrap":
+			return runRecoveryBootstrap(cfg)
+		default:
+			return errors.New("unknown recovery subcommand")
+		}
 	default:
 		return usageError()
 	}
 }
 
 func usageError() error {
-	return errors.New("usage: baxter [-config path] backup run|status | snapshot list [--limit n] | gc [--dry-run] | verify [--snapshot latest|id|RFC3339] [--prefix path] [--limit n] [--sample n] | restore-drill [--snapshot latest|id|RFC3339] [--prefix path] [--sample n] [--limit n] | restore list [--snapshot latest|id|RFC3339] [--prefix path] [--contains text] | restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|id|RFC3339] <path>")
+	return errors.New("usage: baxter [-config path] backup run|status | snapshot list [--limit n] | recovery bootstrap | gc [--dry-run] | verify [--snapshot latest|id|RFC3339] [--prefix path] [--limit n] [--sample n] | restore-drill [--snapshot latest|id|RFC3339] [--prefix path] [--sample n] [--limit n] | restore list [--snapshot latest|id|RFC3339] [--prefix path] [--contains text] | restore [--dry-run] [--verify-only] [--to dir] [--overwrite] [--snapshot latest|id|RFC3339] <path>")
 }

@@ -130,16 +130,24 @@ type encryptionKeySet struct {
 }
 
 func encryptionKeys(cfg *config.Config) (encryptionKeySet, error) {
+	passphrase, err := encryptionPassphrase(cfg)
+	if err != nil {
+		return encryptionKeySet{}, err
+	}
+	return deriveEncryptionKeys(passphrase)
+}
+
+func encryptionPassphrase(cfg *config.Config) (string, error) {
 	passphrase := os.Getenv(passphraseEnv)
 	if passphrase != "" {
-		return deriveEncryptionKeys(passphrase)
+		return passphrase, nil
 	}
 
 	passphrase, err := crypto.PassphraseFromKeychain(cfg.Encryption.KeychainService, cfg.Encryption.KeychainAccount)
 	if err != nil {
-		return encryptionKeySet{}, fmt.Errorf("no %s set and keychain lookup failed: %w", passphraseEnv, err)
+		return "", fmt.Errorf("no %s set and keychain lookup failed: %w", passphraseEnv, err)
 	}
-	return deriveEncryptionKeys(passphrase)
+	return passphrase, nil
 }
 
 func deriveEncryptionKeys(passphrase string) (encryptionKeySet, error) {
@@ -147,7 +155,13 @@ func deriveEncryptionKeys(passphrase string) (encryptionKeySet, error) {
 	if err != nil {
 		return encryptionKeySet{}, err
 	}
+	return deriveEncryptionKeysWithSalt(passphrase, salt)
+}
 
+func deriveEncryptionKeysWithSalt(passphrase string, salt []byte) (encryptionKeySet, error) {
+	if err := crypto.ValidateKDFSalt(salt); err != nil {
+		return encryptionKeySet{}, fmt.Errorf("invalid KDF salt: %w", err)
+	}
 	primary := crypto.KeyFromPassphraseWithSalt(passphrase, salt)
 	legacy := crypto.KeyFromPassphrase(passphrase)
 	candidates := [][]byte{primary}
@@ -162,35 +176,62 @@ func deriveEncryptionKeys(passphrase string) (encryptionKeySet, error) {
 	}, nil
 }
 
-func readOrCreateKDFSalt() ([]byte, error) {
+func readKDFSalt() ([]byte, error) {
 	saltPath, err := state.KDFSaltPath()
 	if err != nil {
 		return nil, err
 	}
 
-	if salt, err := os.ReadFile(saltPath); err == nil {
-		if err := crypto.ValidateKDFSalt(salt); err != nil {
-			return nil, fmt.Errorf("invalid KDF salt at %s: %w", saltPath, err)
+	salt, err := os.ReadFile(saltPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, err
 		}
-		return salt, nil
-	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("read KDF salt: %w", err)
 	}
+	if err := crypto.ValidateKDFSalt(salt); err != nil {
+		return nil, fmt.Errorf("invalid KDF salt at %s: %w", saltPath, err)
+	}
+	return salt, nil
+}
 
-	salt, err := crypto.NewKDFSalt()
-	if err != nil {
-		return nil, fmt.Errorf("generate KDF salt: %w", err)
+func persistKDFSalt(salt []byte) error {
+	if err := crypto.ValidateKDFSalt(salt); err != nil {
+		return fmt.Errorf("invalid KDF salt: %w", err)
 	}
 
+	saltPath, err := state.KDFSaltPath()
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(saltPath), 0o755); err != nil {
-		return nil, fmt.Errorf("create state dir: %w", err)
+		return fmt.Errorf("create state dir: %w", err)
 	}
 	tmpPath := saltPath + ".tmp"
 	if err := os.WriteFile(tmpPath, salt, 0o600); err != nil {
-		return nil, fmt.Errorf("write KDF salt: %w", err)
+		return fmt.Errorf("write KDF salt: %w", err)
 	}
 	if err := os.Rename(tmpPath, saltPath); err != nil {
-		return nil, fmt.Errorf("persist KDF salt: %w", err)
+		return fmt.Errorf("persist KDF salt: %w", err)
+	}
+	return nil
+}
+
+func readOrCreateKDFSalt() ([]byte, error) {
+	salt, err := readKDFSalt()
+	if err == nil {
+		return salt, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	salt, err = crypto.NewKDFSalt()
+	if err != nil {
+		return nil, fmt.Errorf("generate KDF salt: %w", err)
+	}
+	if err := persistKDFSalt(salt); err != nil {
+		return nil, err
 	}
 	return salt, nil
 }

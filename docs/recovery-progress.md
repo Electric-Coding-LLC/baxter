@@ -31,8 +31,8 @@ That means losing the machine can also mean losing the metadata needed to restor
 | --- | --- | --- | --- |
 | R1 | Remote recovery metadata foundation | done | Recovery metadata schema, storage key, tests, and backup-path updates are in place. |
 | R2 | Remote encrypted manifest snapshots | done | Successful backups now upload encrypted snapshot manifests and update remote recovery metadata with the latest snapshot ID. |
-| R3 | CLI recovery bootstrap | not started | Fresh machine can reconnect to storage, fetch metadata, and rebuild local cache. |
-| R4 | Restore fallback to remote metadata | not started | Restore works when local manifests are missing. |
+| R3 | CLI recovery bootstrap | done | `baxter recovery bootstrap` now fetches remote recovery metadata, derives keys from the remote salt, downloads the latest encrypted snapshot manifest, and rebuilds local cache state. |
+| R4 | Restore fallback to remote metadata | not started | Restore should self-heal when local manifests are missing instead of requiring an explicit bootstrap first. |
 | R5 | Backup master key wrapping | not started | New backup sets use wrapped master keys instead of direct passphrase-derived object encryption. |
 | R6 | Legacy backup-set migration | not started | Existing S3-backed sets gain remote recovery metadata without full reupload. |
 | R7 | App recovery UX | not started | Add a first-run `Connect Existing Backup` flow after CLI path is proven. |
@@ -169,19 +169,19 @@ Definition of done:
 
 ## Next Chunk
 
-Current recommended next chunk: `R3`
+Current recommended next chunk: `R4`
 
 Why:
 
-- Highest impact on disaster recovery.
-- Keeps scope mostly in storage, backup, and metadata code paths.
-- Does not require app UX or full crypto migration in the first pass.
+- Builds directly on the new R3 bootstrap path.
+- Removes the remaining manual step before restore on a fresh machine.
+- Keeps scope bounded to manifest loading and cache hydration.
 
 ## Validation Checklist
 
 - [x] Remote recovery metadata can be written and read.
 - [x] Remote manifest snapshots are encrypted.
 - [x] Successful backup updates remote metadata.
-- [ ] Recovery works with missing local manifests.
-- [ ] Wrong-passphrase failures are distinguishable from missing-storage failures.
+- [x] Recovery bootstrap can rebuild local manifests and salt from storage metadata.
+- [x] Wrong-passphrase failures are distinguishable from missing-storage failures during bootstrap.
 - [ ] Existing legacy backups remain restorable.
