@@ -141,11 +141,16 @@ func encryptionKeys(cfg *config.Config) (encryptionKeySet, error) {
 }
 
 func backupEncryptionKeys(cfg *config.Config, store storage.ObjectStore, allowCreateWrappedIfMissing bool) (encryptionKeySet, error) {
-	return recoveryAwareEncryptionKeys(cfg, store, allowCreateWrappedIfMissing, false)
+	return recoveryAwareEncryptionKeys(cfg, store, recovery.ResolveKeySetOptions{
+		AllowCreateWrappedIfMissing: allowCreateWrappedIfMissing,
+		AdoptWrappedKeyIfMissing:    true,
+	})
 }
 
 func accessEncryptionKeys(cfg *config.Config, store storage.ObjectStore) (encryptionKeySet, error) {
-	return recoveryAwareEncryptionKeys(cfg, store, false, true)
+	return recoveryAwareEncryptionKeys(cfg, store, recovery.ResolveKeySetOptions{
+		AllowLegacyFallback: true,
+	})
 }
 
 func encryptionPassphrase(cfg *config.Config) (string, error) {
@@ -187,66 +192,33 @@ func deriveEncryptionKeysWithSalt(passphrase string, salt []byte) (encryptionKey
 	}, nil
 }
 
-func recoveryAwareEncryptionKeys(cfg *config.Config, store storage.ObjectStore, createWrappedIfMissing bool, allowLegacyFallback bool) (encryptionKeySet, error) {
+func recoveryAwareEncryptionKeys(cfg *config.Config, store storage.ObjectStore, opts recovery.ResolveKeySetOptions) (encryptionKeySet, error) {
 	passphrase, err := encryptionPassphrase(cfg)
 	if err != nil {
 		return encryptionKeySet{}, err
 	}
-
-	if store != nil {
-		metadata, err := recovery.ReadMetadata(store)
-		switch {
-		case err == nil:
-			if strings.TrimSpace(metadata.BackupSetID) != recovery.BackupSetID(cfg) {
-				return encryptionKeySet{}, fmt.Errorf(
-					"recovery metadata backup set mismatch: got %q want %q",
-					metadata.BackupSetID,
-					recovery.BackupSetID(cfg),
-				)
-			}
-			return encryptionKeySetFromMetadata(passphrase, metadata)
-		case !errors.Is(err, recovery.ErrMetadataNotFound):
-			if createWrappedIfMissing {
-				return encryptionKeySet{}, fmt.Errorf("read recovery metadata: %w", err)
-			}
-		}
-	}
-
-	if createWrappedIfMissing {
-		salt, err := readOrCreateKDFSalt()
-		if err != nil {
-			return encryptionKeySet{}, err
-		}
-		keySet, err := recovery.NewWrappedKeySet(passphrase, salt)
-		if err != nil {
-			return encryptionKeySet{}, err
-		}
-		return encryptionKeySet{
-			primary:    keySet.Primary,
-			candidates: keySet.Candidates,
-			salt:       keySet.KDFSalt,
-			wrapped:    keySet.WrappedMasterKey,
-		}, nil
-	}
-
-	if !allowLegacyFallback {
-		return encryptionKeySet{}, fmt.Errorf("recovery metadata not found for existing backup set")
-	}
-
-	return deriveEncryptionKeys(passphrase)
-}
-
-func encryptionKeySetFromMetadata(passphrase string, metadata recovery.Metadata) (encryptionKeySet, error) {
-	keySet, err := recovery.KeySetFromMetadata(metadata, passphrase)
+	keySet, err := recovery.ResolveKeySet(recovery.ResolveKeySetOptions{
+		Store:                       store,
+		BackupSetID:                 recovery.BackupSetID(cfg),
+		Passphrase:                  passphrase,
+		ReadOrCreateKDFSalt:         readOrCreateKDFSalt,
+		AllowCreateWrappedIfMissing: opts.AllowCreateWrappedIfMissing,
+		AllowLegacyFallback:         opts.AllowLegacyFallback,
+		AdoptWrappedKeyIfMissing:    opts.AdoptWrappedKeyIfMissing,
+	})
 	if err != nil {
 		return encryptionKeySet{}, err
 	}
+	return encryptionKeySetFromRecoveryKeySet(keySet), nil
+}
+
+func encryptionKeySetFromRecoveryKeySet(keySet recovery.KeySet) encryptionKeySet {
 	return encryptionKeySet{
 		primary:    keySet.Primary,
 		candidates: keySet.Candidates,
 		salt:       keySet.KDFSalt,
 		wrapped:    keySet.WrappedMasterKey,
-	}, nil
+	}
 }
 
 func readKDFSalt() ([]byte, error) {

@@ -34,7 +34,7 @@ That means losing the machine can also mean losing the metadata needed to restor
 | R3 | CLI recovery bootstrap | done | `baxter recovery bootstrap` now fetches remote recovery metadata, derives keys from the remote salt, downloads the latest encrypted snapshot manifest, and rebuilds local cache state. |
 | R4 | Restore fallback to remote metadata | done | Shared manifest loading now falls back to remote recovery metadata and rehydrates local cache when local restore state is missing or stale. |
 | R5 | Backup master key wrapping | done | New backups now generate wrapped master keys, encrypt objects/manifests with them, and resolve them through recovery metadata with legacy decrypt fallback. |
-| R6 | Legacy backup-set migration | not started | Existing S3-backed sets gain remote recovery metadata without full reupload. |
+| R6 | Legacy backup-set migration | done | Existing S3-backed sets now adopt recovery metadata and wrapped keys on the next backup without reuploading unchanged objects, while keeping legacy decrypt fallback. |
 | R7 | App recovery UX | not started | Add a first-run `Connect Existing Backup` flow after CLI path is proven. |
 
 Status values:
@@ -169,13 +169,13 @@ Definition of done:
 
 ## Next Chunk
 
-Current recommended next chunk: `R6`
+Current recommended next chunk: `R7`
 
 Why:
 
-- R5 is now complete.
-- Existing legacy backup sets still need remote recovery metadata + wrapped-key adoption without requiring full reupload.
-- R6 can build on the wrapped-key path now used by new backups.
+- R6 is now complete.
+- The remaining recovery roadmap item is app onboarding for an existing backup set.
+- Backend recovery primitives are now in place for the app flow to build on.
 
 ## Validation Checklist
 
@@ -186,4 +186,4 @@ Why:
 - [x] Wrong-passphrase failures are distinguishable from missing-storage failures during bootstrap.
 - [x] Restore paths self-heal from remote recovery metadata when local manifest cache is missing or stale.
 - [x] New backups write wrapped master keys to recovery metadata and use them for object + remote manifest encryption.
-- [ ] Existing legacy backups remain restorable.
+- [x] Existing legacy backups remain restorable.

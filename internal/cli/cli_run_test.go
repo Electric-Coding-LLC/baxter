@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +10,10 @@ import (
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
+	"baxter/internal/crypto"
+	"baxter/internal/recovery"
 	"baxter/internal/state"
+	"baxter/internal/storage"
 )
 
 func TestRunRequiresCommand(t *testing.T) {
@@ -147,6 +151,94 @@ func TestRunBackupRejectsMissingRecoveryMetadataForExistingLocalState(t *testing
 	}
 }
 
+func TestRunBackupMigratesLegacyBackupSetWithoutReupload(t *testing.T) {
+	setCLIHome(t)
+	t.Setenv(passphraseEnv, "legacy-passphrase")
+
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	sourceBody := []byte("legacy payload")
+	if err := os.WriteFile(sourcePath, sourceBody, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("snapshot dir: %v", err)
+	}
+	store, err := objectStoreFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("object store: %v", err)
+	}
+
+	salt, initialDataKeys := seedLegacyBackupSet(t, cfg, store, manifestPath, snapshotDir, "legacy-passphrase")
+
+	out, err := captureStdout(t, func() error {
+		return runBackup(cfg)
+	})
+	if err != nil {
+		t.Fatalf("run backup: %v", err)
+	}
+	if !strings.Contains(out, "uploaded=0") {
+		t.Fatalf("expected no object reupload, output=%q", out)
+	}
+
+	metadata, err := recovery.ReadMetadata(store)
+	if err != nil {
+		t.Fatalf("read recovery metadata: %v", err)
+	}
+	if metadata.WrappedMasterKey == "" {
+		t.Fatal("expected wrapped master key after migration")
+	}
+	metadataSalt, err := metadata.KDFSalt()
+	if err != nil {
+		t.Fatalf("metadata salt: %v", err)
+	}
+	if !bytes.Equal(metadataSalt, salt) {
+		t.Fatal("expected migration to preserve local kdf salt")
+	}
+
+	keys, err := store.ListKeys()
+	if err != nil {
+		t.Fatalf("list keys: %v", err)
+	}
+	dataKeys := backup.FilterDataObjectKeys(keys)
+	if len(dataKeys) != len(initialDataKeys) {
+		t.Fatalf("unexpected data object count after migration: got %d want %d", len(dataKeys), len(initialDataKeys))
+	}
+
+	clearCLIRecoveryCache(t)
+
+	if _, err := bootstrapRecoveryCache(cfg, store); err != nil {
+		t.Fatalf("bootstrap recovery cache: %v", err)
+	}
+	if err := restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot}); err != nil {
+		t.Fatalf("restore migrated legacy object: %v", err)
+	}
+
+	trimmedSource := strings.TrimPrefix(filepath.Clean(sourcePath), string(filepath.Separator))
+	restoredPath := filepath.Join(restoreRoot, trimmedSource)
+	restoredBody, err := os.ReadFile(restoredPath)
+	if err != nil {
+		t.Fatalf("read restored file: %v", err)
+	}
+	if !bytes.Equal(restoredBody, sourceBody) {
+		t.Fatalf("restored body mismatch: got %q want %q", string(restoredBody), string(sourceBody))
+	}
+}
+
 func TestRunSnapshotListRespectsLimitAndSortOrder(t *testing.T) {
 	setCLIHome(t)
 
@@ -205,4 +297,78 @@ func setCLIHome(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	t.Setenv("XDG_CONFIG_HOME", homeDir)
+}
+
+func clearCLIRecoveryCache(t *testing.T) {
+	t.Helper()
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	if err := os.Remove(manifestPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove manifest cache: %v", err)
+	}
+
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("snapshot dir: %v", err)
+	}
+	if err := os.RemoveAll(snapshotDir); err != nil {
+		t.Fatalf("remove snapshot cache: %v", err)
+	}
+
+	saltPath, err := state.KDFSaltPath()
+	if err != nil {
+		t.Fatalf("kdf salt path: %v", err)
+	}
+	if err := os.Remove(saltPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove kdf salt: %v", err)
+	}
+}
+
+func seedLegacyBackupSet(t *testing.T, cfg *config.Config, store storage.ObjectStore, manifestPath string, snapshotDir string, passphrase string) ([]byte, []string) {
+	t.Helper()
+
+	salt, err := crypto.NewKDFSalt()
+	if err != nil {
+		t.Fatalf("generate salt: %v", err)
+	}
+	if err := persistKDFSalt(salt); err != nil {
+		t.Fatalf("persist local salt: %v", err)
+	}
+
+	manifest, err := backup.BuildManifest(cfg.BackupRoots)
+	if err != nil {
+		t.Fatalf("build manifest: %v", err)
+	}
+	backup.AssignObjectKeys(&backup.Manifest{Entries: []backup.ManifestEntry{}}, manifest)
+	key := crypto.KeyFromPassphraseWithSalt(passphrase, salt)
+
+	for _, entry := range manifest.Entries {
+		plain, err := os.ReadFile(entry.Path)
+		if err != nil {
+			t.Fatalf("read source file: %v", err)
+		}
+		encrypted, err := crypto.EncryptBytes(key, plain)
+		if err != nil {
+			t.Fatalf("encrypt legacy object: %v", err)
+		}
+		if err := store.PutObject(backup.ResolveObjectKey(entry), encrypted); err != nil {
+			t.Fatalf("put legacy object: %v", err)
+		}
+	}
+
+	if err := backup.SaveManifest(manifestPath, manifest); err != nil {
+		t.Fatalf("save legacy manifest: %v", err)
+	}
+	if _, err := backup.SaveSnapshotManifest(snapshotDir, manifest); err != nil {
+		t.Fatalf("save legacy snapshot: %v", err)
+	}
+
+	keys, err := store.ListKeys()
+	if err != nil {
+		t.Fatalf("list legacy keys: %v", err)
+	}
+	return salt, backup.FilterDataObjectKeys(keys)
 }
