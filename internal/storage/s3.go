@@ -259,6 +259,14 @@ func (c *S3Client) DeleteObject(key string) error {
 }
 
 func (c *S3Client) ListKeys() ([]string, error) {
+	return c.listKeys("")
+}
+
+func (c *S3Client) ListKeysWithPrefix(prefix string) ([]string, error) {
+	return c.listKeys(prefix)
+}
+
+func (c *S3Client) listKeys(prefix string) ([]string, error) {
 	if c == nil {
 		return nil, errors.New("s3 client is not configured")
 	}
@@ -272,10 +280,19 @@ func (c *S3Client) ListKeys() ([]string, error) {
 		return nil, errors.New("s3 bucket is not configured")
 	}
 
+	listPrefix, err := c.prefixedListPrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
+	relativePrefix, err := normalizeListKeyPrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
+
 	keys := make([]string, 0)
 	paginator := c.newListObjectsV2Paginator(c.api, &s3.ListObjectsV2Input{
 		Bucket: &c.bucket,
-		Prefix: aws.String(c.prefix),
+		Prefix: aws.String(listPrefix),
 	})
 	if paginator == nil {
 		return nil, errors.New("s3 paginator is not configured")
@@ -304,6 +321,9 @@ func (c *S3Client) ListKeys() ([]string, error) {
 				}
 				trimmed = strings.TrimPrefix(fullKey, c.prefix)
 			}
+			if relativePrefix != "" && !strings.HasPrefix(trimmed, relativePrefix) {
+				continue
+			}
 			normalized, err := normalizeObjectKey(trimmed)
 			if err != nil {
 				continue
@@ -318,6 +338,14 @@ func (c *S3Client) ListKeys() ([]string, error) {
 
 func (c *S3Client) prefixedKey(key string) (string, error) {
 	cleaned, err := normalizeObjectKey(key)
+	if err != nil {
+		return "", err
+	}
+	return c.prefix + cleaned, nil
+}
+
+func (c *S3Client) prefixedListPrefix(prefix string) (string, error) {
+	cleaned, err := normalizeListKeyPrefix(prefix)
 	if err != nil {
 		return "", err
 	}

@@ -13,6 +13,10 @@ import (
 const remoteSnapshotManifestPrefix = "system/manifests/"
 const remoteSnapshotManifestSuffix = ".json.enc"
 
+func RemoteSnapshotManifestKeyPrefix() string {
+	return remoteSnapshotManifestPrefix
+}
+
 func IsSystemObjectKey(key string) bool {
 	return strings.HasPrefix(strings.TrimSpace(key), "system/")
 }

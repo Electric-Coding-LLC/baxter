@@ -6,3 +6,7 @@ type ObjectStore interface {
 	DeleteObject(key string) error
 	ListKeys() ([]string, error)
 }
+
+type PrefixKeyLister interface {
+	ListKeysWithPrefix(prefix string) ([]string, error)
+}

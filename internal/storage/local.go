@@ -48,6 +48,14 @@ func (c *LocalClient) DeleteObject(key string) error {
 }
 
 func (c *LocalClient) ListKeys() ([]string, error) {
+	return c.listKeys("")
+}
+
+func (c *LocalClient) ListKeysWithPrefix(prefix string) ([]string, error) {
+	return c.listKeys(prefix)
+}
+
+func (c *LocalClient) listKeys(prefix string) ([]string, error) {
 	if _, err := os.Stat(c.rootDir); err != nil {
 		if os.IsNotExist(err) {
 			return []string{}, nil
@@ -55,8 +63,13 @@ func (c *LocalClient) ListKeys() ([]string, error) {
 		return nil, err
 	}
 
+	normalizedPrefix, err := normalizeListKeyPrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
+
 	keys := make([]string, 0)
-	err := filepath.WalkDir(c.rootDir, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(c.rootDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -68,7 +81,11 @@ func (c *LocalClient) ListKeys() ([]string, error) {
 		if err != nil {
 			return err
 		}
-		keys = append(keys, filepath.ToSlash(rel))
+		key := filepath.ToSlash(rel)
+		if normalizedPrefix != "" && !strings.HasPrefix(key, normalizedPrefix) {
+			return nil
+		}
+		keys = append(keys, key)
 		return nil
 	})
 	if err != nil {

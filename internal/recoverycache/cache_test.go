@@ -3,6 +3,7 @@ package recoverycache
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"baxter/internal/backup"
@@ -115,7 +116,8 @@ func TestLoadManifestRefreshesStaleLatestCache(t *testing.T) {
 		t.Fatalf("expected remote latest snapshot id to move beyond %q", staleSnapshotID)
 	}
 
-	manifest, err := LoadManifest(cfg, store, "", func() (string, error) {
+	trackingStore := newTrackingStore(store)
+	manifest, err := LoadManifest(cfg, trackingStore, "", func() (string, error) {
 		return passphrase, nil
 	})
 	if err != nil {
@@ -135,9 +137,15 @@ func TestLoadManifestRefreshesStaleLatestCache(t *testing.T) {
 	if refreshedSnapshots[0].ID != metadata.LatestSnapshotID {
 		t.Fatalf("unexpected refreshed latest snapshot: got %q want %q", refreshedSnapshots[0].ID, metadata.LatestSnapshotID)
 	}
+	if got := trackingStore.remoteManifestGetCount(); got != 1 {
+		t.Fatalf("expected 1 remote manifest fetch, got %d", got)
+	}
+	if trackingStore.listKeysCalls != 0 || len(trackingStore.listPrefixCalls) != 0 {
+		t.Fatalf("expected no remote key listings, got list=%d prefix=%v", trackingStore.listKeysCalls, trackingStore.listPrefixCalls)
+	}
 }
 
-func TestLoadManifestHydratesRemoteSnapshotHistory(t *testing.T) {
+func TestLoadManifestHydratesSelectedSnapshotWithoutFullHistory(t *testing.T) {
 	setRecoveryCacheHome(t)
 
 	srcRoot := filepath.Join(t.TempDir(), "src")
@@ -167,47 +175,111 @@ func TestLoadManifestHydratesRemoteSnapshotHistory(t *testing.T) {
 		t.Fatalf("write source v2: %v", err)
 	}
 	seedStateBackup(t, cfg, store, passphrase, salt, manifestPath, snapshotDir)
+	if err := os.WriteFile(sourcePath, []byte("v3"), 0o600); err != nil {
+		t.Fatalf("write source v3: %v", err)
+	}
+	seedStateBackup(t, cfg, store, passphrase, salt, manifestPath, snapshotDir)
 
 	remoteSnapshots, err := backup.ListSnapshotManifests(snapshotDir)
 	if err != nil {
 		t.Fatalf("list remote snapshots: %v", err)
 	}
-	if len(remoteSnapshots) != 2 {
-		t.Fatalf("expected 2 remote snapshots, got %d", len(remoteSnapshots))
+	if len(remoteSnapshots) != 3 {
+		t.Fatalf("expected 3 remote snapshots, got %d", len(remoteSnapshots))
 	}
+	selectedSnapshotID := remoteSnapshots[len(remoteSnapshots)-1].ID
 
 	clearLocalRecoveryCache(t)
 
-	manifest, err := LoadManifest(cfg, store, "", func() (string, error) {
+	trackingStore := newTrackingStore(store)
+	manifest, err := LoadManifest(cfg, trackingStore, selectedSnapshotID, func() (string, error) {
 		return passphrase, nil
 	})
 	if err != nil {
-		t.Fatalf("load manifest from remote history: %v", err)
+		t.Fatalf("load manifest from selected remote snapshot: %v", err)
 	}
 	if _, err := backup.FindEntryByPath(manifest, sourcePath); err != nil {
-		t.Fatalf("latest hydrated manifest missing source path: %v", err)
+		t.Fatalf("selected hydrated manifest missing source path: %v", err)
 	}
 
 	localSnapshots, err := backup.ListSnapshotManifests(testManifestSnapshotsDir(t))
 	if err != nil {
 		t.Fatalf("list hydrated local snapshots: %v", err)
 	}
-	if len(localSnapshots) != len(remoteSnapshots) {
-		t.Fatalf("expected %d hydrated local snapshots, got %d", len(remoteSnapshots), len(localSnapshots))
+	if len(localSnapshots) != 2 {
+		t.Fatalf("expected latest and selected local snapshots, got %d", len(localSnapshots))
+	}
+	if !slices.ContainsFunc(localSnapshots, func(snapshot backup.ManifestSnapshot) bool { return snapshot.ID == selectedSnapshotID }) {
+		t.Fatalf("expected selected snapshot %q in local cache", selectedSnapshotID)
+	}
+	if !slices.ContainsFunc(localSnapshots, func(snapshot backup.ManifestSnapshot) bool { return snapshot.ID == remoteSnapshots[0].ID }) {
+		t.Fatalf("expected latest snapshot %q in local cache", remoteSnapshots[0].ID)
 	}
 
-	oldestRemoteSnapshotID := remoteSnapshots[len(remoteSnapshots)-1].ID
-	oldestLocalManifest, err := backup.LoadManifestForRestore(testManifestPath(t), testManifestSnapshotsDir(t), oldestRemoteSnapshotID)
+	selectedLocalManifest, err := backup.LoadManifestForRestore(testManifestPath(t), testManifestSnapshotsDir(t), selectedSnapshotID)
 	if err != nil {
-		t.Fatalf("load hydrated older snapshot: %v", err)
+		t.Fatalf("load hydrated selected snapshot: %v", err)
 	}
-	entry, err := backup.FindEntryByPath(oldestLocalManifest, sourcePath)
+	entry, err := backup.FindEntryByPath(selectedLocalManifest, sourcePath)
 	if err != nil {
-		t.Fatalf("find hydrated older snapshot entry: %v", err)
+		t.Fatalf("find hydrated selected snapshot entry: %v", err)
 	}
 	if entry.SHA256 == "" {
-		t.Fatal("expected hydrated older snapshot entry checksum")
+		t.Fatal("expected hydrated selected snapshot entry checksum")
 	}
+	if got := trackingStore.remoteManifestGetCount(); got != 2 {
+		t.Fatalf("expected 2 remote manifest fetches, got %d", got)
+	}
+	if trackingStore.listKeysCalls != 0 || len(trackingStore.listPrefixCalls) != 0 {
+		t.Fatalf("expected no remote key listings, got list=%d prefix=%v", trackingStore.listKeysCalls, trackingStore.listPrefixCalls)
+	}
+}
+
+type trackingStore struct {
+	inner           storage.ObjectStore
+	getKeys         []string
+	listKeysCalls   int
+	listPrefixCalls []string
+}
+
+func newTrackingStore(inner storage.ObjectStore) *trackingStore {
+	return &trackingStore{inner: inner}
+}
+
+func (s *trackingStore) PutObject(key string, data []byte) error {
+	return s.inner.PutObject(key, data)
+}
+
+func (s *trackingStore) GetObject(key string) ([]byte, error) {
+	s.getKeys = append(s.getKeys, key)
+	return s.inner.GetObject(key)
+}
+
+func (s *trackingStore) DeleteObject(key string) error {
+	return s.inner.DeleteObject(key)
+}
+
+func (s *trackingStore) ListKeys() ([]string, error) {
+	s.listKeysCalls++
+	return s.inner.ListKeys()
+}
+
+func (s *trackingStore) ListKeysWithPrefix(prefix string) ([]string, error) {
+	s.listPrefixCalls = append(s.listPrefixCalls, prefix)
+	if lister, ok := s.inner.(storage.PrefixKeyLister); ok {
+		return lister.ListKeysWithPrefix(prefix)
+	}
+	return s.inner.ListKeys()
+}
+
+func (s *trackingStore) remoteManifestGetCount() int {
+	count := 0
+	for _, key := range s.getKeys {
+		if _, ok := backup.RemoteSnapshotManifestIDFromObjectKey(key); ok {
+			count++
+		}
+	}
+	return count
 }
 
 func seedStateBackup(t *testing.T, cfg *config.Config, store storage.ObjectStore, passphrase string, salt []byte, manifestPath string, snapshotDir string) {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
@@ -28,7 +29,7 @@ func HydrateLatest(cfg *config.Config, store storage.ObjectStore, resolvePassphr
 	if err != nil {
 		return HydrateResult{}, err
 	}
-	return hydrateRemoteCacheWithMetadata(store, metadata, resolvePassphrase)
+	return hydrateRemoteCacheWithFullHistory(store, metadata, resolvePassphrase)
 }
 
 func LoadManifest(cfg *config.Config, store storage.ObjectStore, selector string, resolvePassphrase PassphraseResolver) (*backup.Manifest, error) {
@@ -67,27 +68,30 @@ func hydrateSelector(cfg *config.Config, store storage.ObjectStore, selector str
 		return HydrateResult{}, err
 	}
 
-	result, err := hydrateRemoteCacheWithMetadata(store, metadata, resolvePassphrase)
-	if err != nil {
-		return HydrateResult{}, err
-	}
-
 	trimmed := strings.TrimSpace(selector)
-	if isLatestSelector(trimmed) || trimmed == result.SnapshotID {
-		return result, nil
+	if isLatestSelector(trimmed) {
+		return hydrateRemoteCacheWithMetadata(store, metadata, nil, resolvePassphrase)
 	}
 
-	manifestPath, snapshotDir, err := cachePaths()
+	if _, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return hydrateRemoteCacheForAsOf(store, metadata, trimmed, resolvePassphrase)
+	}
+
+	manifests, salt, err := remoteSnapshotManifestSet(store, metadata, resolvePassphrase, []string{trimmed})
 	if err != nil {
 		return HydrateResult{}, err
 	}
-	selected, err := backup.LoadManifestForRestore(manifestPath, snapshotDir, trimmed)
-	if err != nil {
+	if err := writeRecoveryCache(manifests, metadata.LatestSnapshotID, salt); err != nil {
 		return HydrateResult{}, err
+	}
+
+	selected, ok := manifests[trimmed]
+	if !ok || selected == nil {
+		return HydrateResult{}, fmt.Errorf("remote snapshot manifest %q not found", trimmed)
 	}
 	return HydrateResult{
 		Manifest:   selected,
-		SnapshotID: result.SnapshotID,
+		SnapshotID: strings.TrimSpace(metadata.LatestSnapshotID),
 	}, nil
 }
 
@@ -106,40 +110,27 @@ func refreshLatestIfStale(cfg *config.Config, store storage.ObjectStore, snapsho
 		return nil, nil
 	}
 
-	result, err := hydrateRemoteCacheWithMetadata(store, metadata, resolvePassphrase)
+	result, err := hydrateRemoteCacheWithMetadata(store, metadata, nil, resolvePassphrase)
 	if err != nil {
 		return nil, err
 	}
 	return result.Manifest, nil
 }
 
-func hydrateRemoteCacheWithMetadata(store storage.ObjectStore, metadata recovery.Metadata, resolvePassphrase PassphraseResolver) (HydrateResult, error) {
+func hydrateRemoteCacheWithMetadata(
+	store storage.ObjectStore,
+	metadata recovery.Metadata,
+	requestedSnapshotIDs []string,
+	resolvePassphrase PassphraseResolver,
+) (HydrateResult, error) {
+	manifests, salt, err := remoteSnapshotManifestSet(store, metadata, resolvePassphrase, requestedSnapshotIDs)
+	if err != nil {
+		return HydrateResult{}, err
+	}
+
 	snapshotID := strings.TrimSpace(metadata.LatestSnapshotID)
 	if snapshotID == "" {
 		return HydrateResult{}, fmt.Errorf("recovery metadata latest snapshot id is required")
-	}
-
-	salt, err := metadata.KDFSalt()
-	if err != nil {
-		return HydrateResult{}, err
-	}
-	key, err := remoteManifestKey(resolvePassphrase, metadata)
-	if err != nil {
-		return HydrateResult{}, err
-	}
-
-	snapshotIDs, err := listRemoteSnapshotIDs(store, snapshotID)
-	if err != nil {
-		return HydrateResult{}, err
-	}
-
-	manifests := make(map[string]*backup.Manifest, len(snapshotIDs))
-	for _, id := range snapshotIDs {
-		manifest, err := readRemoteSnapshotManifest(store, id, key)
-		if err != nil {
-			return HydrateResult{}, err
-		}
-		manifests[id] = manifest
 	}
 
 	manifest, ok := manifests[snapshotID]
@@ -150,6 +141,58 @@ func hydrateRemoteCacheWithMetadata(store storage.ObjectStore, metadata recovery
 		return HydrateResult{}, err
 	}
 
+	return HydrateResult{
+		Manifest:   manifest,
+		SnapshotID: snapshotID,
+	}, nil
+}
+
+func hydrateRemoteCacheForAsOf(
+	store storage.ObjectStore,
+	metadata recovery.Metadata,
+	selector string,
+	resolvePassphrase PassphraseResolver,
+) (HydrateResult, error) {
+	manifests, salt, err := remoteSnapshotManifestHistory(store, metadata, resolvePassphrase)
+	if err != nil {
+		return HydrateResult{}, err
+	}
+	if err := writeRecoveryCache(manifests, metadata.LatestSnapshotID, salt); err != nil {
+		return HydrateResult{}, err
+	}
+
+	manifestPath, snapshotDir, err := cachePaths()
+	if err != nil {
+		return HydrateResult{}, err
+	}
+	selected, err := backup.LoadManifestForRestore(manifestPath, snapshotDir, selector)
+	if err != nil {
+		return HydrateResult{}, err
+	}
+	return HydrateResult{
+		Manifest:   selected,
+		SnapshotID: strings.TrimSpace(metadata.LatestSnapshotID),
+	}, nil
+}
+
+func hydrateRemoteCacheWithFullHistory(
+	store storage.ObjectStore,
+	metadata recovery.Metadata,
+	resolvePassphrase PassphraseResolver,
+) (HydrateResult, error) {
+	manifests, salt, err := remoteSnapshotManifestHistory(store, metadata, resolvePassphrase)
+	if err != nil {
+		return HydrateResult{}, err
+	}
+
+	snapshotID := strings.TrimSpace(metadata.LatestSnapshotID)
+	manifest, ok := manifests[snapshotID]
+	if !ok || manifest == nil {
+		return HydrateResult{}, fmt.Errorf("remote latest snapshot manifest %q not found", snapshotID)
+	}
+	if err := writeRecoveryCache(manifests, snapshotID, salt); err != nil {
+		return HydrateResult{}, err
+	}
 	return HydrateResult{
 		Manifest:   manifest,
 		SnapshotID: snapshotID,
@@ -221,12 +264,56 @@ func readRemoteSnapshotManifest(store storage.ObjectStore, snapshotID string, ke
 	return &manifest, nil
 }
 
+func remoteSnapshotManifestSet(
+	store storage.ObjectStore,
+	metadata recovery.Metadata,
+	resolvePassphrase PassphraseResolver,
+	requestedSnapshotIDs []string,
+) (map[string]*backup.Manifest, []byte, error) {
+	latestSnapshotID := strings.TrimSpace(metadata.LatestSnapshotID)
+	if latestSnapshotID == "" {
+		return nil, nil, fmt.Errorf("recovery metadata latest snapshot id is required")
+	}
+
+	salt, err := metadata.KDFSalt()
+	if err != nil {
+		return nil, nil, err
+	}
+	key, err := remoteManifestKey(resolvePassphrase, metadata)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	snapshotIDs := normalizeRequestedSnapshotIDs(latestSnapshotID, requestedSnapshotIDs)
+	manifests := make(map[string]*backup.Manifest, len(snapshotIDs))
+	for _, id := range snapshotIDs {
+		manifest, err := readRemoteSnapshotManifest(store, id, key)
+		if err != nil {
+			return nil, nil, err
+		}
+		manifests[id] = manifest
+	}
+	return manifests, salt, nil
+}
+
+func remoteSnapshotManifestHistory(
+	store storage.ObjectStore,
+	metadata recovery.Metadata,
+	resolvePassphrase PassphraseResolver,
+) (map[string]*backup.Manifest, []byte, error) {
+	snapshotIDs, err := listRemoteSnapshotIDs(store, strings.TrimSpace(metadata.LatestSnapshotID))
+	if err != nil {
+		return nil, nil, err
+	}
+	return remoteSnapshotManifestSet(store, metadata, resolvePassphrase, snapshotIDs)
+}
+
 func listRemoteSnapshotIDs(store storage.ObjectStore, latestSnapshotID string) ([]string, error) {
 	if store == nil {
 		return nil, fmt.Errorf("object store is required")
 	}
 
-	keys, err := store.ListKeys()
+	keys, err := listStoreKeysWithPrefix(store, backup.RemoteSnapshotManifestKeyPrefix())
 	if err != nil {
 		return nil, fmt.Errorf("list remote snapshot manifests: %w", err)
 	}
@@ -252,6 +339,50 @@ func listRemoteSnapshotIDs(store storage.ObjectStore, latestSnapshotID string) (
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func normalizeRequestedSnapshotIDs(latestSnapshotID string, requestedSnapshotIDs []string) []string {
+	ids := make(map[string]struct{}, len(requestedSnapshotIDs)+1)
+	if latestSnapshotID != "" {
+		ids[latestSnapshotID] = struct{}{}
+	}
+	for _, snapshotID := range requestedSnapshotIDs {
+		trimmed := strings.TrimSpace(snapshotID)
+		if trimmed == "" {
+			continue
+		}
+		ids[trimmed] = struct{}{}
+	}
+
+	out := make([]string, 0, len(ids))
+	for snapshotID := range ids {
+		out = append(out, snapshotID)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func listStoreKeysWithPrefix(store storage.ObjectStore, prefix string) ([]string, error) {
+	if lister, ok := store.(storage.PrefixKeyLister); ok {
+		return lister.ListKeysWithPrefix(prefix)
+	}
+	keys, err := store.ListKeys()
+	if err != nil {
+		return nil, err
+	}
+
+	normalizedPrefix := strings.TrimSpace(strings.ReplaceAll(prefix, "\\", "/"))
+	if normalizedPrefix == "" {
+		return keys, nil
+	}
+
+	filtered := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if strings.HasPrefix(key, normalizedPrefix) {
+			filtered = append(filtered, key)
+		}
+	}
+	return filtered, nil
 }
 
 func writeRecoveryCache(manifests map[string]*backup.Manifest, latestSnapshotID string, salt []byte) error {
