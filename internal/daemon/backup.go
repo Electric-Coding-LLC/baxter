@@ -11,6 +11,7 @@ import (
 	"baxter/internal/backup"
 	"baxter/internal/config"
 	"baxter/internal/crypto"
+	"baxter/internal/recovery"
 	"baxter/internal/state"
 	"baxter/internal/storage"
 )
@@ -77,6 +78,8 @@ func (d *Daemon) performBackup(ctx context.Context, cfg *config.Config) error {
 		SnapshotRetention:  cfg.Retention.ManifestSnapshots,
 		SnapshotMaxAgeDays: cfg.Retention.ManifestMaxAgeDays,
 		EncryptionKey:      keys.primary,
+		KDFSalt:            keys.salt,
+		BackupSetID:        recovery.BackupSetID(cfg),
 		Store:              store,
 	})
 	if err != nil {
@@ -97,6 +100,7 @@ func encryptionKey(cfg *config.Config) ([]byte, error) {
 type encryptionKeySet struct {
 	primary    []byte
 	candidates [][]byte
+	salt       []byte
 }
 
 func encryptionKeys(cfg *config.Config) (encryptionKeySet, error) {
@@ -128,6 +132,7 @@ func deriveEncryptionKeys(passphrase string) (encryptionKeySet, error) {
 	return encryptionKeySet{
 		primary:    primary,
 		candidates: candidates,
+		salt:       salt,
 	}, nil
 }
 

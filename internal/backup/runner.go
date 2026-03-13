@@ -1,12 +1,16 @@
 package backup
 
 import (
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"baxter/internal/config"
 	"baxter/internal/crypto"
+	"baxter/internal/recovery"
 	"baxter/internal/storage"
 )
 
@@ -20,6 +24,8 @@ type RunOptions struct {
 	SnapshotPruneNow   time.Time
 	UploadMaxAttempts  int
 	EncryptionKey      []byte
+	KDFSalt            []byte
+	BackupSetID        string
 	Store              storage.ObjectStore
 }
 
@@ -44,6 +50,15 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 	}
 	if opts.SnapshotDir == "" {
 		return RunResult{}, fmt.Errorf("snapshot directory is required")
+	}
+	if len(opts.EncryptionKey) == 0 {
+		return RunResult{}, fmt.Errorf("encryption key is required")
+	}
+	if len(opts.KDFSalt) == 0 {
+		return RunResult{}, fmt.Errorf("kdf salt is required")
+	}
+	if opts.BackupSetID == "" {
+		return RunResult{}, fmt.Errorf("backup set id is required")
 	}
 
 	previous, err := LoadManifest(opts.ManifestPath)
@@ -78,8 +93,15 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 	if err := SaveManifest(opts.ManifestPath, current); err != nil {
 		return RunResult{}, fmt.Errorf("save manifest: %w", err)
 	}
-	if _, err := SaveSnapshotManifest(opts.SnapshotDir, current); err != nil {
+	snapshot, err := SaveSnapshotManifest(opts.SnapshotDir, current)
+	if err != nil {
 		return RunResult{}, fmt.Errorf("save snapshot manifest: %w", err)
+	}
+	if err := WriteEncryptedSnapshotManifest(opts.Store, snapshot.ID, current, opts.EncryptionKey); err != nil {
+		return RunResult{}, err
+	}
+	if err := writeRecoveryMetadata(opts, snapshot.ID, current.CreatedAt); err != nil {
+		return RunResult{}, err
 	}
 	if _, err := PruneSnapshotManifestsWithPolicy(opts.SnapshotDir, SnapshotPrunePolicy{
 		Retain:     opts.SnapshotRetention,
@@ -131,4 +153,31 @@ func readEntryContent(entry ManifestEntry) ([]byte, error) {
 		return nil, fmt.Errorf("source file changed during backup: %w", err)
 	}
 	return plain, nil
+}
+
+func writeRecoveryMetadata(opts RunOptions, latestSnapshotID string, now time.Time) error {
+	metadata, err := recovery.ReadMetadata(opts.Store)
+	switch {
+	case err == nil:
+		if strings.TrimSpace(metadata.BackupSetID) != strings.TrimSpace(opts.BackupSetID) {
+			return fmt.Errorf("recovery metadata backup set mismatch: got %q want %q", metadata.BackupSetID, opts.BackupSetID)
+		}
+		if metadata.KDF.SaltHex != hex.EncodeToString(opts.KDFSalt) {
+			return fmt.Errorf("recovery metadata kdf salt mismatch")
+		}
+		metadata.LatestSnapshotID = latestSnapshotID
+		metadata.UpdatedAt = now.UTC()
+	case errors.Is(err, recovery.ErrMetadataNotFound):
+		metadata, err = recovery.NewMetadata(opts.BackupSetID, opts.KDFSalt, latestSnapshotID, now)
+		if err != nil {
+			return fmt.Errorf("build recovery metadata: %w", err)
+		}
+	default:
+		return fmt.Errorf("read recovery metadata: %w", err)
+	}
+
+	if err := recovery.WriteMetadata(opts.Store, metadata); err != nil {
+		return fmt.Errorf("write recovery metadata: %w", err)
+	}
+	return nil
 }

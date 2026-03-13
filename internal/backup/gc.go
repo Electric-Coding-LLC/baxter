@@ -46,6 +46,7 @@ func GarbageCollectObjects(opts GCOptions) (GCResult, error) {
 	if err != nil {
 		return GCResult{}, fmt.Errorf("list object keys: %w", err)
 	}
+	existingKeys = FilterDataObjectKeys(existingKeys)
 
 	result := GCResult{
 		SourceManifests:   sourceManifestCount,

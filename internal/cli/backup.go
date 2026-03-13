@@ -5,11 +5,12 @@ import (
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
+	"baxter/internal/recovery"
 	"baxter/internal/state"
 )
 
 func runBackup(cfg *config.Config) error {
-	key, err := encryptionKey(cfg)
+	keys, err := encryptionKeys(cfg)
 	if err != nil {
 		return err
 	}
@@ -33,7 +34,9 @@ func runBackup(cfg *config.Config) error {
 		SnapshotDir:        snapshotDir,
 		SnapshotRetention:  cfg.Retention.ManifestSnapshots,
 		SnapshotMaxAgeDays: cfg.Retention.ManifestMaxAgeDays,
-		EncryptionKey:      key,
+		EncryptionKey:      keys.primary,
+		KDFSalt:            keys.salt,
+		BackupSetID:        recovery.BackupSetID(cfg),
 		Store:              store,
 	})
 	if err != nil {
@@ -71,6 +74,7 @@ func backupStatus(cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("list objects: %w", err)
 	}
+	keys = backup.FilterDataObjectKeys(keys)
 
 	latestSnapshot := ""
 	if len(snapshots) > 0 {
