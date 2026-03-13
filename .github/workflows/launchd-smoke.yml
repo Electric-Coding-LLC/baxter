@@ -17,8 +17,8 @@ jobs:
       BAXTER_IPC_READY_ATTEMPTS: "24"
       BAXTER_IPC_READY_SLEEP_SECONDS: "0.5"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.8"
           cache: true
@@ -43,7 +43,7 @@ jobs:
           cp -f "$HOME/Library/Logs/baxterd.err.log" .ci/launchd-logs/ 2>/dev/null || true
       - name: Upload launchd logs (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: launchd-smoke-logs-${{ github.run_id }}
           path: .ci/launchd-logs
