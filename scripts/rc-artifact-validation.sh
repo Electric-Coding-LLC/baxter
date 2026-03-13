@@ -116,6 +116,7 @@ run_logged_step() {
 } >"$evidence_path"
 
 run_logged_step "Verify artifact checksums" bash -lc "cd '$artifact_dir' && shasum -a 256 -c SHA256SUMS"
+chmod 0755 "$baxter_artifact" "$baxterd_artifact"
 
 mkdir -p "$bin_dir"
 install -m 0755 "$baxter_artifact" "$baxter_installed"
