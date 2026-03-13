@@ -1,6 +1,6 @@
 # Baxter Recovery Progress
 
-Last updated: March 12, 2026
+Last updated: March 13, 2026
 
 Purpose: track the work needed to make Baxter recoverable on a new machine using storage access + passphrase, without depending on machine-local state.
 
@@ -29,8 +29,8 @@ That means losing the machine can also mean losing the metadata needed to restor
 
 | ID | Work Stream | Status | Notes |
 | --- | --- | --- | --- |
-| R1 | Remote recovery metadata foundation | in progress | Recovery metadata schema and remote read/write helpers are in place; backup-path integration is still pending. |
-| R2 | Remote encrypted manifest snapshots | not started | Upload encrypted snapshot manifests to storage after successful backups. |
+| R1 | Remote recovery metadata foundation | done | Recovery metadata schema, storage key, tests, and backup-path updates are in place. |
+| R2 | Remote encrypted manifest snapshots | done | Successful backups now upload encrypted snapshot manifests and update remote recovery metadata with the latest snapshot ID. |
 | R3 | CLI recovery bootstrap | not started | Fresh machine can reconnect to storage, fetch metadata, and rebuild local cache. |
 | R4 | Restore fallback to remote metadata | not started | Restore works when local manifests are missing. |
 | R5 | Backup master key wrapping | not started | New backup sets use wrapped master keys instead of direct passphrase-derived object encryption. |
@@ -169,7 +169,7 @@ Definition of done:
 
 ## Next Chunk
 
-Current recommended next chunk: `R1 finish + R2`
+Current recommended next chunk: `R3`
 
 Why:
 
@@ -180,8 +180,8 @@ Why:
 ## Validation Checklist
 
 - [x] Remote recovery metadata can be written and read.
-- [ ] Remote manifest snapshots are encrypted.
-- [ ] Successful backup updates remote metadata.
+- [x] Remote manifest snapshots are encrypted.
+- [x] Successful backup updates remote metadata.
 - [ ] Recovery works with missing local manifests.
 - [ ] Wrong-passphrase failures are distinguishable from missing-storage failures.
 - [ ] Existing legacy backups remain restorable.

@@ -126,6 +126,7 @@ func encryptionKey(cfg *config.Config) ([]byte, error) {
 type encryptionKeySet struct {
 	primary    []byte
 	candidates [][]byte
+	salt       []byte
 }
 
 func encryptionKeys(cfg *config.Config) (encryptionKeySet, error) {
@@ -157,6 +158,7 @@ func deriveEncryptionKeys(passphrase string) (encryptionKeySet, error) {
 	return encryptionKeySet{
 		primary:    primary,
 		candidates: candidates,
+		salt:       salt,
 	}, nil
 }
 

@@ -19,6 +19,8 @@ import (
 	"baxter/internal/storage"
 )
 
+var daemonTestKDFSalt = []byte("0123456789abcdef")
+
 func TestRestoreRunEndpoint(t *testing.T) {
 	homeDir := t.TempDir()
 	srcRoot := filepath.Join(t.TempDir(), "src")
@@ -61,6 +63,8 @@ func TestRestoreRunEndpoint(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		KDFSalt:           daemonTestKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err != nil {
@@ -154,6 +158,8 @@ func TestRestoreRunEndpointVerifyOnlyDoesNotWrite(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		KDFSalt:           daemonTestKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err != nil {
@@ -241,6 +247,8 @@ func TestRestoreRunEndpointRestoresDirectorySubtree(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-directory-restore-passphrase"),
+		KDFSalt:           daemonTestKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err != nil {
@@ -341,6 +349,8 @@ func TestRestoreRunEndpointRejectsExistingTargetWithoutOverwrite(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		KDFSalt:           daemonTestKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err != nil {
@@ -414,6 +424,8 @@ func TestRestoreRunEndpointChecksumMismatchDoesNotOverwrite(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		KDFSalt:           daemonTestKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err != nil {
@@ -506,6 +518,8 @@ func TestRestoreRunEndpointReturnsObjectMissingCode(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: cfg.Retention.ManifestSnapshots,
 		EncryptionKey:     crypto.KeyFromPassphrase("daemon-restore-passphrase"),
+		KDFSalt:           daemonTestKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err != nil {

@@ -11,6 +11,8 @@ import (
 	"baxter/internal/storage"
 )
 
+var testKDFSalt = []byte("0123456789abcdef")
+
 type flakyStore struct {
 	inner        storage.ObjectStore
 	failPuts     int
@@ -61,6 +63,8 @@ func TestRunUploadsAndSavesManifest(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: 30,
 		EncryptionKey:     []byte("01234567890123456789012345678901"),
+		KDFSalt:           testKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err != nil {
@@ -78,7 +82,7 @@ func TestRunUploadsAndSavesManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list keys: %v", err)
 	}
-	if len(keys) != 1 {
+	if len(keys) != 3 {
 		t.Fatalf("unexpected key count: %d", len(keys))
 	}
 
@@ -115,6 +119,8 @@ func TestRunKeepsRemovedFileObjectsForSnapshotRestore(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: 30,
 		EncryptionKey:     key,
+		KDFSalt:           testKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	}); err != nil {
 		t.Fatalf("first run backup: %v", err)
@@ -129,6 +135,8 @@ func TestRunKeepsRemovedFileObjectsForSnapshotRestore(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: 30,
 		EncryptionKey:     key,
+		KDFSalt:           testKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err != nil {
@@ -142,7 +150,7 @@ func TestRunKeepsRemovedFileObjectsForSnapshotRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list keys: %v", err)
 	}
-	if len(keys) != 1 {
+	if len(keys) != 4 {
 		t.Fatalf("expected object to be retained for snapshot restore, got %d keys", len(keys))
 	}
 }
@@ -185,6 +193,8 @@ func TestRunRespectsExcludePathsAndGlobs(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: 30,
 		EncryptionKey:     key,
+		KDFSalt:           testKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err != nil {
@@ -232,6 +242,8 @@ func TestRunPrunesSnapshotsByRetention(t *testing.T) {
 			SnapshotDir:       snapshotDir,
 			SnapshotRetention: 2,
 			EncryptionKey:     key,
+			KDFSalt:           testKDFSalt,
+			BackupSetID:       "local-test",
 			Store:             store,
 		}); err != nil {
 			t.Fatalf("run backup %d: %v", i, err)
@@ -287,6 +299,8 @@ func TestRunPrunesSnapshotsByMaxAgeDays(t *testing.T) {
 		SnapshotMaxAgeDays: 30,
 		SnapshotPruneNow:   pruneNow,
 		EncryptionKey:      key,
+		KDFSalt:            testKDFSalt,
+		BackupSetID:        "local-test",
 		Store:              store,
 	}); err != nil {
 		t.Fatalf("run backup: %v", err)
@@ -334,13 +348,15 @@ func TestRunRetriesTransientPutFailures(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: 30,
 		EncryptionKey:     key,
+		KDFSalt:           testKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	}); err != nil {
 		t.Fatalf("run backup with retries: %v", err)
 	}
 
-	if store.putCallCount != 3 {
-		t.Fatalf("unexpected put call count: got %d want 3", store.putCallCount)
+	if store.putCallCount != 5 {
+		t.Fatalf("unexpected put call count: got %d want 5", store.putCallCount)
 	}
 }
 
@@ -373,6 +389,8 @@ func TestRunFailsWhenPutRetriesExhausted(t *testing.T) {
 		SnapshotRetention: 30,
 		UploadMaxAttempts: 2,
 		EncryptionKey:     key,
+		KDFSalt:           testKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	})
 	if err == nil {
@@ -409,6 +427,8 @@ func TestRunStoresVersionedCompressedPayload(t *testing.T) {
 		SnapshotDir:       snapshotDir,
 		SnapshotRetention: 30,
 		EncryptionKey:     key,
+		KDFSalt:           testKDFSalt,
+		BackupSetID:       "local-test",
 		Store:             store,
 	}); err != nil {
 		t.Fatalf("run backup: %v", err)
