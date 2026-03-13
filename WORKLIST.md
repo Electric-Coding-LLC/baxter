@@ -13,6 +13,7 @@ This is a personal project worklist, not a formal release roadmap.
 
 1. CI stability pass
    - Goal: make required checks reliable enough for normal day-to-day work.
+   - Plan doc: `docs/ci-stability-plan.md`
    - Next actions:
      - Run repeated required-check reruns.
      - Capture which checks fail most often.
