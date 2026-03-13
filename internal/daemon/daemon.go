@@ -36,7 +36,8 @@ type Daemon struct {
 	verifyRunning         bool
 	status                daemonStatus
 	handler               http.Handler
-	restoreListIndexKey   restoreManifestCacheKey
+	restoreListSource     restoreManifestSourceState
+	restoreListIndexedAt  time.Time
 	restoreListIndex      *restoreManifestIndex
 }
 

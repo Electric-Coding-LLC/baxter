@@ -1,41 +1,28 @@
 package daemon
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"baxter/internal/backup"
+	"baxter/internal/state"
 )
 
-type restoreManifestCacheKey struct {
+const restoreListLatestCacheTTL = 5 * time.Second
+
+type restoreManifestSourceState struct {
 	selector   string
-	createdAt  time.Time
-	entryCount int
-	firstPath  string
-	lastPath   string
+	path       string
+	exists     bool
+	size       int64
+	modTimeUTC time.Time
 }
 
 type restoreManifestIndex struct {
 	paths []string
-}
-
-func newRestoreManifestCacheKey(selector string, manifest *backup.Manifest) restoreManifestCacheKey {
-	key := restoreManifestCacheKey{
-		selector: strings.TrimSpace(selector),
-	}
-	if manifest == nil {
-		return key
-	}
-	key.createdAt = manifest.CreatedAt.UTC()
-	key.entryCount = len(manifest.Entries)
-	if len(manifest.Entries) == 0 {
-		return key
-	}
-	key.firstPath = filepath.Clean(manifest.Entries[0].Path)
-	key.lastPath = filepath.Clean(manifest.Entries[len(manifest.Entries)-1].Path)
-	return key
 }
 
 func newRestoreManifestIndex(entries []backup.ManifestEntry) *restoreManifestIndex {
@@ -143,31 +130,102 @@ func normalizedRestoreFilterPrefix(prefix string) string {
 }
 
 func (d *Daemon) loadRestoreListIndex(snapshotSelector string) (*restoreManifestIndex, error) {
+	sourceState, cacheable, err := resolveRestoreManifestSourceState(snapshotSelector)
+	if err != nil {
+		return nil, err
+	}
+	if cacheable {
+		if cached := d.cachedRestoreListIndex(sourceState); cached != nil {
+			return cached, nil
+		}
+	}
+
 	manifest, err := d.loadManifestForRestore(snapshotSelector)
 	if err != nil {
 		return nil, err
 	}
-
-	key := newRestoreManifestCacheKey(snapshotSelector, manifest)
-
-	d.restoreIndexMu.Lock()
-	cachedKey := d.restoreListIndexKey
-	cachedIndex := d.restoreListIndex
-	d.restoreIndexMu.Unlock()
-	if cachedIndex != nil && cachedKey == key {
-		return cachedIndex, nil
-	}
-
 	index := newRestoreManifestIndex(manifest.Entries)
-
-	d.restoreIndexMu.Lock()
-	if d.restoreListIndex != nil && d.restoreListIndexKey == key {
-		index = d.restoreListIndex
-	} else {
-		d.restoreListIndexKey = key
-		d.restoreListIndex = index
+	if !cacheable {
+		return index, nil
 	}
-	d.restoreIndexMu.Unlock()
+
+	refreshedState, _, err := resolveRestoreManifestSourceState(snapshotSelector)
+	if err == nil {
+		d.cacheRestoreListIndex(refreshedState, index)
+	}
 
 	return index, nil
+}
+
+func resolveRestoreManifestSourceState(snapshotSelector string) (restoreManifestSourceState, bool, error) {
+	selector := normalizedRestoreManifestSelector(snapshotSelector)
+	if _, err := time.Parse(time.RFC3339, selector); err == nil {
+		return restoreManifestSourceState{}, false, nil
+	}
+
+	var path string
+	var err error
+	if selector == "" {
+		path, err = state.ManifestPath()
+	} else {
+		var snapshotDir string
+		snapshotDir, err = state.ManifestSnapshotsDir()
+		if err == nil {
+			path = filepath.Join(snapshotDir, selector+".json")
+		}
+	}
+	if err != nil {
+		return restoreManifestSourceState{}, false, err
+	}
+	return statRestoreManifestSource(selector, path)
+}
+
+func statRestoreManifestSource(selector string, path string) (restoreManifestSourceState, bool, error) {
+	sourceState := restoreManifestSourceState{
+		selector: normalizedRestoreManifestSelector(selector),
+		path:     path,
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return sourceState, true, nil
+		}
+		return restoreManifestSourceState{}, false, err
+	}
+	sourceState.exists = true
+	sourceState.size = info.Size()
+	sourceState.modTimeUTC = info.ModTime().UTC()
+	return sourceState, true, nil
+}
+
+func normalizedRestoreManifestSelector(selector string) string {
+	trimmed := strings.TrimSpace(selector)
+	if trimmed == "" || strings.EqualFold(trimmed, "latest") {
+		return ""
+	}
+	return trimmed
+}
+
+func (d *Daemon) cachedRestoreListIndex(sourceState restoreManifestSourceState) *restoreManifestIndex {
+	d.restoreIndexMu.Lock()
+	defer d.restoreIndexMu.Unlock()
+
+	if d.restoreListIndex == nil || d.restoreListSource != sourceState {
+		return nil
+	}
+	if sourceState.selector == "" && !d.restoreListIndexedAt.IsZero() {
+		if d.clockNow().Sub(d.restoreListIndexedAt) >= restoreListLatestCacheTTL {
+			return nil
+		}
+	}
+	return d.restoreListIndex
+}
+
+func (d *Daemon) cacheRestoreListIndex(sourceState restoreManifestSourceState, index *restoreManifestIndex) {
+	d.restoreIndexMu.Lock()
+	defer d.restoreIndexMu.Unlock()
+
+	d.restoreListSource = sourceState
+	d.restoreListIndexedAt = d.clockNow()
+	d.restoreListIndex = index
 }
