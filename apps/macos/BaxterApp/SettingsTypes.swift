@@ -181,6 +181,12 @@ struct RestoreBrowserIndex {
     let rootNodes: [RestoreBrowserNode]
     let isDirectoryByPath: [String: Bool]
     let didTruncate: Bool
+
+    static let empty = RestoreBrowserIndex(
+        rootNodes: [],
+        isDirectoryByPath: [:],
+        didTruncate: false
+    )
 }
 
 struct RestoreBrowserQuery: Equatable {
@@ -276,6 +282,30 @@ func buildRestoreBrowserIndex(paths: [String], maxPaths: Int) -> RestoreBrowserI
         rootNodes: rootNodes,
         isDirectoryByPath: isDirectoryByPath,
         didTruncate: truncated
+    )
+}
+
+func mergeRestoreBrowserIndex(_ index: RestoreBrowserIndex, paths: [String]) -> RestoreBrowserIndex {
+    var rootNodes = index.rootNodes
+    var isDirectoryByPath = index.isDirectoryByPath
+
+    for rawPath in paths {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let normalized = normalizedRestorePath(trimmed) else {
+            continue
+        }
+        rootNodes = mergeRestoreBrowserPath(
+            normalized,
+            treatLeafAsDirectory: trimmed != "/" && trimmed.hasSuffix("/"),
+            into: rootNodes,
+            isDirectoryByPath: &isDirectoryByPath
+        )
+    }
+
+    return RestoreBrowserIndex(
+        rootNodes: rootNodes,
+        isDirectoryByPath: isDirectoryByPath,
+        didTruncate: index.didTruncate
     )
 }
 
@@ -513,6 +543,13 @@ private func compareRestoreBrowserNodes(_ lhs: MutableRestoreBrowserNode, _ rhs:
     return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
 }
 
+private func compareRestoreBrowserNodes(_ lhs: RestoreBrowserNode, _ rhs: RestoreBrowserNode) -> Bool {
+    if lhs.isDirectory != rhs.isDirectory {
+        return lhs.isDirectory && !rhs.isDirectory
+    }
+    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+}
+
 private func filterRestoreBrowserNode(_ node: RestoreBrowserNode, query: String) -> RestoreBrowserNode? {
     let matchingChildren = node.children.compactMap { filterRestoreBrowserNode($0, query: query) }
     let matchesNode = node.name.localizedCaseInsensitiveContains(query) || node.path.localizedCaseInsensitiveContains(query)
@@ -535,4 +572,118 @@ private func appendRestoreBrowserNodePaths(_ nodes: [RestoreBrowserNode], into p
         paths.append(node.path)
         appendRestoreBrowserNodePaths(node.children, into: &paths)
     }
+}
+
+private func mergeRestoreBrowserPath(
+    _ path: String,
+    treatLeafAsDirectory: Bool,
+    into nodes: [RestoreBrowserNode],
+    isDirectoryByPath: inout [String: Bool]
+) -> [RestoreBrowserNode] {
+    guard path != "/" else {
+        return nodes
+    }
+
+    let isAbsolute = path.hasPrefix("/")
+    let components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+    guard !components.isEmpty else {
+        return nodes
+    }
+
+    return mergeRestoreBrowserPathComponents(
+        components,
+        componentIndex: 0,
+        parentPath: "",
+        isAbsolute: isAbsolute,
+        treatLeafAsDirectory: treatLeafAsDirectory,
+        into: nodes,
+        isDirectoryByPath: &isDirectoryByPath
+    )
+}
+
+private func mergeRestoreBrowserPathComponents(
+    _ components: [String],
+    componentIndex: Int,
+    parentPath: String,
+    isAbsolute: Bool,
+    treatLeafAsDirectory: Bool,
+    into nodes: [RestoreBrowserNode],
+    isDirectoryByPath: inout [String: Bool]
+) -> [RestoreBrowserNode] {
+    let component = components[componentIndex]
+    let path = joinedRestoreBrowserPath(parentPath: parentPath, component: component, isAbsolute: isAbsolute)
+    let isLeaf = componentIndex == components.count - 1
+    let shouldBeDirectory = !isLeaf || treatLeafAsDirectory
+
+    if let existingIndex = nodes.firstIndex(where: { $0.path == path }) {
+        let existingNode = nodes[existingIndex]
+        let childNodes: [RestoreBrowserNode]
+        if isLeaf {
+            childNodes = existingNode.children
+        } else {
+            childNodes = mergeRestoreBrowserPathComponents(
+                components,
+                componentIndex: componentIndex + 1,
+                parentPath: path,
+                isAbsolute: isAbsolute,
+                treatLeafAsDirectory: treatLeafAsDirectory,
+                into: existingNode.children,
+                isDirectoryByPath: &isDirectoryByPath
+            )
+        }
+
+        let mergedNode = RestoreBrowserNode(
+            path: existingNode.path,
+            name: existingNode.name,
+            isDirectory: existingNode.isDirectory || shouldBeDirectory || !childNodes.isEmpty,
+            children: childNodes,
+            isPlaceholder: existingNode.isPlaceholder
+        )
+        isDirectoryByPath[path] = mergedNode.isDirectory
+        guard mergedNode != existingNode else {
+            return nodes
+        }
+
+        var mergedNodes = nodes
+        mergedNodes[existingIndex] = mergedNode
+        if existingNode.isDirectory != mergedNode.isDirectory {
+            mergedNodes.sort(by: compareRestoreBrowserNodes)
+        }
+        return mergedNodes
+    }
+
+    let childNodes: [RestoreBrowserNode]
+    if isLeaf {
+        childNodes = []
+    } else {
+        childNodes = mergeRestoreBrowserPathComponents(
+            components,
+            componentIndex: componentIndex + 1,
+            parentPath: path,
+            isAbsolute: isAbsolute,
+            treatLeafAsDirectory: treatLeafAsDirectory,
+            into: [],
+            isDirectoryByPath: &isDirectoryByPath
+        )
+    }
+
+    let newNode = RestoreBrowserNode(
+        path: path,
+        name: component,
+        isDirectory: shouldBeDirectory || !childNodes.isEmpty,
+        children: childNodes
+    )
+    isDirectoryByPath[path] = newNode.isDirectory
+
+    var mergedNodes = nodes
+    mergedNodes.append(newNode)
+    mergedNodes.sort(by: compareRestoreBrowserNodes)
+    return mergedNodes
+}
+
+private func joinedRestoreBrowserPath(parentPath: String, component: String, isAbsolute: Bool) -> String {
+    if isAbsolute {
+        return parentPath.isEmpty ? "/\(component)" : "\(parentPath)/\(component)"
+    }
+    return parentPath.isEmpty ? component : "\(parentPath)/\(component)"
 }

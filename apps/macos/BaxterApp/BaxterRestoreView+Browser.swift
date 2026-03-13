@@ -78,13 +78,13 @@ extension BaxterRestoreView {
 
     var scopedRestoreBrowserRoots: [RestoreBrowserNode] {
         guard !restoreRootPrefix.isEmpty, restoreRootPrefix != "/" else {
-            return restoreBrowserRoots
+            return restoreBrowserIndex.rootNodes
         }
         guard let scopedRoot = findRestoreBrowserNode(
             path: restoreRootPrefix,
-            nodes: restoreBrowserRoots
+            nodes: restoreBrowserIndex.rootNodes
         ) else {
-            return restoreBrowserRoots
+            return restoreBrowserIndex.rootNodes
         }
         return [scopedRoot]
     }
@@ -170,18 +170,12 @@ extension BaxterRestoreView {
     func searchRestorePaths() {
         let query = currentRestoreBrowserQuery()
         cancelRestoreBrowserLoadTasks()
-        restoreIndexBuildGeneration += 1
-        restoreIndexBuildTask?.cancel()
-        restoreIndexBuildTask = nil
         selectedBrowserPath = nil
         restorePath = ""
         expandedBrowserPaths = []
-        restoreBrowserRoots = []
-        restorePathKinds = [:]
-        loadedRestorePaths = []
+        restoreBrowserIndex = .empty
         restoreRootPrefix = query.rootPrefix
         restoreBrowserLoadCoordinator.reset(for: query)
-        syncRestoreBrowserWorkState()
         loadRestoreChildren(parentPath: nil, query: query)
     }
 
@@ -210,14 +204,14 @@ extension BaxterRestoreView {
     }
 
     func iconName(for path: String) -> String {
-        if restorePathKinds[path] == true {
+        if restoreBrowserIndex.isDirectoryByPath[path] == true {
             return "folder"
         }
         return isTextLikeRestorePath(path) ? "doc.text" : "doc"
     }
 
     func iconColor(for path: String) -> Color {
-        if restorePathKinds[path] == true {
+        if restoreBrowserIndex.isDirectoryByPath[path] == true {
             return Color(nsColor: .systemBlue)
         }
         return .secondary
@@ -237,12 +231,6 @@ extension BaxterRestoreView {
         }
         restoreBrowserLoadTasks = [:]
         restoreBrowserLoadCoordinator.cancelAllLoads()
-        syncRestoreBrowserWorkState()
-    }
-
-    func syncRestoreBrowserWorkState() {
-        isIndexingRestorePaths =
-            restoreIndexBuildTask != nil || !restoreBrowserLoadCoordinator.loadingDirectoryKeys.isEmpty
     }
 
     func isCancelledRestoreBrowserLoad(_ error: Error) -> Bool {
@@ -255,39 +243,6 @@ extension BaxterRestoreView {
         return false
     }
 
-    func indexRestorePaths(_ restorePaths: [String]) {
-        restoreIndexBuildGeneration += 1
-        restoreIndexBuildTask?.cancel()
-        restoreIndexBuildTask = nil
-
-        if restorePaths.isEmpty {
-            restoreBrowserRoots = []
-            restorePathKinds = [:]
-            syncRestoreBrowserWorkState()
-            return
-        }
-
-        let generation = restoreIndexBuildGeneration
-
-        let task = Task.detached(priority: .userInitiated) {
-            let index = buildRestoreBrowserIndex(paths: restorePaths, maxPaths: 0)
-            guard !Task.isCancelled else {
-                return
-            }
-            await MainActor.run {
-                guard self.restoreIndexBuildGeneration == generation else {
-                    return
-                }
-                self.restoreBrowserRoots = index.rootNodes
-                self.restorePathKinds = index.isDirectoryByPath
-                self.restoreIndexBuildTask = nil
-                self.syncRestoreBrowserWorkState()
-            }
-        }
-        restoreIndexBuildTask = task
-        syncRestoreBrowserWorkState()
-    }
-
     func loadRestoreChildren(parentPath: String?, query: RestoreBrowserQuery? = nil) {
         let query = query ?? currentRestoreBrowserQuery()
         let directoryKey = parentPath ?? restoreRootDirectoryKey
@@ -297,7 +252,6 @@ extension BaxterRestoreView {
         ) else {
             return
         }
-        syncRestoreBrowserWorkState()
 
         let task = Task {
             do {
@@ -311,7 +265,6 @@ extension BaxterRestoreView {
                 await MainActor.run {
                     self.restoreBrowserLoadTasks[directoryKey] = nil
                     guard self.restoreBrowserLoadCoordinator.completeLoad(loadToken, success: true) else {
-                        self.syncRestoreBrowserWorkState()
                         return
                     }
                     mergeRestorePaths(paths)
@@ -320,22 +273,18 @@ extension BaxterRestoreView {
                     } else {
                         statusModel.restorePreviewMessage = "Loaded \(paths.count) path(s). Select a folder to load more."
                     }
-                    self.syncRestoreBrowserWorkState()
                 }
             } catch {
                 await MainActor.run {
                     self.restoreBrowserLoadTasks[directoryKey] = nil
                     let accepted = self.restoreBrowserLoadCoordinator.completeLoad(loadToken, success: false)
                     if self.isCancelledRestoreBrowserLoad(error) {
-                        self.syncRestoreBrowserWorkState()
                         return
                     }
                     guard accepted else {
-                        self.syncRestoreBrowserWorkState()
                         return
                     }
                     statusModel.restorePreviewMessage = "Restore list failed: \(error.localizedDescription)"
-                    self.syncRestoreBrowserWorkState()
                 }
             }
         }
@@ -343,16 +292,13 @@ extension BaxterRestoreView {
     }
 
     func mergeRestorePaths(_ paths: [String]) {
-        for path in paths {
-            loadedRestorePaths.insert(path)
-        }
-        indexRestorePaths(Array(loadedRestorePaths))
+        restoreBrowserIndex = mergeRestoreBrowserIndex(restoreBrowserIndex, paths: paths)
     }
 
     func setBrowserNodeExpanded(path: String, isExpanded: Bool) {
         if isExpanded {
             expandedBrowserPaths.insert(path)
-            if restorePathKinds[path] == true {
+            if restoreBrowserIndex.isDirectoryByPath[path] == true {
                 loadRestoreChildren(parentPath: path, query: currentRestoreBrowserQuery())
             }
         } else {
