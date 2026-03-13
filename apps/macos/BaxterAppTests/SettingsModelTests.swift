@@ -842,6 +842,57 @@ final class RestoreBrowserIndexTests: XCTestCase {
     }
 }
 
+final class RestoreBrowserLoadCoordinatorTests: XCTestCase {
+    func testStartLoadMarksDirectoryLoadingAndCompleteLoadMarksItLoaded() throws {
+        var coordinator = RestoreBrowserLoadCoordinator()
+        let query = RestoreBrowserQuery(rootPrefix: "/docs", contains: "todo", snapshot: "snap-1")
+
+        coordinator.reset(for: query)
+        let token = try XCTUnwrap(
+            coordinator.startLoad(directoryKey: "/docs", query: query)
+        )
+
+        XCTAssertEqual(coordinator.loadingDirectoryKeys, ["/docs"])
+        XCTAssertTrue(coordinator.completeLoad(token, success: true))
+        XCTAssertEqual(coordinator.loadedDirectoryKeys, ["/docs"])
+        XCTAssertTrue(coordinator.loadingDirectoryKeys.isEmpty)
+    }
+
+    func testResetRejectsStaleLoadCompletion() throws {
+        var coordinator = RestoreBrowserLoadCoordinator()
+        let firstQuery = RestoreBrowserQuery(rootPrefix: "/docs", contains: "", snapshot: "")
+        let secondQuery = RestoreBrowserQuery(rootPrefix: "/music", contains: "", snapshot: "")
+
+        coordinator.reset(for: firstQuery)
+        let staleToken = try XCTUnwrap(
+            coordinator.startLoad(directoryKey: "/docs", query: firstQuery)
+        )
+
+        coordinator.reset(for: secondQuery)
+
+        XCTAssertFalse(coordinator.completeLoad(staleToken, success: true))
+        XCTAssertTrue(coordinator.loadedDirectoryKeys.isEmpty)
+        XCTAssertTrue(coordinator.loadingDirectoryKeys.isEmpty)
+    }
+
+    func testStartLoadSkipsDuplicateAndOutOfQueryRequests() throws {
+        var coordinator = RestoreBrowserLoadCoordinator()
+        let activeQuery = RestoreBrowserQuery(rootPrefix: "/docs", contains: "todo", snapshot: "snap-1")
+        let otherQuery = RestoreBrowserQuery(rootPrefix: "/docs", contains: "ideas", snapshot: "snap-1")
+
+        coordinator.reset(for: activeQuery)
+
+        let firstToken = try XCTUnwrap(
+            coordinator.startLoad(directoryKey: "/docs", query: activeQuery)
+        )
+        XCTAssertNil(coordinator.startLoad(directoryKey: "/docs", query: activeQuery))
+        XCTAssertNil(coordinator.startLoad(directoryKey: "/docs", query: otherQuery))
+
+        XCTAssertTrue(coordinator.completeLoad(firstToken, success: true))
+        XCTAssertNil(coordinator.startLoad(directoryKey: "/docs", query: activeQuery))
+    }
+}
+
 private func makeMockURLSession() -> URLSession {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [MockURLProtocol.self]
