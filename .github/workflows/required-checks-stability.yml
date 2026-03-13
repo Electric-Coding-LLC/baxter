@@ -62,87 +62,90 @@ jobs:
   macos-app-test-stability:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        attempt: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    env:
-      DERIVED_DATA_PATH: ${{ github.workspace }}/.ci/DerivedData-${{ matrix.attempt }}
-      RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterApp-${{ matrix.attempt }}.xcresult
     steps:
-      - name: Skip attempts above requested iteration count
-        id: gate
-        run: |
-          set -euo pipefail
-          ITERATIONS='${{ inputs.iterations }}'
-          ATTEMPT='${{ matrix.attempt }}'
-          if [ "$ATTEMPT" -gt "$ITERATIONS" ]; then
-            echo "skip=true" >>"$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >>"$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v5
-        if: steps.gate.outputs.skip == 'false'
-      - name: Restore Xcode DerivedData cache
-        if: steps.gate.outputs.skip == 'false'
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ env.DERIVED_DATA_PATH }}
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-stability-${{ matrix.attempt }}-${{ hashFiles('apps/macos/BaxterApp.xcodeproj/project.pbxproj', 'apps/macos/BaxterApp/**/*.swift', 'apps/macos/BaxterAppTests/**/*.swift') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-stability-${{ matrix.attempt }}-
-      - name: Run macOS app tests
-        if: steps.gate.outputs.skip == 'false'
-        run: |
-          mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
-          xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" test
-      - name: Run launchd IPC smoke check
-        if: steps.gate.outputs.skip == 'false'
+      - name: Run repeated macOS app stability attempts
+        id: macos_attempts
         env:
+          ITERATIONS: ${{ inputs.iterations }}
           BAXTER_IPC_TOKEN: ci-smoke-current-token,ci-smoke-next-token
           BAXTER_SMOKE_DEADLINE_SECONDS: "120"
           BAXTER_IPC_READY_ATTEMPTS: "24"
           BAXTER_IPC_READY_SLEEP_SECONDS: "0.5"
         run: |
           set -euo pipefail
-          if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
-            echo "Skipping launchd smoke check: gui/$(id -u) domain unavailable on runner."
-            exit 0
+          iterations="${ITERATIONS:-10}"
+          failures=0
+          mkdir -p .ci/TestResults .ci/stability-artifacts
+
+          for attempt in $(seq 1 "$iterations"); do
+            derived_data_path="$GITHUB_WORKSPACE/.ci/DerivedData-$attempt"
+            result_bundle_path="$GITHUB_WORKSPACE/.ci/TestResults/BaxterApp-$attempt.xcresult"
+            attempt_artifact_dir="$GITHUB_WORKSPACE/.ci/stability-artifacts/attempt-$attempt"
+            launchd_log_dir="$attempt_artifact_dir/launchd-logs"
+            attempt_status="success"
+            failure_step=""
+
+            rm -rf "$derived_data_path" "$result_bundle_path" "$attempt_artifact_dir"
+
+            if ! xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$derived_data_path" -resultBundlePath "$result_bundle_path" test; then
+              attempt_status="failure"
+              failure_step="macOS app tests"
+            elif launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+              if ! (
+                set -euo pipefail
+                trap './scripts/uninstall-launchd.sh' EXIT
+                ./scripts/init-config.sh "$GITHUB_WORKSPACE"
+                ./scripts/install-launchd.sh
+                ./scripts/smoke-launchd-ipc.sh
+              ); then
+                attempt_status="failure"
+                failure_step="launchd IPC smoke check"
+              fi
+            fi
+
+            {
+              echo "### macOS app test attempt $attempt"
+              echo "- skipped: no"
+              if [ "$attempt_status" = "success" ]; then
+                if launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
+                  echo "- result: success"
+                else
+                  echo "- result: success"
+                  echo "- launchd smoke check: skipped (gui/$(id -u) domain unavailable on runner)"
+                fi
+              else
+                echo "- result: failure"
+                echo "- first failing step: $failure_step"
+              fi
+            } >>"$GITHUB_STEP_SUMMARY"
+
+            if [ "$attempt_status" = "failure" ]; then
+              failures=$((failures + 1))
+              mkdir -p "$launchd_log_dir"
+              cp -f "$HOME/Library/Logs/baxterd.out.log" "$launchd_log_dir/" 2>/dev/null || true
+              cp -f "$HOME/Library/Logs/baxterd.err.log" "$launchd_log_dir/" 2>/dev/null || true
+              if [ -d "$result_bundle_path" ]; then
+                ditto "$result_bundle_path" "$attempt_artifact_dir/BaxterApp.xcresult"
+              fi
+            fi
+          done
+
+          if [ "$failures" -gt 0 ]; then
+            echo "failures=$failures" >>"$GITHUB_OUTPUT"
+            exit 1
           fi
-          trap './scripts/uninstall-launchd.sh' EXIT
-          ./scripts/init-config.sh "$GITHUB_WORKSPACE"
-          ./scripts/install-launchd.sh
-          ./scripts/smoke-launchd-ipc.sh
-      - name: Collect launchd logs (on failure)
-        if: failure() && steps.gate.outputs.skip == 'false'
-        run: |
-          set -euo pipefail
-          mkdir -p .ci/launchd-logs
-          cp -f "$HOME/Library/Logs/baxterd.out.log" .ci/launchd-logs/ 2>/dev/null || true
-          cp -f "$HOME/Library/Logs/baxterd.err.log" .ci/launchd-logs/ 2>/dev/null || true
       - name: Upload launchd logs (on failure)
-        if: failure() && steps.gate.outputs.skip == 'false'
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: stability-launchd-logs-${{ matrix.attempt }}-${{ github.run_id }}
-          path: .ci/launchd-logs
+          name: stability-launchd-logs-${{ github.run_id }}
+          path: .ci/stability-artifacts
           if-no-files-found: warn
       - name: Upload macOS test result bundle (on failure)
-        if: failure() && steps.gate.outputs.skip == 'false'
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: stability-macos-xcresult-${{ matrix.attempt }}-${{ github.run_id }}
-          path: ${{ env.RESULT_BUNDLE_PATH }}
+          name: stability-macos-xcresult-${{ github.run_id }}
+          path: .ci/stability-artifacts
           if-no-files-found: warn
-      - name: Record macOS attempt summary
-        if: always()
-        run: |
-          {
-            echo "### macOS app test attempt ${{ matrix.attempt }}"
-            if [ '${{ steps.gate.outputs.skip }}' = "true" ]; then
-              echo "- skipped: yes (beyond requested iteration count)"
-            else
-              echo "- skipped: no"
-            fi
-          } >>"$GITHUB_STEP_SUMMARY"
