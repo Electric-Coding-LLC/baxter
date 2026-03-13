@@ -83,10 +83,14 @@ jobs:
             result_bundle_path="$GITHUB_WORKSPACE/.ci/TestResults/BaxterApp-$attempt.xcresult"
             attempt_artifact_dir="$GITHUB_WORKSPACE/.ci/stability-artifacts/attempt-$attempt"
             launchd_log_dir="$attempt_artifact_dir/launchd-logs"
+            attempt_home="$RUNNER_TEMP/baxter-home-$attempt"
+            attempt_label="com.electriccoding.baxterd.ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}.${attempt}"
+            attempt_ipc_port="$((43000 + attempt))"
+            attempt_ipc_addr="127.0.0.1:${attempt_ipc_port}"
             attempt_status="success"
             failure_step=""
 
-            rm -rf "$derived_data_path" "$result_bundle_path" "$attempt_artifact_dir"
+            rm -rf "$derived_data_path" "$result_bundle_path" "$attempt_artifact_dir" "$attempt_home"
 
             if ! xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$derived_data_path" -resultBundlePath "$result_bundle_path" test; then
               attempt_status="failure"
@@ -94,6 +98,12 @@ jobs:
             elif launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
               if ! (
                 set -euo pipefail
+                mkdir -p "$attempt_home"
+                export HOME="$attempt_home"
+                export BAXTER_HOME_DIR="$attempt_home"
+                export BAXTER_LAUNCHD_LABEL="$attempt_label"
+                export BAXTER_IPC_ADDR="$attempt_ipc_addr"
+                export BAXTER_IPC_URL="http://$attempt_ipc_addr"
                 trap './scripts/uninstall-launchd.sh' EXIT
                 ./scripts/init-config.sh "$GITHUB_WORKSPACE"
                 ./scripts/install-launchd.sh
@@ -123,8 +133,8 @@ jobs:
             if [ "$attempt_status" = "failure" ]; then
               failures=$((failures + 1))
               mkdir -p "$launchd_log_dir"
-              cp -f "$HOME/Library/Logs/baxterd.out.log" "$launchd_log_dir/" 2>/dev/null || true
-              cp -f "$HOME/Library/Logs/baxterd.err.log" "$launchd_log_dir/" 2>/dev/null || true
+              cp -f "$attempt_home/Library/Logs/baxterd.out.log" "$launchd_log_dir/" 2>/dev/null || true
+              cp -f "$attempt_home/Library/Logs/baxterd.err.log" "$launchd_log_dir/" 2>/dev/null || true
               if [ -d "$result_bundle_path" ]; then
                 ditto "$result_bundle_path" "$attempt_artifact_dir/BaxterApp.xcresult"
               fi
