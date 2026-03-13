@@ -31,10 +31,13 @@ type Daemon struct {
 	verifyScheduleChanged chan struct{}
 	ipcAddr               string
 	mu                    sync.Mutex
+	restoreIndexMu        sync.Mutex
 	running               bool
 	verifyRunning         bool
 	status                daemonStatus
 	handler               http.Handler
+	restoreListIndexKey   restoreManifestCacheKey
+	restoreListIndex      *restoreManifestIndex
 }
 
 func New(cfg *config.Config) *Daemon {

@@ -100,7 +100,7 @@ func (d *Daemon) handleRestoreList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	snapshotSelector := strings.TrimSpace(r.URL.Query().Get("snapshot"))
-	m, err := d.loadManifestForRestore(snapshotSelector)
+	index, err := d.loadRestoreListIndex(snapshotSelector)
 	if err != nil {
 		d.writeError(w, http.StatusBadRequest, "manifest_load_failed", fmt.Sprintf("load manifest: %v", err))
 		return
@@ -111,9 +111,9 @@ func (d *Daemon) handleRestoreList(w http.ResponseWriter, r *http.Request) {
 	childrenOnly := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("children")), "true") ||
 		strings.TrimSpace(r.URL.Query().Get("children")) == "1"
 
-	paths := filterRestorePaths(m.Entries, prefix, contains)
+	paths := index.filterPaths(prefix, contains)
 	if childrenOnly {
-		paths = filterRestoreChildrenPaths(m.Entries, prefix, contains)
+		paths = index.filterChildrenPaths(prefix, contains)
 	}
 	d.writeJSON(w, http.StatusOK, restoreListResponse{Paths: paths})
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"baxter/internal/backup"
@@ -76,70 +75,6 @@ func (d *Daemon) writeRestoreError(w http.ResponseWriter, err error) {
 	default:
 		d.writeError(w, http.StatusBadRequest, "restore_failed", err.Error())
 	}
-}
-
-func filterRestorePaths(entries []backup.ManifestEntry, prefix string, contains string) []string {
-	cleanPrefix := filepath.Clean(strings.TrimSpace(prefix))
-	if cleanPrefix == "." {
-		cleanPrefix = ""
-	}
-	contains = strings.TrimSpace(contains)
-
-	paths := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		path := entry.Path
-		if !backup.PathHasPrefix(path, cleanPrefix) {
-			continue
-		}
-		if contains != "" && !strings.Contains(path, contains) {
-			continue
-		}
-		paths = append(paths, path)
-	}
-	return paths
-}
-
-func filterRestoreChildrenPaths(entries []backup.ManifestEntry, prefix string, contains string) []string {
-	cleanPrefix := filepath.Clean(strings.TrimSpace(prefix))
-	if cleanPrefix == "." {
-		cleanPrefix = ""
-	}
-	contains = strings.TrimSpace(contains)
-
-	children := make(map[string]bool)
-	for _, entry := range entries {
-		path := filepath.Clean(entry.Path)
-		if path == "." {
-			continue
-		}
-		if cleanPrefix != "" && !pathHasPrefix(path, cleanPrefix) {
-			continue
-		}
-		if contains != "" && !strings.Contains(entry.Path, contains) {
-			continue
-		}
-
-		childPath, isDirectory, ok := immediateRestoreChild(path, cleanPrefix)
-		if !ok {
-			continue
-		}
-		children[childPath] = children[childPath] || isDirectory
-	}
-
-	paths := make([]string, 0, len(children))
-	for childPath, isDirectory := range children {
-		if isDirectory {
-			paths = append(paths, childPath+string(filepath.Separator))
-			continue
-		}
-		paths = append(paths, childPath)
-	}
-	sort.Strings(paths)
-	return paths
-}
-
-func pathHasPrefix(path string, prefix string) bool {
-	return backup.PathHasPrefix(path, prefix)
 }
 
 func immediateRestoreChild(path string, prefix string) (string, bool, bool) {
