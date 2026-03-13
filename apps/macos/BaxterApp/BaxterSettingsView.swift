@@ -1,12 +1,22 @@
 import SwiftUI
 
 struct BaxterSettingsView: View {
+    enum OnboardingMode: String, CaseIterable, Identifiable {
+        case newBackup
+        case existingBackup
+
+        var id: String { rawValue }
+    }
+
     @ObservedObject var model: BaxterSettingsModel
     @ObservedObject var statusModel: BackupStatusModel
+    var onRecoveryConnected: (() -> Void)? = nil
     var embedded: Bool = false
     @AppStorage("baxter.onboarding.dismissed") var onboardingDismissed = false
     @State var showApplyNow = false
+    @State var onboardingMode: OnboardingMode = .newBackup
     @State var onboardingStorageMode: StorageModeOption = .local
+    @State var recoveryPassphrase = ""
     @State var onboardingMessage: String?
 
     var body: some View {
@@ -54,8 +64,14 @@ struct BaxterSettingsView: View {
                 showApplyNow = false
             }
         }
+        .onChange(of: onboardingMode) { _, _ in
+            onboardingMessage = nil
+        }
         .onAppear {
             onboardingStorageMode = model.storageMode()
+            if model.configExists && model.backupRoots.isEmpty {
+                onboardingMode = .existingBackup
+            }
         }
     }
 
@@ -166,5 +182,35 @@ struct BaxterSettingsView: View {
 
         statusModel.runBackup()
         onboardingMessage = "Setup saved. First backup started."
+    }
+
+    func completeExistingBackupOnboarding() {
+        let passphrase = recoveryPassphrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let validation = model.existingBackupValidationMessage(passphrase: passphrase) {
+            onboardingMessage = validation
+            return
+        }
+
+        model.save()
+        if let error = model.errorMessage {
+            onboardingMessage = error
+            return
+        }
+
+        Task {
+            let connected = await statusModel.recoverExistingBackup(
+                passphrase: passphrase,
+                keychainService: model.keychainService,
+                keychainAccount: model.keychainAccount
+            )
+            onboardingMessage = statusModel.recoveryMessage
+            guard connected else {
+                return
+            }
+
+            recoveryPassphrase = ""
+            onboardingDismissed = true
+            onRecoveryConnected?()
+        }
     }
 }
