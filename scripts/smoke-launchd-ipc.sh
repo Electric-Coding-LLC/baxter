@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LABEL="com.electriccoding.baxterd"
+LABEL="${BAXTER_LAUNCHD_LABEL:-com.electriccoding.baxterd}"
 SERVICE="gui/$(id -u)/$LABEL"
-IPC_URL="${BAXTER_IPC_URL:-http://127.0.0.1:41820}"
+IPC_ADDR="${BAXTER_IPC_ADDR:-127.0.0.1:41820}"
+IPC_URL="${BAXTER_IPC_URL:-http://$IPC_ADDR}"
 RAW_IPC_TOKEN="${BAXTER_IPC_TOKEN:-}"
 IPC_TOKEN=""
 MAX_ATTEMPTS="${BAXTER_IPC_READY_ATTEMPTS:-20}"

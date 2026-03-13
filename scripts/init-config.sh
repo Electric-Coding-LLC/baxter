@@ -6,9 +6,9 @@ if [ "$#" -lt 1 ]; then
   exit 1
 fi
 
-HOME_DIR="${HOME:?HOME is required}"
-APP_DIR="$HOME_DIR/Library/Application Support/baxter"
-CONFIG_PATH="$APP_DIR/config.toml"
+HOME_DIR="${BAXTER_HOME_DIR:-${HOME:?HOME is required}}"
+APP_DIR="${BAXTER_APP_SUPPORT_DIR:-$HOME_DIR/Library/Application Support/baxter}"
+CONFIG_PATH="${BAXTER_CONFIG_PATH:-$APP_DIR/config.toml}"
 
 mkdir -p "$APP_DIR"
 

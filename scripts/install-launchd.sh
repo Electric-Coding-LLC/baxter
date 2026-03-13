@@ -2,17 +2,18 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-HOME_DIR="${HOME:?HOME is required}"
+HOME_DIR="${BAXTER_HOME_DIR:-${HOME:?HOME is required}}"
+LAUNCHD_LABEL="${BAXTER_LAUNCHD_LABEL:-com.electriccoding.baxterd}"
 
-APP_SUPPORT_DIR="$HOME_DIR/Library/Application Support/baxter"
+APP_SUPPORT_DIR="${BAXTER_APP_SUPPORT_DIR:-$HOME_DIR/Library/Application Support/baxter}"
 BIN_DIR="$APP_SUPPORT_DIR/bin"
 BAXTERD_BIN="$BIN_DIR/baxterd"
-CONFIG_PATH="$APP_SUPPORT_DIR/config.toml"
-IPC_ADDR="127.0.0.1:41820"
+CONFIG_PATH="${BAXTER_CONFIG_PATH:-$APP_SUPPORT_DIR/config.toml}"
+IPC_ADDR="${BAXTER_IPC_ADDR:-127.0.0.1:41820}"
 BAXTERD_BINARY_PATH="${BAXTERD_BINARY_PATH:-}"
 
 LAUNCH_AGENTS_DIR="$HOME_DIR/Library/LaunchAgents"
-PLIST_PATH="$LAUNCH_AGENTS_DIR/com.electriccoding.baxterd.plist"
+PLIST_PATH="$LAUNCH_AGENTS_DIR/$LAUNCHD_LABEL.plist"
 TEMPLATE_PATH="$ROOT_DIR/launchd/com.electriccoding.baxterd.plist.template"
 IPC_TOKEN="${BAXTER_IPC_TOKEN:-}"
 AWS_PROFILE_VALUE="${AWS_PROFILE:-}"
@@ -64,6 +65,7 @@ else
 fi
 
 sed \
+  -e "s|__LABEL__|$LAUNCHD_LABEL|g" \
   -e "s|__BAXTERD_BIN__|$BAXTERD_BIN|g" \
   -e "s|__CONFIG_PATH__|$CONFIG_PATH|g" \
   -e "s|__IPC_ADDR__|$IPC_ADDR|g" \
@@ -96,13 +98,13 @@ add_env_var "AWS_ACCESS_KEY_ID" "$AWS_ACCESS_KEY_ID_VALUE"
 add_env_var "AWS_SECRET_ACCESS_KEY" "$AWS_SECRET_ACCESS_KEY_VALUE"
 add_env_var "AWS_SESSION_TOKEN" "$AWS_SESSION_TOKEN_VALUE"
 
-launchctl bootout "gui/$(id -u)/com.electriccoding.baxterd" >/dev/null 2>&1 || true
+launchctl bootout "gui/$(id -u)/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
-launchctl enable "gui/$(id -u)/com.electriccoding.baxterd"
+launchctl enable "gui/$(id -u)/$LAUNCHD_LABEL"
 
-launchctl print "gui/$(id -u)/com.electriccoding.baxterd" >/dev/null
+launchctl print "gui/$(id -u)/$LAUNCHD_LABEL" >/dev/null
 
-echo "Installed and started com.electriccoding.baxterd"
+echo "Installed and started $LAUNCHD_LABEL"
 echo "Plist: $PLIST_PATH"
 echo "Binary: $BAXTERD_BIN"
 if [ -n "$IPC_TOKEN" ]; then
