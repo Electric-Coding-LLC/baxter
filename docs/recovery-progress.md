@@ -31,8 +31,8 @@ That means losing the machine can also mean losing the metadata needed to restor
 | --- | --- | --- | --- |
 | R1 | Remote recovery metadata foundation | done | Recovery metadata schema, storage key, tests, and backup-path updates are in place. |
 | R2 | Remote encrypted manifest snapshots | done | Successful backups now upload encrypted snapshot manifests and update remote recovery metadata with the latest snapshot ID. |
-| R3 | CLI recovery bootstrap | done | `baxter recovery bootstrap` now fetches remote recovery metadata, derives keys from the remote salt, downloads the latest encrypted snapshot manifest, and rebuilds local cache state. |
-| R4 | Restore fallback to remote metadata | done | Shared manifest loading now falls back to remote recovery metadata and rehydrates local cache when local restore state is missing or stale. |
+| R3 | CLI recovery bootstrap | done | `baxter recovery bootstrap` now fetches remote recovery metadata, derives keys from the remote salt, downloads encrypted remote snapshot manifests, and rebuilds the full local cache state. |
+| R4 | Restore fallback to remote metadata | done | Shared manifest loading now falls back to remote recovery metadata and rehydrates the local snapshot cache when local restore state is missing or stale. |
 | R5 | Backup master key wrapping | done | New backups now generate wrapped master keys, encrypt objects/manifests with them, and resolve them through recovery metadata with legacy decrypt fallback. |
 | R6 | Legacy backup-set migration | done | Existing S3-backed sets now adopt recovery metadata and wrapped keys on the next backup without reuploading unchanged objects, while keeping legacy decrypt fallback. |
 | R7 | App recovery UX | done | The macOS app now offers `Connect Existing Backup`, saves the passphrase to the configured keychain item, bootstraps recovery metadata through the CLI helper, and lands in Restore. |
@@ -87,7 +87,7 @@ Expected scope:
 - Validate storage access.
 - Fetch remote recovery metadata.
 - Derive keys from passphrase + remote salt.
-- Download latest manifest metadata and rebuild local cache.
+- Download remote snapshot metadata and rebuild local cache.
 
 Definition of done:
 
