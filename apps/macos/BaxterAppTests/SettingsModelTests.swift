@@ -610,6 +610,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         model.refreshStatus()
         await waitUntil("first IPC failure") {
             MockURLProtocol.requests().filter { $0.url?.path == "/v1/status" }.count >= 1
+                && model.connectionState == .connecting
         }
         XCTAssertEqual(model.connectionState, .connecting)
 
