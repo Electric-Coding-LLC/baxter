@@ -79,7 +79,7 @@ func TestRunBackupAndRestorePathWithPassphrase(t *testing.T) {
 	}
 
 	listOutput, err := captureStdout(t, func() error {
-		return restoreList(restoreListOptions{
+		return restoreList(cfg, restoreListOptions{
 			Prefix:   srcRoot,
 			Contains: "doc",
 		})
@@ -473,6 +473,58 @@ func TestRestorePathVerifyOnlyDoesNotWrite(t *testing.T) {
 	}
 }
 
+func TestRestorePathFallsBackToRemoteMetadataWhenLocalCacheMissing(t *testing.T) {
+	setCLIHome(t)
+
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	sourceContent := []byte("remote restore fallback payload")
+	if err := os.WriteFile(sourcePath, sourceContent, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv(passphraseEnv, "restore-fallback-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("run backup failed: %v", err)
+	}
+	clearRestoreCache(t)
+
+	if err := restorePath(cfg, sourcePath, restoreOptions{ToDir: restoreRoot}); err != nil {
+		t.Fatalf("restore with remote fallback failed: %v", err)
+	}
+
+	trimmed := strings.TrimPrefix(filepath.Clean(sourcePath), string(filepath.Separator))
+	restoredPath := filepath.Join(restoreRoot, trimmed)
+	restoredContent, err := os.ReadFile(restoredPath)
+	if err != nil {
+		t.Fatalf("read restored file: %v", err)
+	}
+	if !bytes.Equal(restoredContent, sourceContent) {
+		t.Fatalf("restored content mismatch: got %q want %q", string(restoredContent), string(sourceContent))
+	}
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("stat rebuilt manifest cache: %v", err)
+	}
+	if _, err := readKDFSalt(); err != nil {
+		t.Fatalf("read rebuilt kdf salt: %v", err)
+	}
+}
+
 func TestRestorePathChecksumMismatchDoesNotOverwriteTarget(t *testing.T) {
 	homeDir := t.TempDir()
 	srcRoot := filepath.Join(t.TempDir(), "src")
@@ -633,5 +685,33 @@ func TestRunBackupAndRestoreEdgeFilenames(t *testing.T) {
 	}
 	if !bytes.Equal(gotUpdated, updated) {
 		t.Fatalf("overwrite mismatch: got %q want %q", string(gotUpdated), string(updated))
+	}
+}
+
+func clearRestoreCache(t *testing.T) {
+	t.Helper()
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	if err := os.Remove(manifestPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove manifest cache: %v", err)
+	}
+
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("snapshot dir: %v", err)
+	}
+	if err := os.RemoveAll(snapshotDir); err != nil {
+		t.Fatalf("remove snapshot cache: %v", err)
+	}
+
+	saltPath, err := state.KDFSaltPath()
+	if err != nil {
+		t.Fatalf("kdf salt path: %v", err)
+	}
+	if err := os.Remove(saltPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove kdf salt: %v", err)
 	}
 }

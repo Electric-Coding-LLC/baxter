@@ -14,7 +14,7 @@ import (
 )
 
 func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) error {
-	m, err := loadRestoreManifest(opts.Snapshot)
+	m, err := loadRestoreManifest(cfg, opts.Snapshot)
 	if err != nil {
 		return err
 	}
@@ -113,8 +113,8 @@ func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) 
 	return nil
 }
 
-func restoreList(opts restoreListOptions) error {
-	m, err := loadRestoreManifest(opts.Snapshot)
+func restoreList(cfg *config.Config, opts restoreListOptions) error {
+	m, err := loadRestoreManifest(cfg, opts.Snapshot)
 	if err != nil {
 		return err
 	}

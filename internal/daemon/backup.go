@@ -103,15 +103,23 @@ type encryptionKeySet struct {
 	salt       []byte
 }
 
-func encryptionKeys(cfg *config.Config) (encryptionKeySet, error) {
+func encryptionPassphrase(cfg *config.Config) (string, error) {
 	passphrase := os.Getenv(passphraseEnv)
 	if passphrase != "" {
-		return deriveEncryptionKeys(passphrase)
+		return passphrase, nil
 	}
 
 	passphrase, err := crypto.PassphraseFromKeychain(cfg.Encryption.KeychainService, cfg.Encryption.KeychainAccount)
 	if err != nil {
-		return encryptionKeySet{}, fmt.Errorf("no %s set and keychain lookup failed: %w", passphraseEnv, err)
+		return "", fmt.Errorf("no %s set and keychain lookup failed: %w", passphraseEnv, err)
+	}
+	return passphrase, nil
+}
+
+func encryptionKeys(cfg *config.Config) (encryptionKeySet, error) {
+	passphrase, err := encryptionPassphrase(cfg)
+	if err != nil {
+		return encryptionKeySet{}, err
 	}
 	return deriveEncryptionKeys(passphrase)
 }

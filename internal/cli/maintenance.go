@@ -85,7 +85,7 @@ func runGC(cfg *config.Config, opts gcOptions) error {
 }
 
 func runVerify(cfg *config.Config, opts verifyOptions) error {
-	manifest, err := loadRestoreManifest(opts.Snapshot)
+	manifest, err := loadRestoreManifest(cfg, opts.Snapshot)
 	if err != nil {
 		return err
 	}
