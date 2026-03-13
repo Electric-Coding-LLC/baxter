@@ -137,6 +137,79 @@ func TestLoadManifestRefreshesStaleLatestCache(t *testing.T) {
 	}
 }
 
+func TestLoadManifestHydratesRemoteSnapshotHistory(t *testing.T) {
+	setRecoveryCacheHome(t)
+
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("v1"), 0o600); err != nil {
+		t.Fatalf("write source v1: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	passphrase := "snapshot-history-passphrase"
+	salt, err := crypto.NewKDFSalt()
+	if err != nil {
+		t.Fatalf("generate salt: %v", err)
+	}
+	store := testRecoveryCacheStore(t)
+	manifestPath := filepath.Join(t.TempDir(), "remote-manifest.json")
+	snapshotDir := filepath.Join(t.TempDir(), "remote-manifests")
+	seedStateBackup(t, cfg, store, passphrase, salt, manifestPath, snapshotDir)
+
+	if err := os.WriteFile(sourcePath, []byte("v2"), 0o600); err != nil {
+		t.Fatalf("write source v2: %v", err)
+	}
+	seedStateBackup(t, cfg, store, passphrase, salt, manifestPath, snapshotDir)
+
+	remoteSnapshots, err := backup.ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		t.Fatalf("list remote snapshots: %v", err)
+	}
+	if len(remoteSnapshots) != 2 {
+		t.Fatalf("expected 2 remote snapshots, got %d", len(remoteSnapshots))
+	}
+
+	clearLocalRecoveryCache(t)
+
+	manifest, err := LoadManifest(cfg, store, "", func() (string, error) {
+		return passphrase, nil
+	})
+	if err != nil {
+		t.Fatalf("load manifest from remote history: %v", err)
+	}
+	if _, err := backup.FindEntryByPath(manifest, sourcePath); err != nil {
+		t.Fatalf("latest hydrated manifest missing source path: %v", err)
+	}
+
+	localSnapshots, err := backup.ListSnapshotManifests(testManifestSnapshotsDir(t))
+	if err != nil {
+		t.Fatalf("list hydrated local snapshots: %v", err)
+	}
+	if len(localSnapshots) != len(remoteSnapshots) {
+		t.Fatalf("expected %d hydrated local snapshots, got %d", len(remoteSnapshots), len(localSnapshots))
+	}
+
+	oldestRemoteSnapshotID := remoteSnapshots[len(remoteSnapshots)-1].ID
+	oldestLocalManifest, err := backup.LoadManifestForRestore(testManifestPath(t), testManifestSnapshotsDir(t), oldestRemoteSnapshotID)
+	if err != nil {
+		t.Fatalf("load hydrated older snapshot: %v", err)
+	}
+	entry, err := backup.FindEntryByPath(oldestLocalManifest, sourcePath)
+	if err != nil {
+		t.Fatalf("find hydrated older snapshot entry: %v", err)
+	}
+	if entry.SHA256 == "" {
+		t.Fatal("expected hydrated older snapshot entry checksum")
+	}
+}
+
 func seedStateBackup(t *testing.T, cfg *config.Config, store storage.ObjectStore, passphrase string, salt []byte, manifestPath string, snapshotDir string) {
 	t.Helper()
 

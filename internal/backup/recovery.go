@@ -11,6 +11,7 @@ import (
 )
 
 const remoteSnapshotManifestPrefix = "system/manifests/"
+const remoteSnapshotManifestSuffix = ".json.enc"
 
 func IsSystemObjectKey(key string) bool {
 	return strings.HasPrefix(strings.TrimSpace(key), "system/")
@@ -32,7 +33,23 @@ func RemoteSnapshotManifestObjectKey(snapshotID string) (string, error) {
 	if trimmedSnapshotID == "" {
 		return "", errors.New("snapshot id is required")
 	}
-	return remoteSnapshotManifestPrefix + trimmedSnapshotID + ".json.enc", nil
+	return remoteSnapshotManifestPrefix + trimmedSnapshotID + remoteSnapshotManifestSuffix, nil
+}
+
+func RemoteSnapshotManifestIDFromObjectKey(key string) (string, bool) {
+	trimmedKey := strings.TrimSpace(key)
+	if !strings.HasPrefix(trimmedKey, remoteSnapshotManifestPrefix) {
+		return "", false
+	}
+	if !strings.HasSuffix(trimmedKey, remoteSnapshotManifestSuffix) {
+		return "", false
+	}
+
+	snapshotID := strings.TrimSuffix(strings.TrimPrefix(trimmedKey, remoteSnapshotManifestPrefix), remoteSnapshotManifestSuffix)
+	if strings.TrimSpace(snapshotID) == "" {
+		return "", false
+	}
+	return snapshotID, true
 }
 
 func WriteEncryptedSnapshotManifest(store storage.ObjectStore, snapshotID string, manifest *Manifest, key []byte) error {
