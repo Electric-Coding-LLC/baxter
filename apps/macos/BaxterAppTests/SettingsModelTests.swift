@@ -950,6 +950,82 @@ final class RestoreBrowserIndexTests: XCTestCase {
         XCTAssertEqual(cache.state.visiblePaths, ["/music", "/music/song.mp3"])
     }
 
+    func testBuildRestoreBrowserVisibleRowsRespectsExpandedPaths() {
+        let index = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/notes/todo.txt",
+                "/docs/notes/ideas.md",
+                "/docs/photo.jpg",
+                "/music/song.mp3",
+            ],
+            maxPaths: 2_000
+        )
+
+        let rows = buildRestoreBrowserVisibleRows(
+            roots: index.rootNodes,
+            expandedPaths: ["/docs", "/docs/notes"],
+            loadingDirectoryKeys: [],
+            forceExpanded: false
+        )
+
+        XCTAssertEqual(
+            rows.map(\.id),
+            [
+                "/docs",
+                "/docs/notes",
+                "/docs/notes/ideas.md",
+                "/docs/notes/todo.txt",
+                "/docs/photo.jpg",
+                "/music",
+            ]
+        )
+        XCTAssertEqual(rows.map(\.depth), [0, 1, 2, 2, 1, 0])
+    }
+
+    func testBuildRestoreBrowserVisibleRowsForceExpandedIncludesAllDescendants() {
+        let index = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/notes/todo.txt",
+                "/music/song.mp3",
+            ],
+            maxPaths: 2_000
+        )
+
+        let rows = buildRestoreBrowserVisibleRows(
+            roots: index.rootNodes,
+            expandedPaths: [],
+            loadingDirectoryKeys: [],
+            forceExpanded: true
+        )
+
+        XCTAssertEqual(
+            rows.map(\.id),
+            ["/docs", "/docs/notes", "/docs/notes/todo.txt", "/music", "/music/song.mp3"]
+        )
+        XCTAssertEqual(rows.map(\.isExpanded), [true, true, false, true, false])
+    }
+
+    func testBuildRestoreBrowserVisibleRowsIncludesLoadingPlaceholderForExpandedEmptyDirectory() {
+        let rows = buildRestoreBrowserVisibleRows(
+            roots: [
+                RestoreBrowserNode(
+                    path: "/docs",
+                    name: "docs",
+                    isDirectory: true,
+                    children: []
+                )
+            ],
+            expandedPaths: ["/docs"],
+            loadingDirectoryKeys: ["/docs"],
+            forceExpanded: false
+        )
+
+        XCTAssertEqual(rows.map(\.id), ["/docs", "/docs#loading"])
+        XCTAssertFalse(rows[0].isLoadingPlaceholder)
+        XCTAssertTrue(rows[1].isLoadingPlaceholder)
+        XCTAssertEqual(rows[1].depth, 1)
+    }
+
     func testRestorePathHelpersHandleAbsoluteAndRelativePaths() {
         XCTAssertEqual(restorePathName("/docs/notes/todo.txt"), "todo.txt")
         XCTAssertEqual(restorePathName("/"), "/")
