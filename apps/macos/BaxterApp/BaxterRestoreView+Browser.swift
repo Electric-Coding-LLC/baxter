@@ -382,6 +382,13 @@ struct RestoreBrowserTree: View {
     let onUseForRestore: (String) -> Void
 
     var body: some View {
+        let rows = buildRestoreBrowserVisibleRows(
+            roots: roots,
+            expandedPaths: expandedPaths,
+            loadingDirectoryKeys: loadingDirectoryKeys,
+            forceExpanded: forceExpanded
+        )
+
         GeometryReader { proxy in
             ScrollView {
                 ZStack(alignment: .topLeading) {
@@ -392,13 +399,10 @@ struct RestoreBrowserTree: View {
                         }
 
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(roots) { node in
-                            RestoreBrowserTreeRow(
-                                node: node,
-                                depth: 0,
+                        ForEach(rows) { row in
+                            RestoreBrowserVisibleRowView(
+                                row: row,
                                 selectedPath: selectedPath,
-                                expandedPaths: $expandedPaths,
-                                loadingDirectoryKeys: loadingDirectoryKeys,
                                 forceExpanded: forceExpanded,
                                 iconName: iconName,
                                 iconColor: iconColor,
@@ -419,12 +423,9 @@ struct RestoreBrowserTree: View {
     }
 }
 
-struct RestoreBrowserTreeRow: View {
-    let node: RestoreBrowserNode
-    let depth: Int
+struct RestoreBrowserVisibleRowView: View {
+    let row: RestoreBrowserVisibleRow
     let selectedPath: String?
-    @Binding var expandedPaths: Set<String>
-    let loadingDirectoryKeys: Set<String>
     let forceExpanded: Bool
     let iconName: (String) -> String
     let iconColor: (String) -> Color
@@ -433,97 +434,82 @@ struct RestoreBrowserTreeRow: View {
     let onQuickLook: (String) -> Void
     let onUseForRestore: (String) -> Void
 
+    private var node: RestoreBrowserNode? {
+        row.node
+    }
+
     private var isExpanded: Bool {
-        node.isDirectory && (forceExpanded || expandedPaths.contains(node.path))
+        row.isExpanded
     }
 
     private var isSelected: Bool {
-        selectedPath == node.path
+        selectedPath == row.path
     }
 
     private var isLoading: Bool {
-        loadingDirectoryKeys.contains(node.path)
+        row.isLoadingPlaceholder || row.isLoading
     }
 
     private var rowLeadingPadding: CGFloat {
-        CGFloat(depth) * 12 + 4
+        CGFloat(row.depth) * 12 + 4
     }
 
-    private var childLeadingPadding: CGFloat {
-        CGFloat(depth + 1) * 12 + 20
+    private var loadingPlaceholderLeadingPadding: CGFloat {
+        CGFloat(row.depth) * 12 + 20
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
-                expansionToggle
-
-                Image(systemName: iconName(node.path))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(iconColor(node.path))
-
-                Text(node.name)
-                    .lineLimit(1)
-
-                Spacer(minLength: 0)
-
-                if isLoading {
+        Group {
+            if row.isLoadingPlaceholder {
+                HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
+                    Text("Loading...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 21)
-            .padding(.leading, rowLeadingPadding)
-            .padding(.trailing, 10)
-            .padding(.vertical, 1)
-            .background(
-                isSelected ? Color.accentColor.opacity(0.24) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .onTapGesture {
-                if node.isDirectory && !isExpanded && !forceExpanded {
-                    onToggleExpansion(node.path, true)
-                }
-                onSelect(node.path)
-            }
-            .contextMenu {
-                Button("Quick Look") {
-                    onQuickLook(node.path)
-                }
-                Button("Use for Restore") {
-                    onUseForRestore(node.path)
-                }
-            }
+                .padding(.leading, loadingPlaceholderLeadingPadding)
+                .padding(.vertical, 1)
+            } else if let node {
+                HStack(spacing: 4) {
+                    expansionToggle(for: node)
 
-            if node.isDirectory && isExpanded {
-                if node.children.isEmpty && isLoading {
-                    HStack(spacing: 8) {
+                    Image(systemName: iconName(node.path))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(iconColor(node.path))
+
+                    Text(node.name)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    if isLoading {
                         ProgressView()
                             .controlSize(.small)
-                        Text("Loading...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
                     }
-                    .padding(.leading, childLeadingPadding)
-                    .padding(.vertical, 1)
-                } else {
-                    ForEach(node.children) { child in
-                        RestoreBrowserTreeRow(
-                            node: child,
-                            depth: depth + 1,
-                            selectedPath: selectedPath,
-                            expandedPaths: $expandedPaths,
-                            loadingDirectoryKeys: loadingDirectoryKeys,
-                            forceExpanded: forceExpanded,
-                            iconName: iconName,
-                            iconColor: iconColor,
-                            onSelect: onSelect,
-                            onToggleExpansion: onToggleExpansion,
-                            onQuickLook: onQuickLook,
-                            onUseForRestore: onUseForRestore
-                        )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 21)
+                .padding(.leading, rowLeadingPadding)
+                .padding(.trailing, 10)
+                .padding(.vertical, 1)
+                .background(
+                    isSelected ? Color.accentColor.opacity(0.24) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .onTapGesture {
+                    if node.isDirectory && !isExpanded && !forceExpanded {
+                        onToggleExpansion(node.path, true)
+                    }
+                    onSelect(node.path)
+                }
+                .contextMenu {
+                    Button("Quick Look") {
+                        onQuickLook(node.path)
+                    }
+                    Button("Use for Restore") {
+                        onUseForRestore(node.path)
                     }
                 }
             }
@@ -531,7 +517,7 @@ struct RestoreBrowserTreeRow: View {
     }
 
     @ViewBuilder
-    private var expansionToggle: some View {
+    private func expansionToggle(for node: RestoreBrowserNode) -> some View {
         if node.isDirectory {
             Button {
                 guard !forceExpanded else {
@@ -551,6 +537,87 @@ struct RestoreBrowserTreeRow: View {
             Color.clear
                 .frame(width: 18, height: 18)
         }
+    }
+}
+
+struct RestoreBrowserVisibleRow: Identifiable, Equatable {
+    let id: String
+    let path: String
+    let node: RestoreBrowserNode?
+    let depth: Int
+    let isExpanded: Bool
+    let isLoading: Bool
+    let isLoadingPlaceholder: Bool
+}
+
+func buildRestoreBrowserVisibleRows(
+    roots: [RestoreBrowserNode],
+    expandedPaths: Set<String>,
+    loadingDirectoryKeys: Set<String>,
+    forceExpanded: Bool
+) -> [RestoreBrowserVisibleRow] {
+    var rows: [RestoreBrowserVisibleRow] = []
+    appendRestoreBrowserVisibleRows(
+        roots,
+        depth: 0,
+        expandedPaths: expandedPaths,
+        loadingDirectoryKeys: loadingDirectoryKeys,
+        forceExpanded: forceExpanded,
+        into: &rows
+    )
+    return rows
+}
+
+private func appendRestoreBrowserVisibleRows(
+    _ nodes: [RestoreBrowserNode],
+    depth: Int,
+    expandedPaths: Set<String>,
+    loadingDirectoryKeys: Set<String>,
+    forceExpanded: Bool,
+    into rows: inout [RestoreBrowserVisibleRow]
+) {
+    for node in nodes {
+        let isExpanded = node.isDirectory && (forceExpanded || expandedPaths.contains(node.path))
+        let isLoading = loadingDirectoryKeys.contains(node.path)
+        rows.append(
+            RestoreBrowserVisibleRow(
+                id: node.path,
+                path: node.path,
+                node: node,
+                depth: depth,
+                isExpanded: isExpanded,
+                isLoading: isLoading,
+                isLoadingPlaceholder: false
+            )
+        )
+
+        guard node.isDirectory, isExpanded else {
+            continue
+        }
+
+        if node.children.isEmpty && isLoading {
+            rows.append(
+                RestoreBrowserVisibleRow(
+                    id: "\(node.path)#loading",
+                    path: node.path,
+                    node: nil,
+                    depth: depth + 1,
+                    isExpanded: false,
+                    isLoading: true,
+                    isLoadingPlaceholder: true
+                )
+            )
+            continue
+        }
+
+        appendRestoreBrowserVisibleRows(
+            node.children,
+            depth: depth + 1,
+            expandedPaths: expandedPaths,
+            loadingDirectoryKeys: loadingDirectoryKeys,
+            forceExpanded: forceExpanded,
+            into: &rows
+        )
     }
 }
 
