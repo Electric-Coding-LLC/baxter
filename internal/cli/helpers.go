@@ -11,6 +11,7 @@ import (
 	"baxter/internal/backup"
 	"baxter/internal/config"
 	"baxter/internal/crypto"
+	"baxter/internal/recoverycache"
 	"baxter/internal/state"
 	"baxter/internal/storage"
 )
@@ -248,17 +249,14 @@ func objectStoreFromConfig(cfg *config.Config) (storage.ObjectStore, error) {
 	return store, nil
 }
 
-func loadRestoreManifest(snapshotSelector string) (*backup.Manifest, error) {
-	manifestPath, err := state.ManifestPath()
+func loadRestoreManifest(cfg *config.Config, snapshotSelector string) (*backup.Manifest, error) {
+	store, err := objectStoreFromConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	snapshotDir, err := state.ManifestSnapshotsDir()
-	if err != nil {
-		return nil, err
-	}
-
-	manifest, err := backup.LoadManifestForRestore(manifestPath, snapshotDir, snapshotSelector)
+	manifest, err := recoverycache.LoadManifest(cfg, store, snapshotSelector, func() (string, error) {
+		return encryptionPassphrase(cfg)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("load manifest: %w", err)
 	}

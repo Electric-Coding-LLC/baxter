@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"baxter/internal/backup"
-	"baxter/internal/state"
+	"baxter/internal/recoverycache"
 	"baxter/internal/storage"
 )
 
@@ -214,15 +214,18 @@ func resolvedRestorePath(sourcePath string, toDir string) (string, error) {
 }
 
 func (d *Daemon) loadManifestForRestore(snapshotSelector string) (*backup.Manifest, error) {
-	manifestPath, err := state.ManifestPath()
+	cfg := d.currentConfig()
+	store, err := d.objectStore(cfg)
 	if err != nil {
 		return nil, err
 	}
-	snapshotDir, err := state.ManifestSnapshotsDir()
+	manifest, err := recoverycache.LoadManifest(cfg, store, snapshotSelector, func() (string, error) {
+		return encryptionPassphrase(cfg)
+	})
 	if err != nil {
 		return nil, err
 	}
-	return backup.LoadManifestForRestore(manifestPath, snapshotDir, snapshotSelector)
+	return manifest, nil
 }
 
 func classifyRestoreReadObjectError(entryPath string, err error) (int, string, string) {

@@ -33,7 +33,7 @@ type restoreDrillSummary struct {
 
 func runRestoreDrill(cfg *config.Config, opts restoreDrillOptions) error {
 	startedAt := time.Now().UTC()
-	manifest, err := loadRestoreManifest(opts.Snapshot)
+	manifest, err := loadRestoreManifest(cfg, opts.Snapshot)
 	if err != nil {
 		return err
 	}

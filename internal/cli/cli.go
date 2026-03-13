@@ -52,7 +52,7 @@ func Run(args []string) error {
 			if err != nil {
 				return err
 			}
-			return restoreList(opts)
+			return restoreList(cfg, opts)
 		}
 
 		opts, restorePathArg, err := parseRestoreArgs(rest[1:])

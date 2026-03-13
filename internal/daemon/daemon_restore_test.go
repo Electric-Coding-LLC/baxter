@@ -15,6 +15,7 @@ import (
 	"baxter/internal/backup"
 	"baxter/internal/config"
 	"baxter/internal/crypto"
+	"baxter/internal/recovery"
 	"baxter/internal/state"
 	"baxter/internal/storage"
 )
@@ -190,6 +191,81 @@ func TestRestoreRunEndpointVerifyOnlyDoesNotWrite(t *testing.T) {
 	target := filepath.Join(restoreRoot, trimmedSource)
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatalf("verify-only should not write target, stat err=%v", err)
+	}
+}
+
+func TestRestoreRunEndpointFallsBackToRemoteMetadataWhenLocalCacheMissing(t *testing.T) {
+	homeDir := t.TempDir()
+	srcRoot := filepath.Join(t.TempDir(), "src")
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+	if err := os.MkdirAll(srcRoot, 0o755); err != nil {
+		t.Fatalf("mkdir src root: %v", err)
+	}
+	sourcePath := filepath.Join(srcRoot, "doc.txt")
+	sourceBody := []byte("daemon remote fallback body")
+	if err := os.WriteFile(sourcePath, sourceBody, 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "daemon-restore-fallback-passphrase")
+
+	cfg := config.DefaultConfig()
+	cfg.BackupRoots = []string{srcRoot}
+	cfg.Schedule = "manual"
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("manifest snapshots dir: %v", err)
+	}
+	objectsDir, err := state.ObjectStoreDir()
+	if err != nil {
+		t.Fatalf("object store dir: %v", err)
+	}
+	store, err := storage.NewFromConfig(cfg.S3, objectsDir)
+	if err != nil {
+		t.Fatalf("new object store: %v", err)
+	}
+	_, err = backup.Run(cfg, backup.RunOptions{
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: cfg.Retention.ManifestSnapshots,
+		EncryptionKey:     crypto.KeyFromPassphraseWithSalt("daemon-restore-fallback-passphrase", daemonTestKDFSalt),
+		KDFSalt:           daemonTestKDFSalt,
+		BackupSetID:       recovery.BackupSetID(cfg),
+		Store:             store,
+	})
+	if err != nil {
+		t.Fatalf("run backup: %v", err)
+	}
+	clearDaemonRestoreCache(t)
+
+	d := New(cfg)
+	body := bytes.NewBufferString(`{"path":"` + sourcePath + `","to_dir":"` + restoreRoot + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/run", body)
+	rr := httptest.NewRecorder()
+	d.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	trimmedSource := strings.TrimPrefix(filepath.Clean(sourcePath), string(filepath.Separator))
+	expectedTarget := filepath.Join(restoreRoot, trimmedSource)
+	restored, err := os.ReadFile(expectedTarget)
+	if err != nil {
+		t.Fatalf("read restored file: %v", err)
+	}
+	if !bytes.Equal(restored, sourceBody) {
+		t.Fatalf("restored body mismatch: got %q want %q", string(restored), string(sourceBody))
+	}
+
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("stat rebuilt manifest cache: %v", err)
 	}
 }
 
@@ -719,6 +795,34 @@ func TestDaemonErrorContractRestoreDryRunInvalidRestoreTarget(t *testing.T) {
 	errResp := decodeErrorResponse(t, rr)
 	if errResp.Code != "invalid_restore_target" {
 		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
+func clearDaemonRestoreCache(t *testing.T) {
+	t.Helper()
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	if err := os.Remove(manifestPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove manifest cache: %v", err)
+	}
+
+	snapshotDir, err := state.ManifestSnapshotsDir()
+	if err != nil {
+		t.Fatalf("snapshot dir: %v", err)
+	}
+	if err := os.RemoveAll(snapshotDir); err != nil {
+		t.Fatalf("remove snapshot cache: %v", err)
+	}
+
+	saltPath, err := state.KDFSaltPath()
+	if err != nil {
+		t.Fatalf("kdf salt path: %v", err)
+	}
+	if err := os.Remove(saltPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove kdf salt: %v", err)
 	}
 }
 
