@@ -183,6 +183,66 @@ struct RestoreBrowserIndex {
     let didTruncate: Bool
 }
 
+struct RestoreBrowserQuery: Equatable {
+    let rootPrefix: String
+    let contains: String
+    let snapshot: String
+
+    init(rootPrefix: String, contains: String, snapshot: String) {
+        self.rootPrefix = rootPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.contains = contains.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.snapshot = snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+struct RestoreBrowserLoadToken: Equatable {
+    let query: RestoreBrowserQuery
+    let generation: Int
+    let directoryKey: String
+}
+
+struct RestoreBrowserLoadCoordinator {
+    private(set) var activeQuery = RestoreBrowserQuery(rootPrefix: "", contains: "", snapshot: "")
+    private(set) var generation = 0
+    private(set) var loadedDirectoryKeys: Set<String> = []
+    private(set) var loadingDirectoryKeys: Set<String> = []
+
+    mutating func reset(for query: RestoreBrowserQuery) {
+        generation += 1
+        activeQuery = query
+        loadedDirectoryKeys = []
+        loadingDirectoryKeys = []
+    }
+
+    mutating func startLoad(directoryKey: String, query: RestoreBrowserQuery) -> RestoreBrowserLoadToken? {
+        guard query == activeQuery else {
+            return nil
+        }
+        guard !loadedDirectoryKeys.contains(directoryKey), !loadingDirectoryKeys.contains(directoryKey) else {
+            return nil
+        }
+
+        loadingDirectoryKeys.insert(directoryKey)
+        return RestoreBrowserLoadToken(query: query, generation: generation, directoryKey: directoryKey)
+    }
+
+    mutating func completeLoad(_ token: RestoreBrowserLoadToken, success: Bool) -> Bool {
+        guard token.generation == generation, token.query == activeQuery else {
+            return false
+        }
+
+        loadingDirectoryKeys.remove(token.directoryKey)
+        if success {
+            loadedDirectoryKeys.insert(token.directoryKey)
+        }
+        return true
+    }
+
+    mutating func cancelAllLoads() {
+        loadingDirectoryKeys = []
+    }
+}
+
 func buildRestoreBrowserIndex(paths: [String], maxPaths: Int) -> RestoreBrowserIndex {
     var explicitDirectoryPaths: Set<String> = []
     var normalizedPaths: Set<String> = []

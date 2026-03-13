@@ -65,7 +65,7 @@ extension BaxterRestoreView {
     }
 
     var isLoadingRestoreBrowser: Bool {
-        !loadingRestoreDirectoryPaths.isEmpty
+        !restoreBrowserLoadCoordinator.loadingDirectoryKeys.isEmpty
     }
 
     var filteredRestoreBrowserPaths: [String] {
@@ -168,16 +168,21 @@ extension BaxterRestoreView {
     }
 
     func searchRestorePaths() {
+        let query = currentRestoreBrowserQuery()
+        cancelRestoreBrowserLoadTasks()
+        restoreIndexBuildGeneration += 1
+        restoreIndexBuildTask?.cancel()
+        restoreIndexBuildTask = nil
         selectedBrowserPath = nil
         restorePath = ""
         expandedBrowserPaths = []
         restoreBrowserRoots = []
         restorePathKinds = [:]
         loadedRestorePaths = []
-        loadedRestoreDirectoryPaths = []
-        loadingRestoreDirectoryPaths = []
-        restoreRootPrefix = resolvedRestoreRootPrefix()
-        loadRestoreChildren(parentPath: nil)
+        restoreRootPrefix = query.rootPrefix
+        restoreBrowserLoadCoordinator.reset(for: query)
+        syncRestoreBrowserWorkState()
+        loadRestoreChildren(parentPath: nil, query: query)
     }
 
     func triggerInitialRestoreLoadIfNeeded() {
@@ -218,59 +223,123 @@ extension BaxterRestoreView {
         return .secondary
     }
 
+    func currentRestoreBrowserQuery() -> RestoreBrowserQuery {
+        RestoreBrowserQuery(
+            rootPrefix: resolvedRestoreRootPrefix(),
+            contains: restoreContains,
+            snapshot: statusModel.selectedSnapshotRequestValue
+        )
+    }
+
+    func cancelRestoreBrowserLoadTasks() {
+        for task in restoreBrowserLoadTasks.values {
+            task.cancel()
+        }
+        restoreBrowserLoadTasks = [:]
+        restoreBrowserLoadCoordinator.cancelAllLoads()
+        syncRestoreBrowserWorkState()
+    }
+
+    func syncRestoreBrowserWorkState() {
+        isIndexingRestorePaths =
+            restoreIndexBuildTask != nil || !restoreBrowserLoadCoordinator.loadingDirectoryKeys.isEmpty
+    }
+
+    func isCancelledRestoreBrowserLoad(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
+        if let urlError = error as? URLError, urlError.code == .cancelled {
+            return true
+        }
+        return false
+    }
+
     func indexRestorePaths(_ restorePaths: [String]) {
+        restoreIndexBuildGeneration += 1
+        restoreIndexBuildTask?.cancel()
+        restoreIndexBuildTask = nil
+
         if restorePaths.isEmpty {
             restoreBrowserRoots = []
             restorePathKinds = [:]
-            isIndexingRestorePaths = false
+            syncRestoreBrowserWorkState()
             return
         }
 
-        Task.detached(priority: .userInitiated) {
+        let generation = restoreIndexBuildGeneration
+
+        let task = Task.detached(priority: .userInitiated) {
             let index = buildRestoreBrowserIndex(paths: restorePaths, maxPaths: 0)
+            guard !Task.isCancelled else {
+                return
+            }
             await MainActor.run {
+                guard self.restoreIndexBuildGeneration == generation else {
+                    return
+                }
                 self.restoreBrowserRoots = index.rootNodes
                 self.restorePathKinds = index.isDirectoryByPath
-                self.isIndexingRestorePaths = false
+                self.restoreIndexBuildTask = nil
+                self.syncRestoreBrowserWorkState()
             }
         }
+        restoreIndexBuildTask = task
+        syncRestoreBrowserWorkState()
     }
 
-    func loadRestoreChildren(parentPath: String?) {
+    func loadRestoreChildren(parentPath: String?, query: RestoreBrowserQuery? = nil) {
+        let query = query ?? currentRestoreBrowserQuery()
         let directoryKey = parentPath ?? restoreRootDirectoryKey
-        if loadingRestoreDirectoryPaths.contains(directoryKey) || loadedRestoreDirectoryPaths.contains(directoryKey) {
+        guard let loadToken = restoreBrowserLoadCoordinator.startLoad(
+            directoryKey: directoryKey,
+            query: query
+        ) else {
             return
         }
-        loadingRestoreDirectoryPaths.insert(directoryKey)
-        isIndexingRestorePaths = true
+        syncRestoreBrowserWorkState()
 
-        Task {
+        let task = Task {
             do {
-                let prefix = parentPath ?? restoreRootPrefix
+                let prefix = parentPath ?? query.rootPrefix
                 let paths = try await statusModel.fetchRestorePaths(
                     prefix: prefix,
-                    contains: restoreContains,
-                    snapshot: statusModel.selectedSnapshotRequestValue,
+                    contains: query.contains,
+                    snapshot: query.snapshot,
                     childrenOnly: true
                 )
                 await MainActor.run {
-                    loadingRestoreDirectoryPaths.remove(directoryKey)
-                    loadedRestoreDirectoryPaths.insert(directoryKey)
+                    self.restoreBrowserLoadTasks[directoryKey] = nil
+                    guard self.restoreBrowserLoadCoordinator.completeLoad(loadToken, success: true) else {
+                        self.syncRestoreBrowserWorkState()
+                        return
+                    }
                     mergeRestorePaths(paths)
                     if let parentPath {
                         statusModel.restorePreviewMessage = "Loaded \(paths.count) child path(s) under \(parentPath)."
                     } else {
                         statusModel.restorePreviewMessage = "Loaded \(paths.count) path(s). Select a folder to load more."
                     }
+                    self.syncRestoreBrowserWorkState()
                 }
             } catch {
                 await MainActor.run {
-                    loadingRestoreDirectoryPaths.remove(directoryKey)
-                    isIndexingRestorePaths = false
+                    self.restoreBrowserLoadTasks[directoryKey] = nil
+                    let accepted = self.restoreBrowserLoadCoordinator.completeLoad(loadToken, success: false)
+                    if self.isCancelledRestoreBrowserLoad(error) {
+                        self.syncRestoreBrowserWorkState()
+                        return
+                    }
+                    guard accepted else {
+                        self.syncRestoreBrowserWorkState()
+                        return
+                    }
                     statusModel.restorePreviewMessage = "Restore list failed: \(error.localizedDescription)"
+                    self.syncRestoreBrowserWorkState()
                 }
             }
         }
+        restoreBrowserLoadTasks[directoryKey] = task
     }
 
     func mergeRestorePaths(_ paths: [String]) {
@@ -284,7 +353,7 @@ extension BaxterRestoreView {
         if isExpanded {
             expandedBrowserPaths.insert(path)
             if restorePathKinds[path] == true {
-                loadRestoreChildren(parentPath: path)
+                loadRestoreChildren(parentPath: path, query: currentRestoreBrowserQuery())
             }
         } else {
             expandedBrowserPaths.remove(path)
@@ -355,7 +424,7 @@ struct RestoreBrowserTree: View {
     let roots: [RestoreBrowserNode]
     let selectedPath: String?
     @Binding var expandedPaths: Set<String>
-    let loadingDirectoryPaths: Set<String>
+    let loadingDirectoryKeys: Set<String>
     let forceExpanded: Bool
     let iconName: (String) -> String
     let iconColor: (String) -> Color
@@ -382,7 +451,7 @@ struct RestoreBrowserTree: View {
                                 depth: 0,
                                 selectedPath: selectedPath,
                                 expandedPaths: $expandedPaths,
-                                loadingDirectoryPaths: loadingDirectoryPaths,
+                                loadingDirectoryKeys: loadingDirectoryKeys,
                                 forceExpanded: forceExpanded,
                                 iconName: iconName,
                                 iconColor: iconColor,
@@ -408,7 +477,7 @@ struct RestoreBrowserTreeRow: View {
     let depth: Int
     let selectedPath: String?
     @Binding var expandedPaths: Set<String>
-    let loadingDirectoryPaths: Set<String>
+    let loadingDirectoryKeys: Set<String>
     let forceExpanded: Bool
     let iconName: (String) -> String
     let iconColor: (String) -> Color
@@ -426,7 +495,7 @@ struct RestoreBrowserTreeRow: View {
     }
 
     private var isLoading: Bool {
-        loadingDirectoryPaths.contains(node.path)
+        loadingDirectoryKeys.contains(node.path)
     }
 
     private var rowLeadingPadding: CGFloat {
@@ -499,7 +568,7 @@ struct RestoreBrowserTreeRow: View {
                             depth: depth + 1,
                             selectedPath: selectedPath,
                             expandedPaths: $expandedPaths,
-                            loadingDirectoryPaths: loadingDirectoryPaths,
+                            loadingDirectoryKeys: loadingDirectoryKeys,
                             forceExpanded: forceExpanded,
                             iconName: iconName,
                             iconColor: iconColor,

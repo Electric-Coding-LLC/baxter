@@ -27,10 +27,12 @@ struct BaxterRestoreView: View {
     @State var restoreBrowserRoots: [RestoreBrowserNode] = []
     @State var restorePathKinds: [String: Bool] = [:]
     @State var loadedRestorePaths: Set<String> = []
-    @State var loadedRestoreDirectoryPaths: Set<String> = []
-    @State var loadingRestoreDirectoryPaths: Set<String> = []
+    @State var restoreBrowserLoadCoordinator = RestoreBrowserLoadCoordinator()
+    @State var restoreBrowserLoadTasks: [String: Task<Void, Never>] = [:]
     @State var restoreRootPrefix = ""
     @State var isIndexingRestorePaths = false
+    @State var restoreIndexBuildTask: Task<Void, Never>?
+    @State var restoreIndexBuildGeneration = 0
     @State var showRestoreConfirmation = false
     @State var showQuickLook = false
 
@@ -67,6 +69,11 @@ struct BaxterRestoreView: View {
         .onDisappear {
             restoreSearchDebounceTask?.cancel()
             restoreSearchDebounceTask = nil
+            cancelRestoreBrowserLoadTasks()
+            restoreIndexBuildGeneration += 1
+            restoreIndexBuildTask?.cancel()
+            restoreIndexBuildTask = nil
+            syncRestoreBrowserWorkState()
         }
         .alert("Confirm Restore", isPresented: $showRestoreConfirmation) {
             Button("Cancel", role: .cancel) {}
@@ -288,7 +295,7 @@ struct BaxterRestoreView: View {
                     roots: filteredRoots,
                     selectedPath: selectedBrowserPath,
                     expandedPaths: $expandedBrowserPaths,
-                    loadingDirectoryPaths: loadingRestoreDirectoryPaths,
+                    loadingDirectoryKeys: restoreBrowserLoadCoordinator.loadingDirectoryKeys,
                     forceExpanded: isFiltering,
                     iconName: iconName(for:),
                     iconColor: iconColor(for:),
