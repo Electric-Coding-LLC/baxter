@@ -25,6 +25,7 @@ struct BaxterRestoreView: View {
     @State var browserFilter = ""
     @State var selectedBrowserPath: String?
     @State var restoreBrowserIndex: RestoreBrowserIndex = .empty
+    @State var restoreBrowserDerivedCache = RestoreBrowserDerivedCache()
     @State var restoreBrowserLoadCoordinator = RestoreBrowserLoadCoordinator()
     @State var restoreBrowserLoadTasks: [String: Task<Void, Never>] = [:]
     @State var restoreRootPrefix = ""
@@ -44,6 +45,7 @@ struct BaxterRestoreView: View {
             if statusModel.snapshots.isEmpty && !statusModel.isSnapshotsBusy {
                 statusModel.fetchSnapshots()
             }
+            refreshRestoreBrowserDerivedState()
             triggerInitialRestoreLoadIfNeeded()
         }
         .onChange(of: statusModel.selectedSnapshot) { _, _ in
@@ -160,7 +162,7 @@ struct BaxterRestoreView: View {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Search", text: $browserFilter)
+                TextField("Search", text: browserFilterBinding)
                     .textFieldStyle(.plain)
             }
             .padding(.horizontal, 10)
@@ -260,7 +262,7 @@ struct BaxterRestoreView: View {
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Text("\(countRestoreBrowserNodes(filteredRoots)) item(s)")
+                    Text("\(filteredRestoreBrowserNodeCount) item(s)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

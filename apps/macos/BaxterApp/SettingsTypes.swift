@@ -181,12 +181,49 @@ struct RestoreBrowserIndex {
     let rootNodes: [RestoreBrowserNode]
     let isDirectoryByPath: [String: Bool]
     let didTruncate: Bool
+    let revision: Int
 
     static let empty = RestoreBrowserIndex(
         rootNodes: [],
         isDirectoryByPath: [:],
-        didTruncate: false
+        didTruncate: false,
+        revision: 0
     )
+}
+
+struct RestoreBrowserDerivedState: Equatable {
+    let rootNodes: [RestoreBrowserNode]
+    let visiblePaths: [String]
+    let visibleNodeCount: Int
+
+    static let empty = RestoreBrowserDerivedState(
+        rootNodes: [],
+        visiblePaths: [],
+        visibleNodeCount: 0
+    )
+}
+
+struct RestoreBrowserDerivedCache {
+    private var key: RestoreBrowserDerivedCacheKey?
+    private(set) var state = RestoreBrowserDerivedState.empty
+
+    mutating func resolve(index: RestoreBrowserIndex, rootPrefix: String, query: String) {
+        let nextKey = RestoreBrowserDerivedCacheKey(
+            revision: index.revision,
+            rootPrefix: rootPrefix,
+            query: query
+        )
+        guard key != nextKey else {
+            return
+        }
+
+        key = nextKey
+        state = buildRestoreBrowserDerivedState(
+            index: index,
+            rootPrefix: rootPrefix,
+            query: query
+        )
+    }
 }
 
 struct RestoreBrowserQuery: Equatable {
@@ -281,7 +318,8 @@ func buildRestoreBrowserIndex(paths: [String], maxPaths: Int) -> RestoreBrowserI
     return RestoreBrowserIndex(
         rootNodes: rootNodes,
         isDirectoryByPath: isDirectoryByPath,
-        didTruncate: truncated
+        didTruncate: truncated,
+        revision: 1
     )
 }
 
@@ -305,28 +343,46 @@ func mergeRestoreBrowserIndex(_ index: RestoreBrowserIndex, paths: [String]) -> 
     return RestoreBrowserIndex(
         rootNodes: rootNodes,
         isDirectoryByPath: isDirectoryByPath,
-        didTruncate: index.didTruncate
+        didTruncate: index.didTruncate,
+        revision: index.revision + 1
     )
 }
 
 func filterRestoreBrowserNodes(_ nodes: [RestoreBrowserNode], query: String) -> [RestoreBrowserNode] {
-    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmedQuery.isEmpty else {
-        return nodes
-    }
-    return nodes.compactMap { filterRestoreBrowserNode($0, query: trimmedQuery) }
+    buildRestoreBrowserDerivedState(
+        roots: nodes,
+        query: query
+    ).rootNodes
 }
 
 func flattenRestoreBrowserNodePaths(_ nodes: [RestoreBrowserNode]) -> [String] {
-    var paths: [String] = []
-    appendRestoreBrowserNodePaths(nodes, into: &paths)
-    return paths
+    summarizeRestoreBrowserNodes(nodes).paths
 }
 
 func countRestoreBrowserNodes(_ nodes: [RestoreBrowserNode]) -> Int {
-    nodes.reduce(0) { partialResult, node in
-        partialResult + 1 + countRestoreBrowserNodes(node.children)
+    summarizeRestoreBrowserNodes(nodes).count
+}
+
+func scopedRestoreBrowserNodes(rootPrefix: String, nodes: [RestoreBrowserNode]) -> [RestoreBrowserNode] {
+    let normalizedRoot = rootPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedRoot.isEmpty, normalizedRoot != "/" else {
+        return nodes
     }
+    guard let scopedRoot = findRestoreBrowserNode(path: normalizedRoot, nodes: nodes) else {
+        return nodes
+    }
+    return [scopedRoot]
+}
+
+func buildRestoreBrowserDerivedState(
+    index: RestoreBrowserIndex,
+    rootPrefix: String,
+    query: String
+) -> RestoreBrowserDerivedState {
+    buildRestoreBrowserDerivedState(
+        roots: scopedRestoreBrowserNodes(rootPrefix: rootPrefix, nodes: index.rootNodes),
+        query: query
+    )
 }
 
 func restorePathName(_ path: String) -> String {
@@ -550,6 +606,62 @@ private func compareRestoreBrowserNodes(_ lhs: RestoreBrowserNode, _ rhs: Restor
     return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
 }
 
+private struct RestoreBrowserDerivedCacheKey: Equatable {
+    let revision: Int
+    let rootPrefix: String
+    let query: String
+
+    init(revision: Int, rootPrefix: String, query: String) {
+        self.revision = revision
+        self.rootPrefix = rootPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct RestoreBrowserNodeSummary {
+    let paths: [String]
+    let count: Int
+}
+
+private func buildRestoreBrowserDerivedState(
+    roots: [RestoreBrowserNode],
+    query: String
+) -> RestoreBrowserDerivedState {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let filteredRoots: [RestoreBrowserNode]
+    if trimmedQuery.isEmpty {
+        filteredRoots = roots
+    } else {
+        filteredRoots = roots.compactMap { filterRestoreBrowserNode($0, query: trimmedQuery) }
+    }
+
+    let summary = summarizeRestoreBrowserNodes(filteredRoots)
+    return RestoreBrowserDerivedState(
+        rootNodes: filteredRoots,
+        visiblePaths: summary.paths,
+        visibleNodeCount: summary.count
+    )
+}
+
+private func summarizeRestoreBrowserNodes(_ nodes: [RestoreBrowserNode]) -> RestoreBrowserNodeSummary {
+    var paths: [String] = []
+    var count = 0
+    appendRestoreBrowserNodeSummary(nodes, into: &paths, count: &count)
+    return RestoreBrowserNodeSummary(paths: paths, count: count)
+}
+
+private func findRestoreBrowserNode(path: String, nodes: [RestoreBrowserNode]) -> RestoreBrowserNode? {
+    for node in nodes {
+        if node.path == path {
+            return node
+        }
+        if let found = findRestoreBrowserNode(path: path, nodes: node.children) {
+            return found
+        }
+    }
+    return nil
+}
+
 private func filterRestoreBrowserNode(_ node: RestoreBrowserNode, query: String) -> RestoreBrowserNode? {
     let matchingChildren = node.children.compactMap { filterRestoreBrowserNode($0, query: query) }
     let matchesNode = node.name.localizedCaseInsensitiveContains(query) || node.path.localizedCaseInsensitiveContains(query)
@@ -567,10 +679,15 @@ private func filterRestoreBrowserNode(_ node: RestoreBrowserNode, query: String)
     )
 }
 
-private func appendRestoreBrowserNodePaths(_ nodes: [RestoreBrowserNode], into paths: inout [String]) {
+private func appendRestoreBrowserNodeSummary(
+    _ nodes: [RestoreBrowserNode],
+    into paths: inout [String],
+    count: inout Int
+) {
     for node in nodes {
         paths.append(node.path)
-        appendRestoreBrowserNodePaths(node.children, into: &paths)
+        count += 1
+        appendRestoreBrowserNodeSummary(node.children, into: &paths, count: &count)
     }
 }
 

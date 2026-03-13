@@ -780,6 +780,7 @@ final class RestoreBrowserIndexTests: XCTestCase {
         XCTAssertEqual(index.isDirectoryByPath["/docs/photo.jpg"], false)
         XCTAssertEqual(index.isDirectoryByPath["/music/song.mp3"], false)
         XCTAssertFalse(index.didTruncate)
+        XCTAssertEqual(index.revision, 1)
     }
 
     func testMergeRestoreBrowserIndexAddsLoadedChildrenToExistingTree() {
@@ -814,6 +815,7 @@ final class RestoreBrowserIndexTests: XCTestCase {
         )
         XCTAssertEqual(merged.isDirectoryByPath["/docs/notes"], true)
         XCTAssertEqual(merged.isDirectoryByPath["/docs/photo.jpg"], false)
+        XCTAssertEqual(merged.revision, initial.revision + 1)
     }
 
     func testMergeRestoreBrowserIndexPromotesExistingLeafToDirectoryWhenDescendantsArrive() {
@@ -881,6 +883,71 @@ final class RestoreBrowserIndexTests: XCTestCase {
 
         XCTAssertTrue(index.didTruncate)
         XCTAssertEqual(flattenRestoreBrowserNodePaths(index.rootNodes), ["alpha.txt", "beta.txt"])
+    }
+
+    func testBuildRestoreBrowserDerivedStateScopesAndFlattensVisiblePaths() {
+        let index = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/notes/todo.txt",
+                "/docs/notes/ideas.md",
+                "/docs/photo.jpg",
+                "/music/song.mp3",
+            ],
+            maxPaths: 2_000
+        )
+
+        let derived = buildRestoreBrowserDerivedState(
+            index: index,
+            rootPrefix: "/docs",
+            query: "todo"
+        )
+
+        XCTAssertEqual(
+            derived.visiblePaths,
+            ["/docs", "/docs/notes", "/docs/notes/todo.txt"]
+        )
+        XCTAssertEqual(derived.visibleNodeCount, 3)
+    }
+
+    func testRestoreBrowserDerivedCacheInvalidatesWhenIndexRevisionChanges() {
+        let initial = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/photo.jpg",
+                "/music/song.mp3",
+            ],
+            maxPaths: 2_000
+        )
+        let merged = mergeRestoreBrowserIndex(
+            initial,
+            paths: ["/docs/notes/todo.txt"]
+        )
+
+        var cache = RestoreBrowserDerivedCache()
+        cache.resolve(index: initial, rootPrefix: "/docs", query: "")
+        XCTAssertEqual(cache.state.visiblePaths, ["/docs", "/docs/photo.jpg"])
+
+        cache.resolve(index: merged, rootPrefix: "/docs", query: "")
+        XCTAssertEqual(
+            cache.state.visiblePaths,
+            ["/docs", "/docs/notes", "/docs/notes/todo.txt", "/docs/photo.jpg"]
+        )
+    }
+
+    func testRestoreBrowserDerivedCacheInvalidatesWhenScopeChanges() {
+        let index = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/notes/todo.txt",
+                "/music/song.mp3",
+            ],
+            maxPaths: 2_000
+        )
+
+        var cache = RestoreBrowserDerivedCache()
+        cache.resolve(index: index, rootPrefix: "/docs", query: "")
+        XCTAssertEqual(cache.state.visiblePaths, ["/docs", "/docs/notes", "/docs/notes/todo.txt"])
+
+        cache.resolve(index: index, rootPrefix: "/music", query: "")
+        XCTAssertEqual(cache.state.visiblePaths, ["/music", "/music/song.mp3"])
     }
 
     func testRestorePathHelpersHandleAbsoluteAndRelativePaths() {

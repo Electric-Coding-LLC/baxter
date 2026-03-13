@@ -2,6 +2,16 @@ import AppKit
 import SwiftUI
 
 extension BaxterRestoreView {
+    var browserFilterBinding: Binding<String> {
+        Binding(
+            get: { browserFilter },
+            set: { value in
+                browserFilter = value
+                refreshRestoreBrowserDerivedState()
+            }
+        )
+    }
+
     @ViewBuilder
     var quickLookSheet: some View {
         if let previewPath = activeRestorePath {
@@ -61,7 +71,7 @@ extension BaxterRestoreView {
     }
 
     var filteredRestoreBrowserRoots: [RestoreBrowserNode] {
-        filterRestoreBrowserNodes(scopedRestoreBrowserRoots, query: browserFilter)
+        restoreBrowserDerivedCache.state.rootNodes
     }
 
     var isLoadingRestoreBrowser: Bool {
@@ -69,24 +79,15 @@ extension BaxterRestoreView {
     }
 
     var filteredRestoreBrowserPaths: [String] {
-        flattenRestoreBrowserNodePaths(filteredRestoreBrowserRoots)
+        restoreBrowserDerivedCache.state.visiblePaths
+    }
+
+    var filteredRestoreBrowserNodeCount: Int {
+        restoreBrowserDerivedCache.state.visibleNodeCount
     }
 
     var isRestoreActionsPanelVisible: Bool {
         activeRestorePath != nil
-    }
-
-    var scopedRestoreBrowserRoots: [RestoreBrowserNode] {
-        guard !restoreRootPrefix.isEmpty, restoreRootPrefix != "/" else {
-            return restoreBrowserIndex.rootNodes
-        }
-        guard let scopedRoot = findRestoreBrowserNode(
-            path: restoreRootPrefix,
-            nodes: restoreBrowserIndex.rootNodes
-        ) else {
-            return restoreBrowserIndex.rootNodes
-        }
-        return [scopedRoot]
     }
 
     var restoreMessageColor: Color {
@@ -175,6 +176,7 @@ extension BaxterRestoreView {
         expandedBrowserPaths = []
         restoreBrowserIndex = .empty
         restoreRootPrefix = query.rootPrefix
+        refreshRestoreBrowserDerivedState()
         restoreBrowserLoadCoordinator.reset(for: query)
         loadRestoreChildren(parentPath: nil, query: query)
     }
@@ -293,6 +295,7 @@ extension BaxterRestoreView {
 
     func mergeRestorePaths(_ paths: [String]) {
         restoreBrowserIndex = mergeRestoreBrowserIndex(restoreBrowserIndex, paths: paths)
+        refreshRestoreBrowserDerivedState()
     }
 
     func setBrowserNodeExpanded(path: String, isExpanded: Bool) {
@@ -332,16 +335,14 @@ extension BaxterRestoreView {
         return ""
     }
 
-    func findRestoreBrowserNode(path: String, nodes: [RestoreBrowserNode]) -> RestoreBrowserNode? {
-        for node in nodes {
-            if node.path == path {
-                return node
-            }
-            if let found = findRestoreBrowserNode(path: path, nodes: node.children) {
-                return found
-            }
-        }
-        return nil
+    func refreshRestoreBrowserDerivedState() {
+        var cache = restoreBrowserDerivedCache
+        cache.resolve(
+            index: restoreBrowserIndex,
+            rootPrefix: restoreRootPrefix,
+            query: browserFilter
+        )
+        restoreBrowserDerivedCache = cache
     }
 
     func chooseRestoreDestination() {
