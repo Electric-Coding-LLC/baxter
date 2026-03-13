@@ -29,6 +29,24 @@ var (
 	kdfThreads    uint8  = 4
 )
 
+type KDFParams struct {
+	Algorithm  string
+	Iterations uint32
+	MemoryKiB  uint32
+	Threads    uint8
+	SaltLength int
+}
+
+func CurrentKDFParams() KDFParams {
+	return KDFParams{
+		Algorithm:  "argon2id",
+		Iterations: kdfIterations,
+		MemoryKiB:  kdfMemoryKiB,
+		Threads:    kdfThreads,
+		SaltLength: kdfSaltLength,
+	}
+}
+
 func KeyFromPassphrase(passphrase string) []byte {
 	return KeyFromPassphraseWithSalt(passphrase, legacyKDFSalt)
 }
