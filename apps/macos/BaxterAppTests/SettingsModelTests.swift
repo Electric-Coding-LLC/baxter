@@ -782,6 +782,59 @@ final class RestoreBrowserIndexTests: XCTestCase {
         XCTAssertFalse(index.didTruncate)
     }
 
+    func testMergeRestoreBrowserIndexAddsLoadedChildrenToExistingTree() {
+        let initial = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/photo.jpg",
+                "/music/song.mp3",
+            ],
+            maxPaths: 2_000
+        )
+
+        let merged = mergeRestoreBrowserIndex(
+            initial,
+            paths: [
+                "/docs/notes/todo.txt",
+                "/docs/notes/ideas.md",
+            ]
+        )
+
+        XCTAssertEqual(merged.rootNodes.map(\.path), ["/docs", "/music"])
+        XCTAssertEqual(
+            flattenRestoreBrowserNodePaths(merged.rootNodes),
+            [
+                "/docs",
+                "/docs/notes",
+                "/docs/notes/ideas.md",
+                "/docs/notes/todo.txt",
+                "/docs/photo.jpg",
+                "/music",
+                "/music/song.mp3",
+            ]
+        )
+        XCTAssertEqual(merged.isDirectoryByPath["/docs/notes"], true)
+        XCTAssertEqual(merged.isDirectoryByPath["/docs/photo.jpg"], false)
+    }
+
+    func testMergeRestoreBrowserIndexPromotesExistingLeafToDirectoryWhenDescendantsArrive() {
+        let initial = buildRestoreBrowserIndex(
+            paths: ["/docs"],
+            maxPaths: 2_000
+        )
+
+        let merged = mergeRestoreBrowserIndex(
+            initial,
+            paths: ["/docs/notes/todo.txt"]
+        )
+
+        XCTAssertEqual(initial.isDirectoryByPath["/docs"], false)
+        XCTAssertEqual(merged.isDirectoryByPath["/docs"], true)
+        XCTAssertEqual(
+            flattenRestoreBrowserNodePaths(merged.rootNodes),
+            ["/docs", "/docs/notes", "/docs/notes/todo.txt"]
+        )
+    }
+
     func testFilterRestoreBrowserNodesKeepsAncestorFolders() {
         let index = buildRestoreBrowserIndex(
             paths: [
