@@ -553,6 +553,49 @@ func TestS3ListKeysSuccess(t *testing.T) {
 	}
 }
 
+func TestS3ListKeysWithPrefixSuccess(t *testing.T) {
+	paginator := &fakePaginator{
+		steps: []paginatorStep{
+			{
+				page: &s3.ListObjectsV2Output{
+					Contents: []types.Object{
+						{Key: strPtr("baxter/system/manifests/a.json.enc")},
+						{Key: strPtr("baxter/system/manifests/b.json.enc")},
+						{Key: strPtr("baxter/sha256/file.enc")},
+					},
+				},
+			},
+		},
+	}
+
+	var capturedInput *s3.ListObjectsV2Input
+	c := &S3Client{
+		bucket: "bucket",
+		prefix: "baxter/",
+		api:    &fakeS3API{},
+		newListObjectsV2Paginator: func(_ s3.ListObjectsV2APIClient, input *s3.ListObjectsV2Input) listObjectsV2Paginator {
+			capturedInput = input
+			return paginator
+		},
+	}
+
+	keys, err := c.ListKeysWithPrefix("system/manifests/")
+	if err != nil {
+		t.Fatalf("list keys with prefix failed: %v", err)
+	}
+
+	want := []string{
+		"system/manifests/a.json.enc",
+		"system/manifests/b.json.enc",
+	}
+	if !reflect.DeepEqual(keys, want) {
+		t.Fatalf("keys mismatch: got %v want %v", keys, want)
+	}
+	if capturedInput == nil || capturedInput.Prefix == nil || *capturedInput.Prefix != "baxter/system/manifests/" {
+		t.Fatalf("prefix mismatch: got %#v", capturedInput)
+	}
+}
+
 func TestS3ListKeysErrors(t *testing.T) {
 	c := &S3Client{
 		bucket: "bucket",
