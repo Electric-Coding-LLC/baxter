@@ -31,6 +31,7 @@
 		A000000000000000000000A8 /* BaxterApp/KeychainPassphraseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000A3 /* BaxterApp/KeychainPassphraseStore.swift */; };
 		A000000000000000000000A9 /* BaxterApp/SettingsModel+Recovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000A4 /* BaxterApp/SettingsModel+Recovery.swift */; };
 		A000000000000000000000AA /* BaxterAppTests/RecoveryOnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000A5 /* BaxterAppTests/RecoveryOnboardingTests.swift */; };
+		A000000000000000000000AC /* BaxterApp/RestoreBrowserVisibleRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000AB /* BaxterApp/RestoreBrowserVisibleRows.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +70,7 @@
 		A000000000000000000000A3 /* BaxterApp/KeychainPassphraseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/KeychainPassphraseStore.swift; sourceTree = "<group>"; };
 		A000000000000000000000A4 /* BaxterApp/SettingsModel+Recovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/SettingsModel+Recovery.swift"; sourceTree = "<group>"; };
 		A000000000000000000000A5 /* BaxterAppTests/RecoveryOnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterAppTests/RecoveryOnboardingTests.swift; sourceTree = "<group>"; };
+		A000000000000000000000AB /* BaxterApp/RestoreBrowserVisibleRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/RestoreBrowserVisibleRows.swift; sourceTree = "<group>"; };
 		A00000000000000000000072 /* BaxterAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaxterAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -124,6 +126,7 @@
 				A000000000000000000000A2 /* BaxterApp/BaxterSettingsView+Onboarding.swift */,
 				A000000000000000000000A3 /* BaxterApp/KeychainPassphraseStore.swift */,
 				A000000000000000000000A4 /* BaxterApp/SettingsModel+Recovery.swift */,
+				A000000000000000000000AB /* BaxterApp/RestoreBrowserVisibleRows.swift */,
 			);
 			path = .;
 			sourceTree = SOURCE_ROOT;
@@ -247,6 +250,7 @@
 				A000000000000000000000A7 /* BaxterApp/BaxterSettingsView+Onboarding.swift in Sources */,
 				A000000000000000000000A8 /* BaxterApp/KeychainPassphraseStore.swift in Sources */,
 				A000000000000000000000A9 /* BaxterApp/SettingsModel+Recovery.swift in Sources */,
+				A000000000000000000000AC /* BaxterApp/RestoreBrowserVisibleRows.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

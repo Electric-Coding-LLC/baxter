@@ -26,6 +26,7 @@ struct BaxterRestoreView: View {
     @State var selectedBrowserPath: String?
     @State var restoreBrowserIndex: RestoreBrowserIndex = .empty
     @State var restoreBrowserDerivedCache = RestoreBrowserDerivedCache()
+    @State var restoreBrowserVisibleRowsCache = RestoreBrowserVisibleRowsCache()
     @State var restoreBrowserLoadCoordinator = RestoreBrowserLoadCoordinator()
     @State var restoreBrowserLoadTasks: [String: Task<Void, Never>] = [:]
     @State var restoreRootPrefix = ""
@@ -246,7 +247,7 @@ struct BaxterRestoreView: View {
 
     private var restoreBrowserPanel: some View {
         let filteredRoots = filteredRestoreBrowserRoots
-        let isFiltering = !browserFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let visibleRows = visibleRestoreBrowserRows
 
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -285,11 +286,9 @@ struct BaxterRestoreView: View {
                 .padding(.vertical, 20)
             } else {
                 RestoreBrowserTree(
-                    roots: filteredRoots,
+                    rows: visibleRows,
                     selectedPath: selectedBrowserPath,
-                    expandedPaths: $expandedBrowserPaths,
-                    loadingDirectoryKeys: restoreBrowserLoadCoordinator.loadingDirectoryKeys,
-                    forceExpanded: isFiltering,
+                    forceExpanded: isRestoreBrowserForceExpanded,
                     iconName: iconName(for:),
                     iconColor: iconColor(for:),
                     onClearSelection: clearBrowserSelection,

@@ -82,6 +82,14 @@ extension BaxterRestoreView {
         restoreBrowserDerivedCache.state.visiblePaths
     }
 
+    var isRestoreBrowserForceExpanded: Bool {
+        !browserFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var visibleRestoreBrowserRows: [RestoreBrowserVisibleRow] {
+        restoreBrowserVisibleRowsCache.rows
+    }
+
     var filteredRestoreBrowserNodeCount: Int {
         restoreBrowserDerivedCache.state.visibleNodeCount
     }
@@ -254,6 +262,7 @@ extension BaxterRestoreView {
         ) else {
             return
         }
+        refreshRestoreBrowserDerivedState()
 
         let task = Task {
             do {
@@ -286,6 +295,7 @@ extension BaxterRestoreView {
                     guard accepted else {
                         return
                     }
+                    refreshRestoreBrowserDerivedState()
                     statusModel.restorePreviewMessage = "Restore list failed: \(error.localizedDescription)"
                 }
             }
@@ -307,6 +317,7 @@ extension BaxterRestoreView {
         } else {
             expandedBrowserPaths.remove(path)
         }
+        refreshRestoreBrowserDerivedState()
     }
 
     func normalizedRestorePrefix(_ rawPrefix: String) -> String {
@@ -336,13 +347,24 @@ extension BaxterRestoreView {
     }
 
     func refreshRestoreBrowserDerivedState() {
-        var cache = restoreBrowserDerivedCache
-        cache.resolve(
+        var derivedCache = restoreBrowserDerivedCache
+        derivedCache.resolve(
             index: restoreBrowserIndex,
             rootPrefix: restoreRootPrefix,
             query: browserFilter
         )
-        restoreBrowserDerivedCache = cache
+        var visibleRowsCache = restoreBrowserVisibleRowsCache
+        visibleRowsCache.resolve(
+            roots: derivedCache.state.rootNodes,
+            treeRevision: restoreBrowserIndex.revision,
+            rootPrefix: restoreRootPrefix,
+            query: browserFilter,
+            expandedPaths: expandedBrowserPaths,
+            loadingDirectoryKeys: restoreBrowserLoadCoordinator.loadingDirectoryKeys,
+            forceExpanded: isRestoreBrowserForceExpanded
+        )
+        restoreBrowserDerivedCache = derivedCache
+        restoreBrowserVisibleRowsCache = visibleRowsCache
     }
 
     func chooseRestoreDestination() {
@@ -368,10 +390,8 @@ extension BaxterRestoreView {
 }
 
 struct RestoreBrowserTree: View {
-    let roots: [RestoreBrowserNode]
+    let rows: [RestoreBrowserVisibleRow]
     let selectedPath: String?
-    @Binding var expandedPaths: Set<String>
-    let loadingDirectoryKeys: Set<String>
     let forceExpanded: Bool
     let iconName: (String) -> String
     let iconColor: (String) -> Color
@@ -382,13 +402,6 @@ struct RestoreBrowserTree: View {
     let onUseForRestore: (String) -> Void
 
     var body: some View {
-        let rows = buildRestoreBrowserVisibleRows(
-            roots: roots,
-            expandedPaths: expandedPaths,
-            loadingDirectoryKeys: loadingDirectoryKeys,
-            forceExpanded: forceExpanded
-        )
-
         GeometryReader { proxy in
             ScrollView {
                 ZStack(alignment: .topLeading) {
@@ -537,87 +550,6 @@ struct RestoreBrowserVisibleRowView: View {
             Color.clear
                 .frame(width: 18, height: 18)
         }
-    }
-}
-
-struct RestoreBrowserVisibleRow: Identifiable, Equatable {
-    let id: String
-    let path: String
-    let node: RestoreBrowserNode?
-    let depth: Int
-    let isExpanded: Bool
-    let isLoading: Bool
-    let isLoadingPlaceholder: Bool
-}
-
-func buildRestoreBrowserVisibleRows(
-    roots: [RestoreBrowserNode],
-    expandedPaths: Set<String>,
-    loadingDirectoryKeys: Set<String>,
-    forceExpanded: Bool
-) -> [RestoreBrowserVisibleRow] {
-    var rows: [RestoreBrowserVisibleRow] = []
-    appendRestoreBrowserVisibleRows(
-        roots,
-        depth: 0,
-        expandedPaths: expandedPaths,
-        loadingDirectoryKeys: loadingDirectoryKeys,
-        forceExpanded: forceExpanded,
-        into: &rows
-    )
-    return rows
-}
-
-private func appendRestoreBrowserVisibleRows(
-    _ nodes: [RestoreBrowserNode],
-    depth: Int,
-    expandedPaths: Set<String>,
-    loadingDirectoryKeys: Set<String>,
-    forceExpanded: Bool,
-    into rows: inout [RestoreBrowserVisibleRow]
-) {
-    for node in nodes {
-        let isExpanded = node.isDirectory && (forceExpanded || expandedPaths.contains(node.path))
-        let isLoading = loadingDirectoryKeys.contains(node.path)
-        rows.append(
-            RestoreBrowserVisibleRow(
-                id: node.path,
-                path: node.path,
-                node: node,
-                depth: depth,
-                isExpanded: isExpanded,
-                isLoading: isLoading,
-                isLoadingPlaceholder: false
-            )
-        )
-
-        guard node.isDirectory, isExpanded else {
-            continue
-        }
-
-        if node.children.isEmpty && isLoading {
-            rows.append(
-                RestoreBrowserVisibleRow(
-                    id: "\(node.path)#loading",
-                    path: node.path,
-                    node: nil,
-                    depth: depth + 1,
-                    isExpanded: false,
-                    isLoading: true,
-                    isLoadingPlaceholder: true
-                )
-            )
-            continue
-        }
-
-        appendRestoreBrowserVisibleRows(
-            node.children,
-            depth: depth + 1,
-            expandedPaths: expandedPaths,
-            loadingDirectoryKeys: loadingDirectoryKeys,
-            forceExpanded: forceExpanded,
-            into: &rows
-        )
     }
 }
 
