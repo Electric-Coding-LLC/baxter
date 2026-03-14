@@ -68,12 +68,54 @@ struct RestoreBrowserVisibleRowsCache {
         to nextKey: RestoreBrowserVisibleRowsCacheKey,
         roots: [RestoreBrowserNode]
     ) -> [RestoreBrowserVisibleRow]? {
-        guard currentKey.canIncrementallyTransition(to: nextKey),
-              let toggledPath = currentKey.toggledExpandedPath(to: nextKey),
-              let rowIndex = rows.firstIndex(where: { row in
-                  !row.isLoadingPlaceholder && row.path == toggledPath
-              }) else {
+        guard let toggledPaths = currentKey.incrementalTransitionPaths(to: nextKey) else {
             return nil
+        }
+
+        var updatedRows = rows
+        for toggledPath in toggledPaths.sorted(by: { lhs, rhs in
+            let lhsIndex = updatedRows.firstIndex(where: { row in
+                !row.isLoadingPlaceholder && row.path == lhs
+            }) ?? Int.max
+            let rhsIndex = updatedRows.firstIndex(where: { row in
+                !row.isLoadingPlaceholder && row.path == rhs
+            }) ?? Int.max
+            if lhsIndex == rhsIndex {
+                return lhs < rhs
+            }
+            return lhsIndex < rhsIndex
+        }) {
+            guard let nextRows = applyIncrementalTransition(
+                for: toggledPath,
+                to: nextKey,
+                roots: roots,
+                rows: updatedRows
+            ) else {
+                return nil
+            }
+            updatedRows = nextRows
+        }
+
+        return updatedRows
+    }
+
+    private func applyIncrementalTransition(
+        for toggledPath: String,
+        to nextKey: RestoreBrowserVisibleRowsCacheKey,
+        roots: [RestoreBrowserNode],
+        rows: [RestoreBrowserVisibleRow]
+    ) -> [RestoreBrowserVisibleRow]? {
+        guard let rowIndex = rows.firstIndex(where: { row in
+            !row.isLoadingPlaceholder && row.path == toggledPath
+        }) else {
+            // Hidden descendants can change expansion state without affecting visible rows,
+            // but root-level misses are ambiguous and should fall back to a rebuild.
+            guard rows.contains(where: { row in
+                !row.isLoadingPlaceholder && isAncestorRestoreBrowserPath(row.path, of: toggledPath)
+            }) else {
+                return nil
+            }
+            return rows
         }
 
         let currentRow = rows[rowIndex]
@@ -165,29 +207,49 @@ private struct RestoreBrowserVisibleRowsCacheKey: Equatable {
     let loadingDirectoryKeys: Set<String>
     let forceExpanded: Bool
 
-    func toggledExpandedPath(to next: RestoreBrowserVisibleRowsCacheKey) -> String? {
-        let toggledPaths = expandedPaths.symmetricDifference(next.expandedPaths)
-        guard toggledPaths.count == 1 else {
+    func incrementalTransitionPaths(to next: RestoreBrowserVisibleRowsCacheKey) -> [String]? {
+        let changedPaths = expandedPaths.symmetricDifference(next.expandedPaths)
+        guard canIncrementallyTransition(to: next, changedPaths: changedPaths) else {
             return nil
         }
-        return toggledPaths.first
+
+        return changedPaths.filter { candidate in
+            !changedPaths.contains(where: { other in
+                other != candidate && isAncestorRestoreBrowserPath(other, of: candidate)
+            })
+        }
     }
 
-    func canIncrementallyTransition(to next: RestoreBrowserVisibleRowsCacheKey) -> Bool {
+    private func canIncrementallyTransition(
+        to next: RestoreBrowserVisibleRowsCacheKey,
+        changedPaths: Set<String>
+    ) -> Bool {
         guard treeRevision == next.treeRevision,
               rootPrefix == next.rootPrefix,
               query == next.query,
               forceExpanded == next.forceExpanded,
               forceExpanded == false,
-              let toggledPath = toggledExpandedPath(to: next) else {
+              !changedPaths.isEmpty else {
             return false
         }
 
         let loadingDelta = loadingDirectoryKeys
             .symmetricDifference(next.loadingDirectoryKeys)
-            .subtracting([toggledPath])
-        return loadingDelta.isEmpty
+        return loadingDelta.isSubset(of: changedPaths)
     }
+}
+
+private func isAncestorRestoreBrowserPath(_ candidate: String, of path: String) -> Bool {
+    guard candidate != path else {
+        return false
+    }
+    guard path.hasPrefix(candidate) else {
+        return false
+    }
+    if candidate == "/" {
+        return path.hasPrefix("/")
+    }
+    return path.dropFirst(candidate.count).first == "/"
 }
 
 private func visibleDescendantRange(
