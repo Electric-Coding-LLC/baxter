@@ -10,6 +10,14 @@ struct RestoreBrowserVisibleRow: Identifiable, Equatable {
     let isLoadingPlaceholder: Bool
 }
 
+struct RestoreBrowserRenderedRow: Identifiable, Equatable {
+    let id: String
+    let visibleRow: RestoreBrowserVisibleRow
+    var isSelected: Bool
+
+    var path: String { visibleRow.path }
+}
+
 struct RestoreBrowserVisibleRowsCache {
     private var key: RestoreBrowserVisibleRowsCacheKey?
     private(set) var rows: [RestoreBrowserVisibleRow] = []
@@ -42,6 +50,48 @@ struct RestoreBrowserVisibleRowsCache {
             loadingDirectoryKeys: loadingDirectoryKeys,
             forceExpanded: forceExpanded
         )
+    }
+}
+
+struct RestoreBrowserRenderedRowsCache {
+    private var visibleRows: [RestoreBrowserVisibleRow] = []
+    private var selectableRowIndexByPath: [String: Int] = [:]
+    private var selectedPath: String?
+    private(set) var rows: [RestoreBrowserRenderedRow] = []
+
+    mutating func resolve(visibleRows: [RestoreBrowserVisibleRow], selectedPath: String?) {
+        if self.visibleRows == visibleRows {
+            updateSelection(from: self.selectedPath, to: selectedPath)
+            return
+        }
+
+        self.visibleRows = visibleRows
+        self.selectedPath = selectedPath
+        rows = visibleRows.map { visibleRow in
+            RestoreBrowserRenderedRow(
+                id: visibleRow.id,
+                visibleRow: visibleRow,
+                isSelected: !visibleRow.isLoadingPlaceholder && visibleRow.path == selectedPath
+            )
+        }
+        selectableRowIndexByPath = [:]
+        for (index, row) in rows.enumerated() where !row.visibleRow.isLoadingPlaceholder {
+            selectableRowIndexByPath[row.path] = index
+        }
+    }
+
+    private mutating func updateSelection(from previousPath: String?, to nextPath: String?) {
+        guard previousPath != nextPath else {
+            return
+        }
+
+        if let previousPath, let index = selectableRowIndexByPath[previousPath] {
+            rows[index].isSelected = false
+        }
+        if let nextPath, let index = selectableRowIndexByPath[nextPath] {
+            rows[index].isSelected = true
+        }
+        selectedPath = nextPath
     }
 }
 

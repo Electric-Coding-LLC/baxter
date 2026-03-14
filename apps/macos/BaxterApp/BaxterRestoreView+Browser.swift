@@ -86,8 +86,8 @@ extension BaxterRestoreView {
         !browserFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var visibleRestoreBrowserRows: [RestoreBrowserVisibleRow] {
-        restoreBrowserVisibleRowsCache.rows
+    var renderedRestoreBrowserRows: [RestoreBrowserRenderedRow] {
+        restoreBrowserRenderedRowsCache.rows
     }
 
     var filteredRestoreBrowserNodeCount: Int {
@@ -167,13 +167,23 @@ extension BaxterRestoreView {
     }
 
     func selectBrowserPath(_ path: String) {
+        let previousSelection = selectedBrowserPath
         selectedBrowserPath = path
         restorePath = path
+        guard previousSelection != path else {
+            return
+        }
+        refreshRestoreBrowserDerivedState()
     }
 
     func clearBrowserSelection() {
+        let hadSelection = selectedBrowserPath != nil
         selectedBrowserPath = nil
         restorePath = ""
+        guard hadSelection else {
+            return
+        }
+        refreshRestoreBrowserDerivedState()
     }
 
     func searchRestorePaths() {
@@ -363,8 +373,14 @@ extension BaxterRestoreView {
             loadingDirectoryKeys: restoreBrowserLoadCoordinator.loadingDirectoryKeys,
             forceExpanded: isRestoreBrowserForceExpanded
         )
+        var renderedRowsCache = restoreBrowserRenderedRowsCache
+        renderedRowsCache.resolve(
+            visibleRows: visibleRowsCache.rows,
+            selectedPath: selectedBrowserPath
+        )
         restoreBrowserDerivedCache = derivedCache
         restoreBrowserVisibleRowsCache = visibleRowsCache
+        restoreBrowserRenderedRowsCache = renderedRowsCache
     }
 
     func chooseRestoreDestination() {
@@ -390,8 +406,7 @@ extension BaxterRestoreView {
 }
 
 struct RestoreBrowserTree: View {
-    let rows: [RestoreBrowserVisibleRow]
-    let selectedPath: String?
+    let rows: [RestoreBrowserRenderedRow]
     let forceExpanded: Bool
     let iconName: (String) -> String
     let iconColor: (String) -> Color
@@ -414,8 +429,7 @@ struct RestoreBrowserTree: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(rows) { row in
                             RestoreBrowserVisibleRowView(
-                                row: row,
-                                selectedPath: selectedPath,
+                                renderedRow: row,
                                 forceExpanded: forceExpanded,
                                 iconName: iconName,
                                 iconColor: iconColor,
@@ -436,9 +450,8 @@ struct RestoreBrowserTree: View {
     }
 }
 
-struct RestoreBrowserVisibleRowView: View {
-    let row: RestoreBrowserVisibleRow
-    let selectedPath: String?
+struct RestoreBrowserVisibleRowView: View, Equatable {
+    let renderedRow: RestoreBrowserRenderedRow
     let forceExpanded: Bool
     let iconName: (String) -> String
     let iconColor: (String) -> Color
@@ -446,6 +459,15 @@ struct RestoreBrowserVisibleRowView: View {
     let onToggleExpansion: (String, Bool) -> Void
     let onQuickLook: (String) -> Void
     let onUseForRestore: (String) -> Void
+
+    static func == (lhs: RestoreBrowserVisibleRowView, rhs: RestoreBrowserVisibleRowView) -> Bool {
+        lhs.renderedRow == rhs.renderedRow &&
+            lhs.forceExpanded == rhs.forceExpanded
+    }
+
+    private var row: RestoreBrowserVisibleRow {
+        renderedRow.visibleRow
+    }
 
     private var node: RestoreBrowserNode? {
         row.node
@@ -456,7 +478,7 @@ struct RestoreBrowserVisibleRowView: View {
     }
 
     private var isSelected: Bool {
-        selectedPath == row.path
+        renderedRow.isSelected
     }
 
     private var isLoading: Bool {

@@ -1191,6 +1191,65 @@ final class RestoreBrowserIndexTests: XCTestCase {
         XCTAssertEqual(cache.rows.map(\.id), ["/docs", "/docs/notes", "/docs/notes/todo.txt"])
     }
 
+    func testRestoreBrowserRenderedRowsCacheUpdatesSelectionForSameVisibleRows() throws {
+        let visibleRows = buildRestoreBrowserVisibleRows(
+            roots: buildRestoreBrowserIndex(
+                paths: [
+                    "/docs/notes/todo.txt",
+                    "/music/song.mp3",
+                ],
+                maxPaths: 2_000
+            ).rootNodes,
+            expandedPaths: ["/docs", "/docs/notes", "/music"],
+            loadingDirectoryKeys: [],
+            forceExpanded: false
+        )
+
+        var cache = RestoreBrowserRenderedRowsCache()
+        cache.resolve(visibleRows: visibleRows, selectedPath: "/docs/notes")
+        XCTAssertEqual(cache.rows.filter(\.isSelected).map(\.path), ["/docs/notes"])
+
+        cache.resolve(visibleRows: visibleRows, selectedPath: "/music/song.mp3")
+
+        XCTAssertEqual(cache.rows.filter(\.isSelected).map(\.path), ["/music/song.mp3"])
+        XCTAssertFalse(
+            try XCTUnwrap(cache.rows.first(where: { $0.path == "/docs/notes" })).isSelected
+        )
+    }
+
+    func testRestoreBrowserRenderedRowsCacheRebuildsWhenVisibleRowsChange() {
+        let initialVisibleRows = buildRestoreBrowserVisibleRows(
+            roots: buildRestoreBrowserIndex(
+                paths: ["/docs/notes/todo.txt"],
+                maxPaths: 2_000
+            ).rootNodes,
+            expandedPaths: [],
+            loadingDirectoryKeys: [],
+            forceExpanded: false
+        )
+        let expandedVisibleRows = buildRestoreBrowserVisibleRows(
+            roots: buildRestoreBrowserIndex(
+                paths: ["/docs/notes/todo.txt"],
+                maxPaths: 2_000
+            ).rootNodes,
+            expandedPaths: ["/docs", "/docs/notes"],
+            loadingDirectoryKeys: [],
+            forceExpanded: false
+        )
+
+        var cache = RestoreBrowserRenderedRowsCache()
+        cache.resolve(visibleRows: initialVisibleRows, selectedPath: "/docs")
+        XCTAssertEqual(cache.rows.map(\.path), ["/docs"])
+
+        cache.resolve(visibleRows: expandedVisibleRows, selectedPath: "/docs/notes/todo.txt")
+
+        XCTAssertEqual(
+            cache.rows.map(\.path),
+            ["/docs", "/docs/notes", "/docs/notes/todo.txt"]
+        )
+        XCTAssertEqual(cache.rows.filter(\.isSelected).map(\.path), ["/docs/notes/todo.txt"])
+    }
+
     func testRestorePathHelpersHandleAbsoluteAndRelativePaths() {
         XCTAssertEqual(restorePathName("/docs/notes/todo.txt"), "todo.txt")
         XCTAssertEqual(restorePathName("/"), "/")
