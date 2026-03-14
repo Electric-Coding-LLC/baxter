@@ -1091,6 +1091,81 @@ final class RestoreBrowserIndexTests: XCTestCase {
         XCTAssertEqual(cache.rows.map(\.id), ["/docs", "/docs/notes", "/docs/notes/todo.txt"])
     }
 
+    func testRestoreBrowserVisibleRowsCacheIncrementallyExpandsSinglePath() {
+        let roots = buildRestoreBrowserIndex(
+            paths: [
+                "/docs/notes/todo.txt",
+                "/music/song.mp3",
+            ],
+            maxPaths: 2_000
+        ).rootNodes
+
+        var cache = RestoreBrowserVisibleRowsCache()
+        cache.resolve(
+            roots: roots,
+            treeRevision: 1,
+            rootPrefix: "",
+            query: "",
+            expandedPaths: ["/docs/notes"],
+            loadingDirectoryKeys: [],
+            forceExpanded: false
+        )
+        XCTAssertEqual(cache.rows.map(\.id), ["/docs", "/music"])
+
+        cache.resolve(
+            roots: roots,
+            treeRevision: 1,
+            rootPrefix: "",
+            query: "",
+            expandedPaths: ["/docs", "/docs/notes"],
+            loadingDirectoryKeys: [],
+            forceExpanded: false
+        )
+
+        XCTAssertEqual(
+            cache.rows.map(\.id),
+            ["/docs", "/docs/notes", "/docs/notes/todo.txt", "/music"]
+        )
+        XCTAssertEqual(cache.rows.filter(\.isExpanded).map(\.path), ["/docs", "/docs/notes"])
+    }
+
+    func testRestoreBrowserVisibleRowsCacheIncrementallyExpandsLoadingDirectory() {
+        let roots = [
+            RestoreBrowserNode(
+                path: "/docs",
+                name: "docs",
+                isDirectory: true,
+                children: []
+            )
+        ]
+
+        var cache = RestoreBrowserVisibleRowsCache()
+        cache.resolve(
+            roots: roots,
+            treeRevision: 1,
+            rootPrefix: "",
+            query: "",
+            expandedPaths: [],
+            loadingDirectoryKeys: [],
+            forceExpanded: false
+        )
+
+        cache.resolve(
+            roots: roots,
+            treeRevision: 1,
+            rootPrefix: "",
+            query: "",
+            expandedPaths: ["/docs"],
+            loadingDirectoryKeys: ["/docs"],
+            forceExpanded: false
+        )
+
+        XCTAssertEqual(cache.rows.map(\.id), ["/docs", "/docs#loading"])
+        XCTAssertTrue(cache.rows[0].isExpanded)
+        XCTAssertTrue(cache.rows[0].isLoading)
+        XCTAssertTrue(cache.rows[1].isLoadingPlaceholder)
+    }
+
     func testRestoreBrowserVisibleRowsCacheInvalidatesWhenTreeRevisionChanges() {
         let initialRoots = buildRestoreBrowserIndex(
             paths: ["/docs/notes/todo.txt"],
@@ -1160,6 +1235,43 @@ final class RestoreBrowserIndexTests: XCTestCase {
         XCTAssertEqual(cache.rows.map(\.id), ["/docs", "/docs#loading"])
     }
 
+    func testRestoreBrowserVisibleRowsCacheIncrementallyCollapsesLoadingDirectory() {
+        let roots = [
+            RestoreBrowserNode(
+                path: "/docs",
+                name: "docs",
+                isDirectory: true,
+                children: []
+            )
+        ]
+
+        var cache = RestoreBrowserVisibleRowsCache()
+        cache.resolve(
+            roots: roots,
+            treeRevision: 1,
+            rootPrefix: "",
+            query: "",
+            expandedPaths: ["/docs"],
+            loadingDirectoryKeys: ["/docs"],
+            forceExpanded: false
+        )
+        XCTAssertEqual(cache.rows.map(\.id), ["/docs", "/docs#loading"])
+
+        cache.resolve(
+            roots: roots,
+            treeRevision: 1,
+            rootPrefix: "",
+            query: "",
+            expandedPaths: [],
+            loadingDirectoryKeys: ["/docs"],
+            forceExpanded: false
+        )
+
+        XCTAssertEqual(cache.rows.map(\.id), ["/docs"])
+        XCTAssertFalse(cache.rows[0].isExpanded)
+        XCTAssertTrue(cache.rows[0].isLoading)
+    }
+
     func testRestoreBrowserVisibleRowsCacheInvalidatesWhenForceExpandedChanges() {
         let roots = buildRestoreBrowserIndex(
             paths: ["/docs/notes/todo.txt"],
@@ -1189,6 +1301,44 @@ final class RestoreBrowserIndexTests: XCTestCase {
         )
 
         XCTAssertEqual(cache.rows.map(\.id), ["/docs", "/docs/notes", "/docs/notes/todo.txt"])
+    }
+
+    func testRestoreBrowserVisibleRowsCacheFallsBackToFullRebuildForAmbiguousExpansionChange() {
+        let initialRoots = buildRestoreBrowserIndex(
+            paths: ["/docs/notes/todo.txt"],
+            maxPaths: 2_000
+        ).rootNodes
+        let replacementRoots = buildRestoreBrowserIndex(
+            paths: ["/music/albums/song.mp3"],
+            maxPaths: 2_000
+        ).rootNodes
+
+        var cache = RestoreBrowserVisibleRowsCache()
+        cache.resolve(
+            roots: initialRoots,
+            treeRevision: 1,
+            rootPrefix: "",
+            query: "",
+            expandedPaths: [],
+            loadingDirectoryKeys: [],
+            forceExpanded: false
+        )
+        XCTAssertEqual(cache.rows.map(\.id), ["/docs"])
+
+        cache.resolve(
+            roots: replacementRoots,
+            treeRevision: 1,
+            rootPrefix: "",
+            query: "",
+            expandedPaths: ["/music", "/music/albums"],
+            loadingDirectoryKeys: [],
+            forceExpanded: false
+        )
+
+        XCTAssertEqual(
+            cache.rows.map(\.id),
+            ["/music", "/music/albums", "/music/albums/song.mp3"]
+        )
     }
 
     func testRestoreBrowserRenderedRowsCacheUpdatesSelectionForSameVisibleRows() throws {

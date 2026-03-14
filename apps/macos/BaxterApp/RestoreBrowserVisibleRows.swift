@@ -43,6 +43,17 @@ struct RestoreBrowserVisibleRowsCache {
             return
         }
 
+        if let currentKey = key,
+           let updatedRows = incrementallyResolve(
+               from: currentKey,
+               to: nextKey,
+               roots: roots
+           ) {
+            key = nextKey
+            rows = updatedRows
+            return
+        }
+
         key = nextKey
         rows = buildRestoreBrowserVisibleRows(
             roots: roots,
@@ -50,6 +61,57 @@ struct RestoreBrowserVisibleRowsCache {
             loadingDirectoryKeys: loadingDirectoryKeys,
             forceExpanded: forceExpanded
         )
+    }
+
+    private func incrementallyResolve(
+        from currentKey: RestoreBrowserVisibleRowsCacheKey,
+        to nextKey: RestoreBrowserVisibleRowsCacheKey,
+        roots: [RestoreBrowserNode]
+    ) -> [RestoreBrowserVisibleRow]? {
+        guard currentKey.canIncrementallyTransition(to: nextKey),
+              let toggledPath = currentKey.toggledExpandedPath(to: nextKey),
+              let rowIndex = rows.firstIndex(where: { row in
+                  !row.isLoadingPlaceholder && row.path == toggledPath
+              }) else {
+            return nil
+        }
+
+        let currentRow = rows[rowIndex]
+        guard let node = findRestoreBrowserNode(path: toggledPath, nodes: roots),
+              node.isDirectory else {
+            return nil
+        }
+
+        var updatedRows = rows
+        updatedRows[rowIndex] = RestoreBrowserVisibleRow(
+            id: currentRow.id,
+            path: currentRow.path,
+            node: node,
+            depth: currentRow.depth,
+            isExpanded: nextKey.expandedPaths.contains(toggledPath),
+            isLoading: nextKey.loadingDirectoryKeys.contains(toggledPath),
+            isLoadingPlaceholder: false
+        )
+
+        let descendantRange = visibleDescendantRange(
+            rowIndex: rowIndex,
+            rows: updatedRows
+        )
+        updatedRows.removeSubrange(descendantRange)
+
+        guard nextKey.expandedPaths.contains(toggledPath) else {
+            return updatedRows
+        }
+
+        let descendants = buildRestoreBrowserVisibleDescendants(
+            for: node,
+            parentDepth: currentRow.depth,
+            expandedPaths: nextKey.expandedPaths,
+            loadingDirectoryKeys: nextKey.loadingDirectoryKeys,
+            forceExpanded: nextKey.forceExpanded
+        )
+        updatedRows.insert(contentsOf: descendants, at: rowIndex + 1)
+        return updatedRows
     }
 }
 
@@ -102,6 +164,93 @@ private struct RestoreBrowserVisibleRowsCacheKey: Equatable {
     let expandedPaths: Set<String>
     let loadingDirectoryKeys: Set<String>
     let forceExpanded: Bool
+
+    func toggledExpandedPath(to next: RestoreBrowserVisibleRowsCacheKey) -> String? {
+        let toggledPaths = expandedPaths.symmetricDifference(next.expandedPaths)
+        guard toggledPaths.count == 1 else {
+            return nil
+        }
+        return toggledPaths.first
+    }
+
+    func canIncrementallyTransition(to next: RestoreBrowserVisibleRowsCacheKey) -> Bool {
+        guard treeRevision == next.treeRevision,
+              rootPrefix == next.rootPrefix,
+              query == next.query,
+              forceExpanded == next.forceExpanded,
+              forceExpanded == false,
+              let toggledPath = toggledExpandedPath(to: next) else {
+            return false
+        }
+
+        let loadingDelta = loadingDirectoryKeys
+            .symmetricDifference(next.loadingDirectoryKeys)
+            .subtracting([toggledPath])
+        return loadingDelta.isEmpty
+    }
+}
+
+private func visibleDescendantRange(
+    rowIndex: Int,
+    rows: [RestoreBrowserVisibleRow]
+) -> Range<Int> {
+    let baseDepth = rows[rowIndex].depth
+    var endIndex = rowIndex + 1
+    while endIndex < rows.count, rows[endIndex].depth > baseDepth {
+        endIndex += 1
+    }
+    return (rowIndex + 1)..<endIndex
+}
+
+private func buildRestoreBrowserVisibleDescendants(
+    for node: RestoreBrowserNode,
+    parentDepth: Int,
+    expandedPaths: Set<String>,
+    loadingDirectoryKeys: Set<String>,
+    forceExpanded: Bool
+) -> [RestoreBrowserVisibleRow] {
+    guard node.isDirectory else {
+        return []
+    }
+    if node.children.isEmpty, loadingDirectoryKeys.contains(node.path) {
+        return [
+            RestoreBrowserVisibleRow(
+                id: "\(node.path)#loading",
+                path: node.path,
+                node: nil,
+                depth: parentDepth + 1,
+                isExpanded: false,
+                isLoading: true,
+                isLoadingPlaceholder: true
+            )
+        ]
+    }
+
+    var rows: [RestoreBrowserVisibleRow] = []
+    appendRestoreBrowserVisibleRows(
+        node.children,
+        depth: parentDepth + 1,
+        expandedPaths: expandedPaths,
+        loadingDirectoryKeys: loadingDirectoryKeys,
+        forceExpanded: forceExpanded,
+        into: &rows
+    )
+    return rows
+}
+
+private func findRestoreBrowserNode(
+    path: String,
+    nodes: [RestoreBrowserNode]
+) -> RestoreBrowserNode? {
+    for node in nodes {
+        if node.path == path {
+            return node
+        }
+        if let match = findRestoreBrowserNode(path: path, nodes: node.children) {
+            return match
+        }
+    }
+    return nil
 }
 
 func buildRestoreBrowserVisibleRows(
