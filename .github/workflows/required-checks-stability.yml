@@ -100,16 +100,15 @@ jobs:
             failure_step="go test ./..."
           fi
 
-          cat >"$metadata_path" <<EOF
-          {
-            "job": "go-test",
-            "attempt": ${{ matrix.attempt }},
-            "skipped": $([ "$skipped" = "true" ] && echo true || echo false),
-            "result": "$result",
-            "failure_step": "$failure_step",
-            "artifact_name": "$artifact_name"
-          }
-          EOF
+          printf '%s\n' \
+            '{' \
+            '  "job": "go-test",' \
+            '  "attempt": ${{ matrix.attempt }},' \
+            "  \"skipped\": $([ "$skipped" = "true" ] && echo true || echo false)," \
+            "  \"result\": \"$result\"," \
+            "  \"failure_step\": \"$failure_step\"," \
+            "  \"artifact_name\": \"$artifact_name\"" \
+            '}' >"$metadata_path"
       - name: Upload go-test attempt metadata
         if: always()
         uses: actions/upload-artifact@v7
@@ -233,16 +232,15 @@ jobs:
               fi
             fi
 
-            cat >"$attempt_metadata_path" <<EOF
-            {
-              "job": "macos-app-test",
-              "attempt": $attempt,
-              "skipped": false,
-              "result": "$attempt_status",
-              "failure_step": "$failure_step",
-              "artifact_name": "$artifact_name"
-            }
-            EOF
+            printf '%s\n' \
+              '{' \
+              "  \"job\": \"macos-app-test\"," \
+              "  \"attempt\": $attempt," \
+              '  "skipped": false,' \
+              "  \"result\": \"$attempt_status\"," \
+              "  \"failure_step\": \"$failure_step\"," \
+              "  \"artifact_name\": \"$artifact_name\"" \
+              '}' >"$attempt_metadata_path"
           done
 
           if [ "$failures" -gt 0 ]; then
