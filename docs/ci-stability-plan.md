@@ -1,6 +1,6 @@
 # Baxter CI Stability Plan
 
-Last updated: March 13, 2026
+Last updated: March 14, 2026
 
 Purpose: make Baxter's required CI checks reliable enough for routine development, with failures that are fast to diagnose instead of intermittent mysteries.
 
@@ -83,6 +83,14 @@ Definition of done:
 
 - We have at least one 10-attempt baseline run on `main`.
 - Every failed attempt is categorized into one of the failure buckets above, or explicitly marked `unknown`.
+
+Latest baseline evidence:
+
+- `Required Checks Stability` run on `main`: https://github.com/Electric-Coding-LLC/baxter/actions/runs/23103066741
+- Triggered March 15, 2026 04:09 UTC and completed March 15, 2026 04:12 UTC.
+- `go-test`: 10/10 success, 0 failures, 0 skips.
+- `macos-app-test`: 10/10 success, 0 failures, 0 skips.
+- Failure buckets observed: none in this baseline run.
 
 ### Phase 2. Fix High-Frequency Flakes First
 
@@ -170,7 +178,9 @@ Secondary spot checks:
 ## Evidence To Keep
 
 - URL of the latest 10-attempt stability run
+  Current baseline: https://github.com/Electric-Coding-LLC/baxter/actions/runs/23103066741
 - summary of failures by bucket
+  Current baseline: no failures observed across 20 total attempts
 - links to the latest representative passing PR runs
 - notes on any check still considered fragile
 
