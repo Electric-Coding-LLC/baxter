@@ -96,6 +96,8 @@ jobs:
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/.ci/DerivedData
       RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterApp.xcresult
+      BAXTER_CI_HOME_DIR: ${{ runner.temp }}/baxter-ci-home-${{ github.run_id }}-${{ github.run_attempt }}
+      BAXTER_CI_LAUNCHD_LABEL: com.electriccoding.baxterd.ci.${{ github.run_id }}.${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v5
       - name: Restore Xcode DerivedData cache
@@ -117,10 +119,19 @@ jobs:
           BAXTER_IPC_READY_SLEEP_SECONDS: "0.5"
         run: |
           set -euo pipefail
+          ci_ipc_port="$((43000 + (GITHUB_RUN_ID % 1000)))"
+          ci_ipc_addr="127.0.0.1:${ci_ipc_port}"
           if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1; then
             echo "Skipping launchd smoke check: gui/$(id -u) domain unavailable on runner."
             exit 0
           fi
+          # Keep CI smoke setup out of the runner user's real Baxter home.
+          rm -rf "$BAXTER_CI_HOME_DIR"
+          mkdir -p "$BAXTER_CI_HOME_DIR"
+          export BAXTER_HOME_DIR="$BAXTER_CI_HOME_DIR"
+          export BAXTER_LAUNCHD_LABEL="$BAXTER_CI_LAUNCHD_LABEL"
+          export BAXTER_IPC_ADDR="$ci_ipc_addr"
+          export BAXTER_IPC_URL="http://$ci_ipc_addr"
           trap './scripts/uninstall-launchd.sh' EXIT
           ./scripts/init-config.sh "$GITHUB_WORKSPACE"
           ./scripts/install-launchd.sh
@@ -130,8 +141,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .ci/launchd-logs
-          cp -f "$HOME/Library/Logs/baxterd.out.log" .ci/launchd-logs/ 2>/dev/null || true
-          cp -f "$HOME/Library/Logs/baxterd.err.log" .ci/launchd-logs/ 2>/dev/null || true
+          cp -f "$BAXTER_CI_HOME_DIR/Library/Logs/baxterd.out.log" .ci/launchd-logs/ 2>/dev/null || true
+          cp -f "$BAXTER_CI_HOME_DIR/Library/Logs/baxterd.err.log" .ci/launchd-logs/ 2>/dev/null || true
       - name: Upload launchd logs (on failure)
         if: failure()
         uses: actions/upload-artifact@v7
@@ -139,6 +150,12 @@ jobs:
           name: launchd-logs-${{ github.run_id }}
           path: .ci/launchd-logs
           if-no-files-found: warn
+      - name: Clean isolated Baxter test home
+        if: always()
+        run: |
+          set -euo pipefail
+          chmod -R u+w "$BAXTER_CI_HOME_DIR" >/dev/null 2>&1 || true
+          rm -rf "$BAXTER_CI_HOME_DIR"
       - name: Upload macOS test result bundle (on failure)
         if: failure()
         uses: actions/upload-artifact@v7
