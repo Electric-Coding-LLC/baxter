@@ -87,10 +87,35 @@ jobs:
         run: |
           set -euo pipefail
           EVIDENCE_PATH="$GITHUB_WORKSPACE/.ci/rc-validation-evidence.md"
+          SUMMARY_PATH="$GITHUB_WORKSPACE/.ci/rc-validation-summary.json"
           ./scripts/rc-artifact-validation.sh \
             --artifact-dir "$GITHUB_WORKSPACE/.ci/rc-artifacts" \
             --version '${{ inputs.version }}' \
-            --evidence "$EVIDENCE_PATH"
+            --evidence "$EVIDENCE_PATH" \
+            --summary-json "$SUMMARY_PATH"
+      - name: Write RC validation step summary
+        if: always()
+        run: |
+          set -euo pipefail
+          SUMMARY_PATH="$GITHUB_WORKSPACE/.ci/rc-validation-summary.json"
+          SUMMARY_MD_PATH="$GITHUB_WORKSPACE/.ci/rc-validation-summary.md"
+          if [ ! -f "$SUMMARY_PATH" ]; then
+            echo "## RC Validation Summary" >>"$GITHUB_STEP_SUMMARY"
+            echo >>"$GITHUB_STEP_SUMMARY"
+            echo "- overall result: \`missing\`" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          bash ./scripts/rc-validation-summary.sh \
+            --summary-json "$SUMMARY_PATH" \
+            --output "$SUMMARY_MD_PATH"
+
+          cat "$SUMMARY_MD_PATH" >>"$GITHUB_STEP_SUMMARY"
+          {
+            echo
+            echo "- workflow run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "- evidence artifact: \`rc-validation-evidence-${{ inputs.version }}-${{ github.run_id }}\`"
+          } >>"$GITHUB_STEP_SUMMARY"
       - name: Collect launchd logs (on failure)
         if: failure()
         run: |
@@ -110,6 +135,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: rc-validation-evidence-${{ inputs.version }}-${{ github.run_id }}
-          path: .ci/rc-validation-evidence.md
+          path: |
+            .ci/rc-validation-evidence.md
+            .ci/rc-validation-summary.json
+            .ci/rc-validation-summary.md
           if-no-files-found: warn
           retention-days: 14
