@@ -33,31 +33,121 @@ jobs:
             echo "skip=false" >>"$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@v5
+        id: checkout
         if: steps.gate.outputs.skip == 'false'
       - uses: actions/setup-go@v6
+        id: setup_go
         if: steps.gate.outputs.skip == 'false'
         with:
           go-version: "1.25.8"
           cache: true
-      - run: go mod download
+      - run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.ci/stability-logs/go-test"
+          go mod download 2>&1 | tee "$GITHUB_WORKSPACE/.ci/stability-logs/go-test/attempt-${{ matrix.attempt }}-go-mod-download.log"
+        id: go_mod_download
         if: steps.gate.outputs.skip == 'false'
-      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.ci/stability-logs/go-test"
+          go install golang.org/x/vuln/cmd/govulncheck@latest 2>&1 | tee "$GITHUB_WORKSPACE/.ci/stability-logs/go-test/attempt-${{ matrix.attempt }}-install-govulncheck.log"
+        id: install_govulncheck
         if: steps.gate.outputs.skip == 'false'
-      - run: govulncheck ./...
+      - run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.ci/stability-logs/go-test"
+          govulncheck ./... 2>&1 | tee "$GITHUB_WORKSPACE/.ci/stability-logs/go-test/attempt-${{ matrix.attempt }}-govulncheck.log"
+        id: govulncheck
         if: steps.gate.outputs.skip == 'false'
-      - run: go test ./...
+      - run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.ci/stability-logs/go-test"
+          go test ./... 2>&1 | tee "$GITHUB_WORKSPACE/.ci/stability-logs/go-test/attempt-${{ matrix.attempt }}-go-test.log"
+        id: go_test
         if: steps.gate.outputs.skip == 'false'
+      - name: Record go-test attempt metadata
+        if: always()
+        run: |
+          set -euo pipefail
+          metadata_dir="$GITHUB_WORKSPACE/.ci/stability-attempts/go-test"
+          metadata_path="$metadata_dir/attempt-${{ matrix.attempt }}.json"
+          skipped='${{ steps.gate.outputs.skip }}'
+          result="success"
+          failure_step=""
+          artifact_name="go-test-attempt-${{ matrix.attempt }}"
+
+          mkdir -p "$metadata_dir"
+
+          if [ "$skipped" = "true" ]; then
+            result="skipped"
+          elif [ '${{ steps.checkout.outcome }}' != 'success' ]; then
+            result="failure"
+            failure_step="actions/checkout@v5"
+          elif [ '${{ steps.setup_go.outcome }}' != 'success' ]; then
+            result="failure"
+            failure_step="actions/setup-go@v6"
+          elif [ '${{ steps.go_mod_download.outcome }}' != 'success' ]; then
+            result="failure"
+            failure_step="go mod download"
+          elif [ '${{ steps.install_govulncheck.outcome }}' != 'success' ]; then
+            result="failure"
+            failure_step="go install golang.org/x/vuln/cmd/govulncheck@latest"
+          elif [ '${{ steps.govulncheck.outcome }}' != 'success' ]; then
+            result="failure"
+            failure_step="govulncheck ./..."
+          elif [ '${{ steps.go_test.outcome }}' != 'success' ]; then
+            result="failure"
+            failure_step="go test ./..."
+          fi
+
+          printf '%s\n' \
+            '{' \
+            '  "job": "go-test",' \
+            '  "attempt": ${{ matrix.attempt }},' \
+            "  \"skipped\": $([ "$skipped" = "true" ] && echo true || echo false)," \
+            "  \"result\": \"$result\"," \
+            "  \"failure_step\": \"$failure_step\"," \
+            "  \"artifact_name\": \"$artifact_name\"" \
+            '}' >"$metadata_path"
+      - name: Upload go-test attempt metadata
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-test-attempt-${{ matrix.attempt }}
+          path: |
+            ${{ github.workspace }}/.ci/stability-attempts/go-test/attempt-${{ matrix.attempt }}.json
+            ${{ github.workspace }}/.ci/stability-logs/go-test/attempt-${{ matrix.attempt }}-*.log
+          if-no-files-found: error
       - name: Record go-test attempt summary
         if: always()
         run: |
+          set -euo pipefail
+          metadata_path="$GITHUB_WORKSPACE/.ci/stability-attempts/go-test/attempt-${{ matrix.attempt }}.json"
+          skipped="$(jq -r '.skipped' "$metadata_path")"
+          result="$(jq -r '.result' "$metadata_path")"
+          failure_step="$(jq -r '.failure_step' "$metadata_path")"
+
           {
             echo "### go-test attempt ${{ matrix.attempt }}"
-            if [ '${{ steps.gate.outputs.skip }}' = "true" ]; then
+            if [ "$skipped" = "true" ]; then
               echo "- skipped: yes (beyond requested iteration count)"
             else
               echo "- skipped: no"
+              echo "- result: $result"
+              if [ "$result" = "failure" ]; then
+                echo "- first failing step: $failure_step"
+                echo "- artifact: go-test-attempt-${{ matrix.attempt }}"
+              fi
             fi
           } >>"$GITHUB_STEP_SUMMARY"
+      - name: Fail go-test attempt when checks failed
+        if: always()
+        run: |
+          set -euo pipefail
+          metadata_path="$GITHUB_WORKSPACE/.ci/stability-attempts/go-test/attempt-${{ matrix.attempt }}.json"
+          if [ "$(jq -r '.result' "$metadata_path")" = "failure" ]; then
+            exit 1
+          fi
 
   macos-app-test-stability:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
@@ -76,19 +166,21 @@ jobs:
           set -euo pipefail
           iterations="${ITERATIONS:-10}"
           failures=0
-          mkdir -p .ci/TestResults .ci/stability-artifacts
+          mkdir -p .ci/TestResults .ci/stability-artifacts .ci/stability-attempts/macos
 
           for attempt in $(seq 1 "$iterations"); do
             derived_data_path="$GITHUB_WORKSPACE/.ci/DerivedData-$attempt"
             result_bundle_path="$GITHUB_WORKSPACE/.ci/TestResults/BaxterApp-$attempt.xcresult"
             attempt_artifact_dir="$GITHUB_WORKSPACE/.ci/stability-artifacts/attempt-$attempt"
             launchd_log_dir="$attempt_artifact_dir/launchd-logs"
+            attempt_metadata_path="$GITHUB_WORKSPACE/.ci/stability-attempts/macos/attempt-$attempt.json"
             attempt_home="$RUNNER_TEMP/baxter-home-$attempt"
             attempt_label="com.electriccoding.baxterd.ci.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}.${attempt}"
             attempt_ipc_port="$((43000 + attempt))"
             attempt_ipc_addr="127.0.0.1:${attempt_ipc_port}"
             attempt_status="success"
             failure_step=""
+            artifact_name="stability-macos-attempts-${GITHUB_RUN_ID}"
 
             rm -rf "$derived_data_path" "$result_bundle_path" "$attempt_artifact_dir" "$attempt_home"
 
@@ -139,23 +231,61 @@ jobs:
                 ditto "$result_bundle_path" "$attempt_artifact_dir/BaxterApp.xcresult"
               fi
             fi
+
+            printf '%s\n' \
+              '{' \
+              "  \"job\": \"macos-app-test\"," \
+              "  \"attempt\": $attempt," \
+              '  "skipped": false,' \
+              "  \"result\": \"$attempt_status\"," \
+              "  \"failure_step\": \"$failure_step\"," \
+              "  \"artifact_name\": \"$artifact_name\"" \
+              '}' >"$attempt_metadata_path"
           done
 
           if [ "$failures" -gt 0 ]; then
             echo "failures=$failures" >>"$GITHUB_OUTPUT"
             exit 1
           fi
-      - name: Upload launchd logs (on failure)
-        if: failure()
+      - name: Upload macOS stability artifacts
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: stability-launchd-logs-${{ github.run_id }}
-          path: .ci/stability-artifacts
+          name: stability-macos-attempts-${{ github.run_id }}
+          path: |
+            .ci/stability-artifacts
+            .ci/stability-attempts/macos
           if-no-files-found: warn
-      - name: Upload macOS test result bundle (on failure)
-        if: failure()
+
+  summarize:
+    needs: [go-test-stability, macos-app-test-stability]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Download go-test attempt metadata
+        uses: actions/download-artifact@v5
+        with:
+          pattern: go-test-attempt-*
+          path: .ci/downloaded/go-test
+          merge-multiple: true
+      - name: Download macOS stability artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: stability-macos-attempts-*
+          path: .ci/downloaded/macos
+          merge-multiple: true
+      - name: Build aggregated stability summary
+        run: |
+          set -euo pipefail
+          output_path="$GITHUB_WORKSPACE/.ci/required-checks-stability-summary.md"
+          ./scripts/required-checks-stability-summary.sh \
+            --input-dir "$GITHUB_WORKSPACE/.ci/downloaded" \
+            --output "$output_path"
+          cat "$output_path" >>"$GITHUB_STEP_SUMMARY"
+      - name: Upload aggregated stability summary
         uses: actions/upload-artifact@v7
         with:
-          name: stability-macos-xcresult-${{ github.run_id }}
-          path: .ci/stability-artifacts
-          if-no-files-found: warn
+          name: required-checks-stability-summary-${{ github.run_id }}
+          path: ${{ github.workspace }}/.ci/required-checks-stability-summary.md
+          if-no-files-found: error
