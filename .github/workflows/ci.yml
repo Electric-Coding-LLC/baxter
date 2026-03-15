@@ -96,7 +96,7 @@ jobs:
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/.ci/DerivedData
       RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterApp.xcresult
-      BAXTER_CI_HOME_DIR: ${{ runner.temp }}/baxter-ci-home-${{ github.run_id }}-${{ github.run_attempt }}
+      BAXTER_CI_HOME_DIR: ${{ github.workspace }}/.ci/baxter-ci-home-${{ github.run_id }}-${{ github.run_attempt }}
       BAXTER_CI_LAUNCHD_LABEL: com.electriccoding.baxterd.ci.${{ github.run_id }}.${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v5

@@ -86,7 +86,7 @@ For RC builds without publishing a tag-based release, use the `Release Candidate
 2. Wait for completion:
    - `gh run watch`
 3. Download artifacts from the workflow run and run the install/upgrade smoke path above.
-4. The workflow now also uploads `Baxter-darwin-arm64.zip` for manual app validation, and includes a macOS artifact-validation job that executes install, first backup, upgrade, and rollback using the CLI/daemon artifacts and uploads a `rc-validation-evidence-*` artifact.
+4. The workflow now also uploads `Baxter-darwin-arm64.zip` for manual app validation, and includes a macOS artifact-validation job that executes install, first backup, upgrade, and rollback using the CLI/daemon artifacts, writes an `RC Validation Summary` to the workflow step summary, and uploads a `rc-validation-evidence-*` artifact containing both markdown evidence and machine-readable status output.
 5. Record decision status in:
    - `docs/v0.4.0-rc1-validation.md`
    - `docs/v0.4-rc-go-no-go-checklist.md`
