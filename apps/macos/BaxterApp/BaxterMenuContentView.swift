@@ -181,7 +181,7 @@ struct BaxterMenuContentView: View {
         case .unavailable:
             return .orange
         case .stopped:
-            return .orange
+            return .secondary
         case .unknown:
             return .secondary
         }
@@ -215,8 +215,10 @@ struct BaxterMenuContentView: View {
             break
         case .connecting, .delayed:
             return .yellow
-        case .unavailable, .stopped:
+        case .unavailable:
             return .orange
+        case .stopped:
+            return .secondary
         case .unknown:
             return .secondary
         }
@@ -355,8 +357,10 @@ struct BaxterMenuContentView: View {
         switch model.connectionState {
         case .unavailable:
             return .red
-        case .stopped, .delayed:
+        case .delayed:
             return .orange
+        case .stopped:
+            return .secondary
         case .connecting:
             return .yellow
         case .connected, .unknown:
@@ -368,8 +372,10 @@ struct BaxterMenuContentView: View {
         switch model.connectionState {
         case .unavailable:
             return Color.red.opacity(0.10)
-        case .stopped, .delayed:
+        case .delayed:
             return Color.orange.opacity(0.10)
+        case .stopped:
+            return Color.secondary.opacity(0.08)
         case .connecting:
             return Color.yellow.opacity(0.10)
         case .connected, .unknown:

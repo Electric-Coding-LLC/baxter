@@ -34,6 +34,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - Example: `config.example.toml`
 - Initialize config with your real backup roots:
 - `./scripts/init-config.sh "/Users/<you>/Documents" "/Users/<you>/Pictures"`
+- Replacing an existing config now requires `--force`; the script creates a timestamped backup before overwriting.
 - `backup_roots` entries must be absolute, non-empty paths.
 - `exclude_paths` entries are optional absolute paths to skip (files/folders).
 - `exclude_globs` entries are optional glob patterns applied to names and absolute paths (for example: `*.tmp`, `.DS_Store`, `node_modules`).
