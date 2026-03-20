@@ -94,6 +94,32 @@ extension BaxterRestoreView {
         restoreBrowserDerivedCache.state.visibleNodeCount
     }
 
+    var hasLoadedRestoreBrowserPaths: Bool {
+        !restoreBrowserIndex.rootNodes.isEmpty
+    }
+
+    var restoreBrowserEmptyStateTitle: String {
+        if selectedSnapshotIsEmpty {
+            return statusModel.selectedSnapshot == BackupStatusModel.latestSnapshotSelection
+                ? "Latest snapshot is empty"
+                : "Selected snapshot is empty"
+        }
+        return hasLoadedRestoreBrowserPaths ? "No matching paths" : "No backup contents available"
+    }
+
+    var restoreBrowserEmptyStateMessage: String {
+        if selectedSnapshotIsEmpty {
+            if statusModel.selectedSnapshot == BackupStatusModel.latestSnapshotSelection && hasOlderSnapshotsWithContents {
+                return "The newest backup completed with 0 restorable paths. Open Source and choose an older snapshot with contents."
+            }
+            return "This snapshot has 0 restorable paths. Open Source to pick another snapshot or run a backup with files in scope."
+        }
+        if hasLoadedRestoreBrowserPaths {
+            return "Adjust filters in Source and results will refresh automatically."
+        }
+        return "Run a backup or connect an existing backup set, then refresh Restore."
+    }
+
     var isRestoreActionsPanelVisible: Bool {
         activeRestorePath != nil
     }
@@ -154,6 +180,17 @@ extension BaxterRestoreView {
     func isBrowserStatusMessage(_ message: String) -> Bool {
         let lowered = message.lowercased()
         return lowered.hasPrefix("loaded ") || lowered.hasPrefix("found ") || lowered.hasPrefix("restore list")
+    }
+
+    var selectedSnapshotIsEmpty: Bool {
+        if statusModel.selectedSnapshot == BackupStatusModel.latestSnapshotSelection {
+            return (statusModel.snapshots.first?.entries ?? 0) == 0 && !statusModel.snapshots.isEmpty
+        }
+        return statusModel.selectedSnapshotSummary?.entries == 0
+    }
+
+    var hasOlderSnapshotsWithContents: Bool {
+        statusModel.snapshots.dropFirst().contains(where: { $0.entries > 0 })
     }
 
     func presentQuickLook() {

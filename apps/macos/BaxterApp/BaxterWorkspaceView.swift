@@ -298,19 +298,11 @@ struct BaxterDiagnosticsView: View {
     }
 
     private var daemonOutLogPath: String {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library")
-            .appendingPathComponent("Logs")
-            .appendingPathComponent("baxterd.out.log")
-            .path
+        BaxterRuntime.daemonOutLogURL.path
     }
 
     private var daemonErrLogPath: String {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library")
-            .appendingPathComponent("Logs")
-            .appendingPathComponent("baxterd.err.log")
-            .path
+        BaxterRuntime.daemonErrLogURL.path
     }
 
     private func copyDiagnosticsSummary() {
@@ -347,11 +339,7 @@ struct BaxterDiagnosticsView: View {
             daemonErrLogPath: daemonErrLogPath
         )
 
-        let outputDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library")
-            .appendingPathComponent("Application Support")
-            .appendingPathComponent("baxter")
-            .appendingPathComponent("diagnostics")
+        let outputDir = BaxterRuntime.diagnosticsURL
 
         do {
             try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)

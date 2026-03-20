@@ -97,7 +97,7 @@ final class BackupStatusModel: ObservableObject {
     var ipcUnavailableSince: Date?
 
     init(
-        baseURL: URL = URL(string: "http://127.0.0.1:41820")!,
+        baseURL: URL = BaxterRuntime.daemonBaseURL,
         urlSession: URLSession = .shared,
         ipcToken: String? = ProcessInfo.processInfo.environment["BAXTER_IPC_TOKEN"],
         queryLaunchdState: @escaping () async -> DaemonServiceState = { await LaunchdController.queryState() },
@@ -197,6 +197,22 @@ final class BackupStatusModel: ObservableObject {
 
             daemonServiceState = launchdState
             clearStaleLifecycleMessageIfNeeded(for: launchdState)
+            if launchdState == .stopped {
+                state = .idle
+                lastError = nil
+                connectionState = .stopped
+                ipcUnavailableSince = nil
+                isDaemonReachable = false
+                return
+            }
+            if launchdState == .unknown {
+                state = .idle
+                lastError = nil
+                connectionState = .unknown
+                ipcUnavailableSince = nil
+                isDaemonReachable = false
+                return
+            }
             do {
                 var request = URLRequest(url: baseURL.appendingPathComponent("v1/status"))
                 request.httpMethod = "GET"
@@ -214,21 +230,9 @@ final class BackupStatusModel: ObservableObject {
                 connectionState = .connected
             } catch {
                 let now = nowProvider()
-                if launchdState == .stopped {
-                    state = .idle
-                    lastError = nil
-                    connectionState = .stopped
-                    ipcUnavailableSince = nil
-                } else if launchdState == .unknown {
-                    state = .idle
-                    lastError = nil
-                    connectionState = .unknown
-                    ipcUnavailableSince = nil
-                } else {
-                    state = .idle
-                    lastError = nil
-                    updateConnectionStateForIPCFailure(now: now)
-                }
+                state = .idle
+                lastError = nil
+                updateConnectionStateForIPCFailure(now: now)
                 isDaemonReachable = false
             }
         }

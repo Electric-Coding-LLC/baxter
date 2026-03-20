@@ -10,49 +10,30 @@ enum DaemonServiceState: String {
 }
 
 enum LaunchdController {
-    private static let label = "com.electriccoding.baxterd"
-    private static let ipcAddress = "127.0.0.1:41820"
-
     private static var uid: UInt32 { getuid() }
 
     private static var domainTarget: String { "gui/\(uid)" }
 
-    private static var serviceTarget: String { "\(domainTarget)/\(label)" }
+    private static var serviceTarget: String { "\(domainTarget)/\(BaxterRuntime.daemonLabel)" }
 
     private static var plistPath: String {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library")
-            .appendingPathComponent("LaunchAgents")
-            .appendingPathComponent("\(label).plist")
-            .path
+        BaxterRuntime.launchAgentURL.path
     }
 
     private static var appSupportDir: String {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library")
-            .appendingPathComponent("Application Support")
-            .appendingPathComponent("baxter")
-            .path
+        BaxterRuntime.appSupportURL.path
     }
 
     private static var daemonBinaryPath: String {
-        URL(fileURLWithPath: appSupportDir)
-            .appendingPathComponent("bin")
-            .appendingPathComponent("baxterd")
-            .path
+        BaxterRuntime.daemonBinaryURL.path
     }
 
     private static var cliBinaryPath: String {
-        URL(fileURLWithPath: appSupportDir)
-            .appendingPathComponent("bin")
-            .appendingPathComponent("baxter")
-            .path
+        BaxterRuntime.cliBinaryURL.path
     }
 
     private static var configPath: String {
-        URL(fileURLWithPath: appSupportDir)
-            .appendingPathComponent("config.toml")
-            .path
+        BaxterRuntime.configURL.path
     }
 
     static func queryState() async -> DaemonServiceState {
@@ -118,7 +99,8 @@ enum LaunchdController {
         let result = try await runProcess(
             executable: binaryPath,
             arguments: ["recovery", "bootstrap"],
-            environment: ["BAXTER_PASSPHRASE": trimmedPassphrase]
+            environment: helperEnvironmentVariables(homePath: FileManager.default.homeDirectoryForCurrentUser.path)
+                .merging(["BAXTER_PASSPHRASE": trimmedPassphrase]) { _, new in new }
         )
         let output = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         return output.isEmpty ? "Recovery bootstrap complete." : output
@@ -207,7 +189,7 @@ enum LaunchdController {
         let plistData = try launchAgentPlistData(
             daemonBinaryPath: binaryPath,
             configPath: configPath,
-            ipcAddress: ipcAddress,
+            ipcAddress: BaxterRuntime.ipcAddress,
             homePath: fileManager.homeDirectoryForCurrentUser.path,
             ipcToken: ProcessInfo.processInfo.environment["BAXTER_IPC_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
         )
@@ -227,10 +209,13 @@ enum LaunchdController {
         guard let repoRoot = resolveRepositoryRoot() else {
             throw LaunchdError.repoRootNotFound
         }
+        guard let goBinaryPath = resolveGoBinaryPath() else {
+            throw LaunchdError.goBinaryNotFound
+        }
 
         _ = try await runProcess(
-            executable: "/usr/bin/env",
-            arguments: ["go", "build", "-o", daemonBinaryPath, "./cmd/baxterd"],
+            executable: goBinaryPath,
+            arguments: ["build", "-o", daemonBinaryPath, "./cmd/baxterd"],
             currentDirectory: repoRoot
         )
         guard fileManager.isExecutableFile(atPath: daemonBinaryPath) else {
@@ -251,10 +236,13 @@ enum LaunchdController {
         guard let repoRoot = resolveRepositoryRoot() else {
             throw LaunchdError.repoRootNotFound
         }
+        guard let goBinaryPath = resolveGoBinaryPath() else {
+            throw LaunchdError.goBinaryNotFound
+        }
 
         _ = try await runProcess(
-            executable: "/usr/bin/env",
-            arguments: ["go", "build", "-o", cliBinaryPath, "./cmd/baxter"],
+            executable: goBinaryPath,
+            arguments: ["build", "-o", cliBinaryPath, "./cmd/baxter"],
             currentDirectory: repoRoot
         )
         guard fileManager.isExecutableFile(atPath: cliBinaryPath) else {
@@ -310,9 +298,11 @@ enum LaunchdController {
         return FileManager.default.isExecutableFile(atPath: path) ? path : nil
     }
 
-    private static func resolveRepositoryRoot() -> URL? {
-        let env = ProcessInfo.processInfo.environment
-        if let configured = env["BAXTER_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+    static func resolveRepositoryRoot(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentDirectoryPath: String = FileManager.default.currentDirectoryPath
+    ) -> URL? {
+        if let configured = environment["BAXTER_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !configured.isEmpty {
             let url = URL(fileURLWithPath: configured)
             if isRepositoryRoot(url) {
@@ -320,17 +310,94 @@ enum LaunchdController {
             }
         }
 
-        var candidate = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        for _ in 0..<12 {
+        for candidate in repositoryRootCandidates(currentDirectoryPath: currentDirectoryPath) {
             if isRepositoryRoot(candidate) {
                 return candidate
             }
+        }
+        return nil
+    }
+
+    private static func repositoryRootCandidates(currentDirectoryPath: String) -> [URL] {
+        var candidates: [URL] = []
+
+        func appendIfNeeded(_ url: URL?) {
+            guard let url else {
+                return
+            }
+            let standardized = url.standardizedFileURL
+            if !candidates.contains(where: { $0.standardizedFileURL.path == standardized.path }) {
+                candidates.append(standardized)
+            }
+        }
+
+        appendIfNeeded(debugSourceRepositoryRoot())
+
+        var candidate = URL(fileURLWithPath: currentDirectoryPath)
+        for _ in 0..<12 {
+            appendIfNeeded(candidate)
             let parent = candidate.deletingLastPathComponent()
             if parent.path == candidate.path {
                 break
             }
             candidate = parent
         }
+
+        return candidates
+    }
+
+    private static func debugSourceRepositoryRoot() -> URL? {
+        #if DEBUG
+        var url = URL(fileURLWithPath: #filePath)
+        for _ in 0..<4 {
+            url.deleteLastPathComponent()
+        }
+        return url
+        #else
+        return nil
+        #endif
+    }
+
+    static func resolveGoBinaryPath(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String? {
+        let fileManager = FileManager.default
+
+        func executablePath(_ rawPath: String?) -> String? {
+            guard let rawPath else {
+                return nil
+            }
+            let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !path.isEmpty, fileManager.isExecutableFile(atPath: path) else {
+                return nil
+            }
+            return path
+        }
+
+        if let configured = executablePath(environment["BAXTER_GO_BINARY"]) {
+            return configured
+        }
+
+        if let pathValue = environment["PATH"] {
+            for directory in pathValue.split(separator: ":") {
+                let candidate = String(directory) + "/go"
+                if let resolved = executablePath(candidate) {
+                    return resolved
+                }
+            }
+        }
+
+        for candidate in [
+            "/usr/local/go/bin/go",
+            "/opt/homebrew/bin/go",
+            "/usr/local/bin/go",
+            "/usr/bin/go",
+        ] {
+            if let resolved = executablePath(candidate) {
+                return resolved
+            }
+        }
+
         return nil
     }
 
@@ -360,15 +427,15 @@ enum LaunchdController {
             args.append(token)
         }
 
-        let environmentVariables = launchEnvironmentVariables(homePath: homePath)
+        let environmentVariables = helperEnvironmentVariables(homePath: homePath)
 
         let plist: [String: Any] = [
-            "Label": label,
+            "Label": BaxterRuntime.daemonLabel,
             "ProgramArguments": args,
             "RunAtLoad": true,
             "KeepAlive": true,
-            "StandardOutPath": "\(homePath)/Library/Logs/baxterd.out.log",
-            "StandardErrorPath": "\(homePath)/Library/Logs/baxterd.err.log",
+            "StandardOutPath": BaxterRuntime.daemonOutLogURL.path,
+            "StandardErrorPath": BaxterRuntime.daemonErrLogURL.path,
             "EnvironmentVariables": environmentVariables,
         ]
 
@@ -383,10 +450,12 @@ enum LaunchdController {
         }
     }
 
-    private static func launchEnvironmentVariables(homePath: String) -> [String: String] {
+    static func helperEnvironmentVariables(homePath: String) -> [String: String] {
         let env = ProcessInfo.processInfo.environment
         var variables: [String: String] = [
             "HOME": homePath,
+            "BAXTER_APP_SUPPORT_DIR": BaxterRuntime.appSupportURL.path,
+            "BAXTER_CONFIG_PATH": BaxterRuntime.configURL.path,
         ]
         if let configuredProfile = configuredAWSProfile(), !configuredProfile.isEmpty {
             variables["AWS_PROFILE"] = configuredProfile
@@ -433,6 +502,7 @@ private enum LaunchdError: LocalizedError {
     case missingConfig(String)
     case missingPassphrase
     case repoRootNotFound
+    case goBinaryNotFound
     case daemonBinaryMissing(String)
     case cliBinaryMissing(String)
     case executionFailed(String)
@@ -441,11 +511,14 @@ private enum LaunchdError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingConfig(let path):
-            return "Config not found at \(path). Open Settings and save config first."
+            _ = path
+            return "Config not found. Open Settings and save config first."
         case .missingPassphrase:
             return "Passphrase is required."
         case .repoRootNotFound:
             return "Unable to find bundled Baxter helpers or auto-build them from the repo. Set BAXTER_REPO_ROOT for dev builds or install from the packaged app."
+        case .goBinaryNotFound:
+            return "Go is required to build Baxter helpers for the debug app, but no `go` binary was found. Install Go or set BAXTER_GO_BINARY."
         case .daemonBinaryMissing(let path):
             return "baxterd binary missing at \(path) after install/build."
         case .cliBinaryMissing(let path):

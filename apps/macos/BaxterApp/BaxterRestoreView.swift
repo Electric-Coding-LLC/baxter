@@ -277,9 +277,9 @@ struct BaxterRestoreView: View {
                     Image(systemName: "tray")
                         .font(.system(size: 26))
                         .foregroundStyle(.secondary)
-                    Text("No matching paths")
+                    Text(restoreBrowserEmptyStateTitle)
                         .font(.headline)
-                    Text("Adjust filters in Source and results will refresh automatically.")
+                    Text(restoreBrowserEmptyStateMessage)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -33,7 +33,7 @@ final class BaxterSettingsModel: ObservableObject {
     private var persistedConfig: BaxterConfig = .default
 
     var canSave: Bool {
-        validationErrors.isEmpty && hasUnsavedChanges
+        validationErrors.isEmpty && (hasUnsavedChanges || !configExists)
     }
 
     var hasConfiguredKeySource: Bool {
@@ -54,12 +54,7 @@ final class BaxterSettingsModel: ObservableObject {
     }
 
     var configURL: URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home
-            .appendingPathComponent("Library")
-            .appendingPathComponent("Application Support")
-            .appendingPathComponent("baxter")
-            .appendingPathComponent("config.toml")
+        BaxterRuntime.configURL
     }
 
     init() {
@@ -103,8 +98,16 @@ final class BaxterSettingsModel: ObservableObject {
     func save() {
         do {
             validateDraft()
+            if let validationMessage = firstValidationMessage(from: validationErrors) {
+                errorMessage = validationMessage
+                return
+            }
+            guard hasUnsavedChanges || !configExists else {
+                errorMessage = "No settings changes to save."
+                return
+            }
             guard canSave else {
-                errorMessage = "Fix highlighted fields before saving."
+                errorMessage = "Unable to save settings."
                 return
             }
 
