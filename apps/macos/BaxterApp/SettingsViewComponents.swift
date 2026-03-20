@@ -1,24 +1,30 @@
 import SwiftUI
 
+enum SettingsLayout {
+    static let labelWidth: CGFloat = 120
+    static let rowSpacing: CGFloat = 16
+    static let contentWidth: CGFloat = 860
+}
+
 struct SettingsCard<Content: View>: View {
     let title: String
     let subtitle: String
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
+                    .font(.headline.weight(.semibold))
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
             }
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.vertical, 18)
+        .padding(.vertical, 16)
     }
 }
 
@@ -29,10 +35,10 @@ struct SettingRow<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: SettingsLayout.rowSpacing) {
                 Text(label)
                     .foregroundStyle(.secondary)
-                    .frame(width: 120, alignment: .leading)
+                    .frame(width: SettingsLayout.labelWidth, alignment: .leading)
                 content
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -40,8 +46,22 @@ struct SettingRow<Content: View>: View {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
-                    .padding(.leading, 136)
+                    .padding(.leading, SettingsLayout.labelWidth + SettingsLayout.rowSpacing)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct SettingsAlignedContent<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(alignment: .top, spacing: SettingsLayout.rowSpacing) {
+            Color.clear
+                .frame(width: SettingsLayout.labelWidth, height: 1)
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -63,7 +83,7 @@ struct SettingsInsetGroup<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.secondary.opacity(0.08))
+                .fill(Color.secondary.opacity(0.06))
         )
     }
 }
@@ -74,7 +94,25 @@ struct SettingsEditorSurfaceModifier: ViewModifier {
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.secondary.opacity(0.08))
+                    .fill(Color.secondary.opacity(0.06))
+            )
+    }
+}
+
+struct SettingsFieldModifier: ViewModifier {
+    let width: CGFloat?
+    let monospaced: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .textFieldStyle(.plain)
+            .font(monospaced ? .system(.body, design: .monospaced) : .body)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(width: width, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.secondary.opacity(0.05))
             )
     }
 }
@@ -82,5 +120,9 @@ struct SettingsEditorSurfaceModifier: ViewModifier {
 extension View {
     func settingsEditorSurface() -> some View {
         modifier(SettingsEditorSurfaceModifier())
+    }
+
+    func settingsField(width: CGFloat? = nil, monospaced: Bool = false) -> some View {
+        modifier(SettingsFieldModifier(width: width, monospaced: monospaced))
     }
 }

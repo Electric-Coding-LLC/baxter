@@ -4,6 +4,11 @@ import Darwin
 
 @MainActor
 final class SettingsModelTests: XCTestCase {
+    override func tearDown() {
+        unsetenv("BAXTER_CONFIG_PATH")
+        super.tearDown()
+    }
+
     func testInvalidBackupRootBlocksSave() throws {
         let model = BaxterSettingsModel()
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -73,6 +78,96 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertTrue(model.s3ModeHint.contains("S3 mode"))
     }
 
+    func testDebugRuntimeUsesDedicatedStateAndIPC() {
+        #if DEBUG
+        XCTAssertTrue(BaxterRuntime.appSupportURL.path.hasSuffix("/Library/Application Support/baxter-dev"))
+        XCTAssertTrue(BaxterRuntime.configURL.path.hasSuffix("/Library/Application Support/baxter-dev/config.toml"))
+        XCTAssertEqual(BaxterRuntime.daemonLabel, "com.electriccoding.baxterd.dev")
+        XCTAssertEqual(BaxterRuntime.ipcAddress, "127.0.0.1:43129")
+        #else
+        XCTAssertTrue(BaxterRuntime.appSupportURL.path.hasSuffix("/Library/Application Support/baxter"))
+        XCTAssertTrue(BaxterRuntime.configURL.path.hasSuffix("/Library/Application Support/baxter/config.toml"))
+        XCTAssertEqual(BaxterRuntime.daemonLabel, "com.electriccoding.baxterd")
+        XCTAssertEqual(BaxterRuntime.ipcAddress, "127.0.0.1:41820")
+        #endif
+    }
+
+    func testResolveRepositoryRootFindsRepoWithoutEnvironmentOverride() {
+        let resolved = LaunchdController.resolveRepositoryRoot(
+            environment: [:],
+            currentDirectoryPath: FileManager.default.temporaryDirectory.path
+        )
+
+        XCTAssertNotNil(resolved)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: resolved!.appendingPathComponent("go.mod").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: resolved!.appendingPathComponent("cmd/baxterd/main.go").path))
+    }
+
+    func testResolveRepositoryRootPrefersExplicitEnvironmentOverride() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cmdDir = tempDir.appendingPathComponent("cmd/baxterd", isDirectory: true)
+        try FileManager.default.createDirectory(at: cmdDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        try "module example.com/test\n".write(
+            to: tempDir.appendingPathComponent("go.mod"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "package main\nfunc main() {}\n".write(
+            to: cmdDir.appendingPathComponent("main.go"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let resolved = LaunchdController.resolveRepositoryRoot(
+            environment: ["BAXTER_REPO_ROOT": tempDir.path],
+            currentDirectoryPath: "/"
+        )
+
+        XCTAssertEqual(resolved?.standardizedFileURL.path, tempDir.standardizedFileURL.path)
+    }
+
+    func testResolveGoBinaryPathPrefersExplicitEnvironmentOverride() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let goURL = tempDir.appendingPathComponent("go")
+        try "#!/bin/sh\nexit 0\n".write(to: goURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: goURL.path)
+
+        let resolved = LaunchdController.resolveGoBinaryPath(
+            environment: ["BAXTER_GO_BINARY": goURL.path, "PATH": ""]
+        )
+
+        XCTAssertEqual(resolved, goURL.path)
+    }
+
+    func testResolveGoBinaryPathFindsToolFromPATH() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let goURL = tempDir.appendingPathComponent("go")
+        try "#!/bin/sh\nexit 0\n".write(to: goURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: goURL.path)
+
+        let resolved = LaunchdController.resolveGoBinaryPath(
+            environment: ["PATH": tempDir.path]
+        )
+
+        XCTAssertEqual(resolved, goURL.path)
+    }
+
+    func testHelperEnvironmentVariablesIncludeDebugStateOverrides() {
+        let env = LaunchdController.helperEnvironmentVariables(homePath: "/Users/tester")
+
+        XCTAssertEqual(env["HOME"], "/Users/tester")
+        XCTAssertEqual(env["BAXTER_APP_SUPPORT_DIR"], BaxterRuntime.appSupportURL.path)
+        XCTAssertEqual(env["BAXTER_CONFIG_PATH"], BaxterRuntime.configURL.path)
+    }
+
     func testShouldOfferApplyNowWhenSaveSucceededAndDaemonRunning() {
         let model = BaxterSettingsModel()
         model.errorMessage = nil
@@ -87,6 +182,43 @@ final class SettingsModelTests: XCTestCase {
         model.errorMessage = "save failed"
 
         XCTAssertFalse(model.shouldOfferApplyNow(daemonState: .running))
+    }
+
+    func testMissingConfigCanStillBeSavedWithoutDraftChanges() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let configURL = tempDir.appendingPathComponent("config.toml")
+        setenv("BAXTER_CONFIG_PATH", configURL.path, 1)
+
+        let model = BaxterSettingsModel()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: configURL.path))
+        XCTAssertTrue(model.canSave)
+
+        model.save()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configURL.path))
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testSavingWithoutChangesUsesNoChangesMessage() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let configURL = tempDir.appendingPathComponent("config.toml")
+        try encodeBaxterConfig(.default).write(to: configURL, atomically: true, encoding: .utf8)
+        setenv("BAXTER_CONFIG_PATH", configURL.path, 1)
+
+        let model = BaxterSettingsModel()
+
+        XCTAssertFalse(model.canSave)
+
+        model.save()
+
+        XCTAssertEqual(model.errorMessage, "No settings changes to save.")
     }
 
     func testDailyScheduleRequiresValidTime() {
@@ -273,6 +405,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
             baseURL: URL(string: "http://example.test")!,
             urlSession: makeMockURLSession(),
             ipcToken: "token-123",
+            queryLaunchdState: { .running },
             autoStartPolling: false
         )
         model.selectedSnapshot = "snap-2"
@@ -334,6 +467,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
             baseURL: URL(string: "http://example.test")!,
             urlSession: makeMockURLSession(),
             ipcToken: "token-123",
+            queryLaunchdState: { .running },
             autoStartPolling: false
         )
 
@@ -506,6 +640,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
             baseURL: URL(string: "http://example.test")!,
             urlSession: makeMockURLSession(),
             ipcToken: "token-123",
+            queryLaunchdState: { .running },
             autoStartPolling: false
         )
 
@@ -531,6 +666,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
             baseURL: URL(string: "http://example.test")!,
             urlSession: makeMockURLSession(),
             ipcToken: "token-123",
+            queryLaunchdState: { .running },
             autoStartPolling: false
         )
 
@@ -558,6 +694,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
             baseURL: URL(string: "http://example.test")!,
             urlSession: makeMockURLSession(),
             ipcToken: "token-123",
+            queryLaunchdState: { .running },
             autoStartPolling: false
         )
 
@@ -650,6 +787,25 @@ final class BackupStatusModelRestoreTests: XCTestCase {
 
         XCTAssertEqual(startCalls, 0)
         XCTAssertEqual(model.daemonServiceState, .stopped)
+        XCTAssertFalse(MockURLProtocol.requests().contains(where: { $0.url?.path == "/v1/status" }))
+    }
+
+    func testRefreshStatusDoesNotRequestIPCWhenLaunchdStateUnknown() async throws {
+        MockURLProtocol.requestHandler = { _ in
+            throw URLError(.cannotConnectToHost)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            queryLaunchdState: { .unknown },
+            autoStartPolling: false
+        )
+
+        model.refreshStatus()
+        await waitUntil("unknown launchd refresh") { model.connectionState == .unknown }
+
+        XCTAssertFalse(MockURLProtocol.requests().contains(where: { $0.url?.path == "/v1/status" }))
     }
 
     func testRefreshStatusSendsFailureNotificationOncePerTransition() async throws {
@@ -665,6 +821,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         let model = BackupStatusModel(
             baseURL: URL(string: "http://example.test")!,
             urlSession: makeMockURLSession(),
+            queryLaunchdState: { .running },
             notificationDispatcher: notifications,
             autoStartPolling: false
         )
@@ -698,6 +855,7 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         let model = BackupStatusModel(
             baseURL: URL(string: "http://example.test")!,
             urlSession: makeMockURLSession(),
+            queryLaunchdState: { .running },
             notificationDispatcher: notifications,
             autoStartPolling: false
         )

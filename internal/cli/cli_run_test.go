@@ -122,7 +122,7 @@ func TestRunBackupStatusPrintsManifestObjectAndSnapshotCounts(t *testing.T) {
 	}
 }
 
-func TestRunBackupRejectsMissingRecoveryMetadataForExistingLocalState(t *testing.T) {
+func TestRunBackupAllowsFreshLocalStateWithOnlyKDFSalt(t *testing.T) {
 	setCLIHome(t)
 	t.Setenv(passphraseEnv, "backup-passphrase")
 
@@ -142,12 +142,8 @@ func TestRunBackupRejectsMissingRecoveryMetadataForExistingLocalState(t *testing
 		t.Fatalf("seed local kdf state: %v", err)
 	}
 
-	err := runBackup(cfg)
-	if err == nil {
-		t.Fatal("expected backup to fail without recovery metadata")
-	}
-	if !strings.Contains(err.Error(), "recovery metadata not found for existing backup set") {
-		t.Fatalf("unexpected backup error: %v", err)
+	if err := runBackup(cfg); err != nil {
+		t.Fatalf("expected backup to succeed for salt-only local state: %v", err)
 	}
 }
 

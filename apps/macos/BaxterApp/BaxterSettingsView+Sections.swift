@@ -4,74 +4,58 @@ extension BaxterSettingsView {
     var backupSection: some View {
         SettingsCard(title: "Backup", subtitle: "Choose folders to include in backups.") {
             VStack(alignment: .leading, spacing: 12) {
-                backupRootsList
+                SettingRow(label: "Folders", error: model.validationMessage(for: .backupRoots)) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        backupRootsList
 
-                HStack(spacing: 8) {
-                    Button("Add Folder...") {
-                        model.chooseBackupRoots()
-                    }
-                    .buttonStyle(.bordered)
+                        HStack(spacing: 8) {
+                            Button("Add Folder...") {
+                                model.chooseBackupRoots()
+                            }
+                            .buttonStyle(.bordered)
 
-                    Button("Remove All") {
-                        model.clearBackupRoots()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(model.backupRoots.isEmpty)
-                }
-
-                if let error = model.validationMessage(for: .backupRoots) {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Exclude Paths")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("Absolute paths, one per line.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    TextEditor(text: $model.excludePathsText)
-                        .scrollContentBackground(.hidden)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 82, maxHeight: 108)
-                        .settingsEditorSurface()
-                        .onChange(of: model.excludePathsText) { _, _ in
-                            model.validateDraft()
+                            Button("Remove All") {
+                                model.clearBackupRoots()
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(model.backupRoots.isEmpty)
                         }
-
-                    if let error = model.validationMessage(for: .excludePaths) {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Exclude Globs")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("Glob patterns, one per line.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    TextEditor(text: $model.excludeGlobsText)
-                        .scrollContentBackground(.hidden)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 82, maxHeight: 108)
-                        .settingsEditorSurface()
-                        .onChange(of: model.excludeGlobsText) { _, _ in
-                            model.validateDraft()
-                        }
-
-                    if let error = model.validationMessage(for: .excludeGlobs) {
-                        Text(error)
+                SettingRow(label: "Exclude Paths", error: model.validationMessage(for: .excludePaths)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Absolute paths, one per line.")
                             .font(.caption)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: $model.excludePathsText)
+                            .scrollContentBackground(.hidden)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 82, maxHeight: 108)
+                            .settingsEditorSurface()
+                            .onChange(of: model.excludePathsText) { _, _ in
+                                model.validateDraft()
+                            }
                     }
                 }
 
-                SettingRow(label: "Backup Schedule", error: nil) {
+                SettingRow(label: "Exclude Globs", error: model.validationMessage(for: .excludeGlobs)) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Glob patterns, one per line.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: $model.excludeGlobsText)
+                            .scrollContentBackground(.hidden)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 82, maxHeight: 108)
+                            .settingsEditorSurface()
+                            .onChange(of: model.excludeGlobsText) { _, _ in
+                                model.validateDraft()
+                            }
+                    }
+                }
+
+                SettingRow(label: "Schedule", error: nil) {
                     Picker("Backup Schedule", selection: $model.schedule) {
                         ForEach(BackupSchedule.allCases) { schedule in
                             Text(schedule.rawValue.capitalized).tag(schedule)
@@ -87,9 +71,7 @@ extension BaxterSettingsView {
                 if model.schedule == .daily {
                     SettingRow(label: "Daily Time", error: model.validationMessage(for: .dailyTime)) {
                         TextField("HH:MM", text: $model.dailyTime)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(width: 92, alignment: .leading)
+                            .settingsField(width: 92, monospaced: true)
                             .onChange(of: model.dailyTime) { _, _ in
                                 model.validateDraft()
                             }
@@ -112,9 +94,7 @@ extension BaxterSettingsView {
 
                     SettingRow(label: "Weekly Time", error: model.validationMessage(for: .weeklyTime)) {
                         TextField("HH:MM", text: $model.weeklyTime)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(width: 92, alignment: .leading)
+                            .settingsField(width: 92, monospaced: true)
                             .onChange(of: model.weeklyTime) { _, _ in
                                 model.validateDraft()
                             }
@@ -172,7 +152,7 @@ extension BaxterSettingsView {
     var verifySection: some View {
         SettingsCard(title: "Verify", subtitle: "Schedule and scope integrity verification runs.") {
             VStack(alignment: .leading, spacing: 10) {
-                SettingRow(label: "Verify Schedule", error: nil) {
+                SettingRow(label: "Schedule", error: nil) {
                     Picker("Verify Schedule", selection: $model.verifySchedule) {
                         ForEach(BackupSchedule.allCases) { schedule in
                             Text(schedule.rawValue.capitalized).tag(schedule)
@@ -188,9 +168,7 @@ extension BaxterSettingsView {
                 if model.verifySchedule == .daily {
                     SettingRow(label: "Daily Time", error: model.validationMessage(for: .verifyDailyTime)) {
                         TextField("HH:MM", text: $model.verifyDailyTime)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(width: 92, alignment: .leading)
+                            .settingsField(width: 92, monospaced: true)
                             .onChange(of: model.verifyDailyTime) { _, _ in
                                 model.validateDraft()
                             }
@@ -213,9 +191,7 @@ extension BaxterSettingsView {
 
                     SettingRow(label: "Weekly Time", error: model.validationMessage(for: .verifyWeeklyTime)) {
                         TextField("HH:MM", text: $model.verifyWeeklyTime)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(width: 92, alignment: .leading)
+                            .settingsField(width: 92, monospaced: true)
                             .onChange(of: model.verifyWeeklyTime) { _, _ in
                                 model.validateDraft()
                             }
@@ -224,8 +200,7 @@ extension BaxterSettingsView {
 
                 SettingRow(label: "Prefix", error: nil) {
                     TextField("/Users/you/Documents (optional)", text: $model.verifyPrefix)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
+                        .settingsField(width: 420, monospaced: true)
                         .onChange(of: model.verifyPrefix) { _, _ in
                             model.validateDraft()
                         }
@@ -233,9 +208,7 @@ extension BaxterSettingsView {
 
                 SettingRow(label: "Limit", error: model.validationMessage(for: .verifyLimit)) {
                     TextField("0", text: $model.verifyLimit)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(width: 108, alignment: .leading)
+                        .settingsField(width: 108, monospaced: true)
                         .onChange(of: model.verifyLimit) { _, _ in
                             model.validateDraft()
                         }
@@ -243,9 +216,7 @@ extension BaxterSettingsView {
 
                 SettingRow(label: "Sample", error: model.validationMessage(for: .verifySample)) {
                     TextField("0", text: $model.verifySample)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(width: 108, alignment: .leading)
+                        .settingsField(width: 108, monospaced: true)
                         .onChange(of: model.verifySample) { _, _ in
                             model.validateDraft()
                         }
@@ -258,24 +229,24 @@ extension BaxterSettingsView {
         SettingsCard(title: "S3", subtitle: "Leave bucket empty for local object storage.") {
             VStack(alignment: .leading, spacing: 10) {
                 SettingRow(label: "Endpoint", error: model.validationMessage(for: .s3Endpoint)) {
-                    TextField("https://s3.amazonaws.com (optional)", text: $model.s3Endpoint)
-                        .textFieldStyle(.roundedBorder)
+                    TextField("Optional, for example https://s3.amazonaws.com", text: $model.s3Endpoint)
+                        .settingsField(width: 420)
                         .onChange(of: model.s3Endpoint) { _, _ in
                             model.validateDraft()
                         }
                 }
 
                 SettingRow(label: "Region", error: model.validationMessage(for: .s3Region)) {
-                    TextField("us-west-2", text: $model.s3Region)
-                        .textFieldStyle(.roundedBorder)
+                    TextField("Example: us-west-2", text: $model.s3Region)
+                        .settingsField(width: 180)
                         .onChange(of: model.s3Region) { _, _ in
                             model.validateDraft()
                         }
                 }
 
                 SettingRow(label: "Bucket", error: model.validationMessage(for: .s3Bucket)) {
-                    TextField("my-backups", text: $model.s3Bucket)
-                        .textFieldStyle(.roundedBorder)
+                    TextField("Example: my-backups", text: $model.s3Bucket)
+                        .settingsField(width: 240)
                         .onChange(of: model.s3Bucket) { _, _ in
                             model.validateDraft()
                         }
@@ -283,25 +254,25 @@ extension BaxterSettingsView {
 
                 SettingRow(label: "Prefix", error: model.validationMessage(for: .s3Prefix)) {
                     TextField("baxter/", text: $model.s3Prefix)
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField(width: 180)
                         .onChange(of: model.s3Prefix) { _, _ in
                             model.validateDraft()
                         }
                 }
 
                 SettingRow(label: "AWS Profile", error: model.validationMessage(for: .s3AWSProfile)) {
-                    TextField("baxter (optional)", text: $model.s3AWSProfile)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
+                    TextField("Optional, for example baxter", text: $model.s3AWSProfile)
+                        .settingsField(width: 220, monospaced: true)
                         .onChange(of: model.s3AWSProfile) { _, _ in
                             model.validateDraft()
                         }
                 }
 
-                Text(model.s3ModeHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 136)
+                SettingsAlignedContent {
+                    Text(model.s3ModeHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -311,7 +282,7 @@ extension BaxterSettingsView {
             VStack(alignment: .leading, spacing: 10) {
                 SettingRow(label: "Service", error: model.validationMessage(for: .keychainService)) {
                     TextField("baxter", text: $model.keychainService)
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField(width: 180)
                         .onChange(of: model.keychainService) { _, _ in
                             model.validateDraft()
                         }
@@ -319,7 +290,7 @@ extension BaxterSettingsView {
 
                 SettingRow(label: "Account", error: model.validationMessage(for: .keychainAccount)) {
                     TextField("default", text: $model.keychainAccount)
-                        .textFieldStyle(.roundedBorder)
+                        .settingsField(width: 180)
                         .onChange(of: model.keychainAccount) { _, _ in
                             model.validateDraft()
                         }
@@ -330,8 +301,10 @@ extension BaxterSettingsView {
 
     var notificationsSection: some View {
         SettingsCard(title: "Notifications", subtitle: "Failure alerts are always enabled; success alerts are optional.") {
-            Toggle("Notify on successful backup/verify", isOn: $statusModel.notifyOnSuccess)
-                .toggleStyle(.switch)
+            SettingRow(label: "Success Alerts", error: nil) {
+                Toggle("Notify after successful backup and verify runs", isOn: $statusModel.notifyOnSuccess)
+                    .toggleStyle(.switch)
+            }
         }
     }
 }

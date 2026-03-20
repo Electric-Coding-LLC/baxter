@@ -22,10 +22,15 @@ struct BaxterSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !embedded {
-                Text("Settings")
-                    .font(.title2.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 8)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Settings")
+                        .font(.title2.weight(.semibold))
+                    Text("Tune backup, verify, storage, and encryption behavior.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
             }
 
             ScrollView {
@@ -45,6 +50,8 @@ struct BaxterSettingsView: View {
                     sectionDivider
                     notificationsSection
                 }
+                .frame(maxWidth: SettingsLayout.contentWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 4)
             }
             .frame(maxHeight: .infinity)

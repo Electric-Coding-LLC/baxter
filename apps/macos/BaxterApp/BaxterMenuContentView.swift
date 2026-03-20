@@ -155,6 +155,14 @@ struct BaxterMenuContentView: View {
         model.connectionState == .connected && model.daemonServiceState == .running && model.isDaemonReachable
     }
 
+    private var hasSavedConfig: Bool {
+        model.hasConfigFile()
+    }
+
+    private var needsInitialSetup: Bool {
+        !hasSavedConfig && model.connectionState == .stopped
+    }
+
     private var daemonStatusHeadline: String {
         switch model.connectionState {
         case .connected:
@@ -166,7 +174,7 @@ struct BaxterMenuContentView: View {
         case .unavailable:
             return "Baxter is running (connection failed)"
         case .stopped:
-            return "Baxter is stopped"
+            return needsInitialSetup ? "Baxter is not set up" : "Baxter is stopped"
         case .unknown:
             return "Checking Baxter status"
         }
@@ -192,6 +200,9 @@ struct BaxterMenuContentView: View {
     }
 
     private var backupStatusWord: String {
+        if needsInitialSetup {
+            return "not set up"
+        }
         switch model.connectionState {
         case .connecting, .delayed:
             return "waiting for connection"
@@ -246,6 +257,9 @@ struct BaxterMenuContentView: View {
             }
             return "Backup is temporarily unavailable."
         }
+        if needsInitialSetup {
+            return "Save settings first to create a backup config."
+        }
         switch model.connectionState {
         case .connected:
             return nil
@@ -299,6 +313,12 @@ struct BaxterMenuContentView: View {
                 return "Working"
             }
         }
+        if hasLifecycleFailure {
+            return lifecycleFailureTitle
+        }
+        if needsInitialSetup {
+            return "Setup required"
+        }
         switch model.connectionState {
         case .connected:
             return "Baxter is ready"
@@ -322,6 +342,9 @@ struct BaxterMenuContentView: View {
         if hasLifecycleMessage {
             return model.lifecycleMessage ?? ""
         }
+        if needsInitialSetup {
+            return "Save settings to create the dev config, then start Baxter."
+        }
         switch model.connectionState {
         case .connected:
             return "All systems are connected."
@@ -339,6 +362,12 @@ struct BaxterMenuContentView: View {
     }
 
     private var statusCardSystemImage: String {
+        if hasLifecycleFailure {
+            return "exclamationmark.triangle.fill"
+        }
+        if needsInitialSetup {
+            return "slider.horizontal.3"
+        }
         switch model.connectionState {
         case .connected:
             return "checkmark.circle.fill"
@@ -354,6 +383,12 @@ struct BaxterMenuContentView: View {
     }
 
     private var statusCardForegroundColor: Color {
+        if hasLifecycleFailure {
+            return .red
+        }
+        if needsInitialSetup {
+            return .secondary
+        }
         switch model.connectionState {
         case .unavailable:
             return .red
@@ -369,6 +404,12 @@ struct BaxterMenuContentView: View {
     }
 
     private var statusCardBackgroundColor: Color {
+        if hasLifecycleFailure {
+            return Color.red.opacity(0.10)
+        }
+        if needsInitialSetup {
+            return Color.secondary.opacity(0.08)
+        }
         switch model.connectionState {
         case .unavailable:
             return Color.red.opacity(0.10)
@@ -387,6 +428,9 @@ struct BaxterMenuContentView: View {
         if model.isLifecycleBusy {
             return false
         }
+        if needsInitialSetup {
+            return false
+        }
         switch model.connectionState {
         case .delayed, .unavailable, .unknown:
             return true
@@ -400,6 +444,9 @@ struct BaxterMenuContentView: View {
     }
 
     private var shouldShowRetryCountdown: Bool {
+        if needsInitialSetup {
+            return false
+        }
         switch model.connectionState {
         case .connecting, .delayed, .unavailable, .unknown:
             return true
@@ -418,6 +465,33 @@ struct BaxterMenuContentView: View {
 
     private var connectionDiagnosticsLine: String {
         "launchd: \(launchdDiagnosticsWord) | IPC: \(ipcDiagnosticsWord)"
+    }
+
+    private var hasLifecycleFailure: Bool {
+        guard let lifecycleMessage = model.lifecycleMessage?.lowercased() else {
+            return false
+        }
+        return lifecycleMessage.hasPrefix("start failed:")
+            || lifecycleMessage.hasPrefix("stop failed:")
+            || lifecycleMessage.hasPrefix("apply failed:")
+            || lifecycleMessage.hasPrefix("auto-start failed:")
+            || lifecycleMessage.hasPrefix("auto-restart failed:")
+    }
+
+    private var lifecycleFailureTitle: String {
+        guard let lifecycleMessage = model.lifecycleMessage?.lowercased() else {
+            return "Action failed"
+        }
+        if lifecycleMessage.hasPrefix("start failed:") || lifecycleMessage.hasPrefix("auto-start failed:") || lifecycleMessage.hasPrefix("auto-restart failed:") {
+            return "Start failed"
+        }
+        if lifecycleMessage.hasPrefix("stop failed:") {
+            return "Stop failed"
+        }
+        if lifecycleMessage.hasPrefix("apply failed:") {
+            return "Apply failed"
+        }
+        return "Action failed"
     }
 
     private var launchdDiagnosticsWord: String {
