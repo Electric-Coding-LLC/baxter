@@ -160,6 +160,7 @@ final class BackupStatusModel: ObservableObject {
             var launchdState = await queryLaunchdState()
             var attemptedStartThisRefresh = false
             if shouldAutoBootstrapDaemon &&
+                !suppressAutoRecoveryUntilManualStart &&
                 !hasAttemptedAutoBootstrapDaemon &&
                 launchdState != .running &&
                 hasConfigFile()

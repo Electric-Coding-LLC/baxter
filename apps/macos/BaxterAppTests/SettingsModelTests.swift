@@ -625,6 +625,33 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         XCTAssertEqual(model.state, .idle)
     }
 
+    func testRefreshStatusDoesNotAutoBootstrapAfterManualStopSuppression() async throws {
+        var startCalls = 0
+        MockURLProtocol.requestHandler = { _ in
+            throw URLError(.cannotConnectToHost)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            queryLaunchdState: { .stopped },
+            startLaunchd: {
+                startCalls += 1
+                return "Daemon started."
+            },
+            hasConfigFile: { true },
+            autoStartPolling: false
+        )
+        model.suppressAutoRecoveryUntilManualStart = true
+        model.hasAttemptedAutoBootstrapDaemon = false
+
+        model.refreshStatus()
+        await waitUntil("manual stop refresh") { model.connectionState == .stopped }
+
+        XCTAssertEqual(startCalls, 0)
+        XCTAssertEqual(model.daemonServiceState, .stopped)
+    }
+
     func testRefreshStatusSendsFailureNotificationOncePerTransition() async throws {
         let notifications = MockNotificationDispatcher()
         MockURLProtocol.requestHandler = { request in
