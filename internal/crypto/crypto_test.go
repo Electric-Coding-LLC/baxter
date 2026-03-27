@@ -79,7 +79,7 @@ func TestDecryptSupportsV2Payloads(t *testing.T) {
 
 func TestEncryptUsesGzipWhenBeneficial(t *testing.T) {
 	key := KeyFromPassphrase("secret-passphrase")
-	plain := bytes.Repeat([]byte("baxter-baxter-baxter-"), 256)
+	plain := bytes.Repeat([]byte("baxter-baxter-baxter-"), 16*1024)
 
 	payload, err := EncryptBytes(key, plain)
 	if err != nil {
@@ -119,6 +119,27 @@ func TestEncryptFallsBackToNoCompressionWhenNotBeneficial(t *testing.T) {
 		t.Fatalf("decrypt failed: %v", err)
 	}
 	if !bytes.Equal(got, alreadyCompressed) {
+		t.Fatal("decrypted plaintext mismatch")
+	}
+}
+
+func TestEncryptSkipsCompressionForSmallPayloads(t *testing.T) {
+	key := KeyFromPassphrase("secret-passphrase")
+	plain := bytes.Repeat([]byte("baxter-small-file-"), 1024)
+
+	payload, err := EncryptBytes(key, plain)
+	if err != nil {
+		t.Fatalf("encrypt failed: %v", err)
+	}
+	if payload[1] != compressionNone {
+		t.Fatalf("expected no compression metadata for small payload, got %d", payload[1])
+	}
+
+	got, err := DecryptBytes(key, payload)
+	if err != nil {
+		t.Fatalf("decrypt failed: %v", err)
+	}
+	if !bytes.Equal(got, plain) {
 		t.Fatal("decrypted plaintext mismatch")
 	}
 }

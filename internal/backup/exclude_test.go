@@ -1,6 +1,8 @@
 package backup
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -79,6 +81,41 @@ func TestBuildManifestWithOptionsSkipsSymlinkedDirectories(t *testing.T) {
 	want := []string{filepath.Join(targetDir, "file.txt")}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected manifest paths: got %#v want %#v", got, want)
+	}
+}
+
+func TestBuildManifestWithOptionsSkipsLocalizedMetadataFiles(t *testing.T) {
+	root := t.TempDir()
+	realFile := filepath.Join(root, "notes.txt")
+	localizedFile := filepath.Join(root, ".localized")
+
+	mustWriteTestFile(t, realFile, []byte("keep"))
+	mustWriteTestFile(t, localizedFile, []byte("skip"))
+
+	manifest, err := BuildManifestWithOptions([]string{root}, BuildOptions{})
+	if err != nil {
+		t.Fatalf("build manifest: %v", err)
+	}
+
+	got := make([]string, 0, len(manifest.Entries))
+	for _, entry := range manifest.Entries {
+		got = append(got, entry.Path)
+	}
+	want := []string{realFile}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected manifest paths: got %#v want %#v", got, want)
+	}
+}
+
+func TestShouldIgnoreManifestErrorOnlyIgnoresLocalizedDeadlock(t *testing.T) {
+	if !shouldIgnoreManifestError("/tmp/.localized", errors.New("resource deadlock avoided")) {
+		t.Fatalf("expected localized deadlock to be ignored")
+	}
+	if shouldIgnoreManifestError("/tmp/notes.txt", errors.New("resource deadlock avoided")) {
+		t.Fatalf("did not expect non-localized deadlock to be ignored")
+	}
+	if shouldIgnoreManifestError("/tmp/.localized", fs.ErrPermission) {
+		t.Fatalf("did not expect generic permission errors to be ignored")
 	}
 }
 

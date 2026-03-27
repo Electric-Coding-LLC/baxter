@@ -11,19 +11,29 @@ import (
 
 func (d *Daemon) setFailed(err error) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.running = false
 	d.status.State = "failed"
 	d.status.LastError = err.Error()
+	d.status.BackupProgress = backupProgressSummary{}
+	d.mu.Unlock()
+	d.persistStatus()
 }
 
 func (d *Daemon) setIdleSuccess() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.running = false
 	d.status.State = "idle"
 	d.status.LastBackupAt = d.now().UTC()
 	d.status.LastError = ""
+	d.status.BackupProgress = backupProgressSummary{}
+	d.mu.Unlock()
+	d.persistStatus()
+}
+
+func (d *Daemon) setBackupProgress(progress backupProgressSummary) {
+	d.mu.Lock()
+	d.status.BackupProgress = progress
+	d.mu.Unlock()
 }
 
 func (d *Daemon) setNextScheduledAt(next time.Time) {
@@ -40,27 +50,29 @@ func (d *Daemon) setNextVerifyAt(next time.Time) {
 
 func (d *Daemon) setLastError(lastError string) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.status.LastError = lastError
+	d.mu.Unlock()
+	d.persistStatus()
 }
 
 func (d *Daemon) setLastRestoreError(lastRestoreError string) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.status.LastRestoreError = lastRestoreError
+	d.mu.Unlock()
+	d.persistStatus()
 }
 
 func (d *Daemon) setRestoreSuccess(restoredPath string) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.status.LastRestoreAt = d.now().UTC()
 	d.status.LastRestorePath = restoredPath
 	d.status.LastRestoreError = ""
+	d.mu.Unlock()
+	d.persistStatus()
 }
 
 func (d *Daemon) setVerifyResult(result backup.VerifyResult) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.verifyRunning = false
 	d.status.VerifyState = "idle"
 	d.status.LastVerifyAt = d.now().UTC()
@@ -73,11 +85,12 @@ func (d *Daemon) setVerifyResult(result backup.VerifyResult) {
 		DecryptErrors:  result.DecryptErrors,
 		ChecksumErrors: result.ChecksumErrors,
 	}
+	d.mu.Unlock()
+	d.persistStatus()
 }
 
 func (d *Daemon) setVerifyFailed(err error, result backup.VerifyResult) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.verifyRunning = false
 	d.status.VerifyState = "failed"
 	d.status.LastVerifyAt = d.now().UTC()
@@ -90,6 +103,8 @@ func (d *Daemon) setVerifyFailed(err error, result backup.VerifyResult) {
 		DecryptErrors:  result.DecryptErrors,
 		ChecksumErrors: result.ChecksumErrors,
 	}
+	d.mu.Unlock()
+	d.persistStatus()
 }
 
 func verifyFailureError(result backup.VerifyResult) error {
@@ -151,6 +166,9 @@ func (d *Daemon) snapshot() statusResponse {
 		LastError:   d.status.LastError,
 		VerifyState: d.status.VerifyState,
 	}
+	resp.BackupUploaded = d.status.BackupProgress.Uploaded
+	resp.BackupTotal = d.status.BackupProgress.Total
+	resp.BackupCurrentPath = d.status.BackupProgress.CurrentPath
 	if !d.status.LastBackupAt.IsZero() {
 		resp.LastBackupAt = d.status.LastBackupAt.Format(time.RFC3339)
 	}

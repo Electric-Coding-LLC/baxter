@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +19,11 @@ type flakyStore struct {
 	inner        storage.ObjectStore
 	failPuts     int
 	putCallCount int
+}
+
+type keyFailingStore struct {
+	inner      storage.ObjectStore
+	failPrefix string
 }
 
 func (s *flakyStore) PutObject(key string, data []byte) error {
@@ -37,6 +44,25 @@ func (s *flakyStore) DeleteObject(key string) error {
 }
 
 func (s *flakyStore) ListKeys() ([]string, error) {
+	return s.inner.ListKeys()
+}
+
+func (s *keyFailingStore) PutObject(key string, data []byte) error {
+	if strings.HasPrefix(key, s.failPrefix) {
+		return errors.New("forced put failure")
+	}
+	return s.inner.PutObject(key, data)
+}
+
+func (s *keyFailingStore) GetObject(key string) ([]byte, error) {
+	return s.inner.GetObject(key)
+}
+
+func (s *keyFailingStore) DeleteObject(key string) error {
+	return s.inner.DeleteObject(key)
+}
+
+func (s *keyFailingStore) ListKeys() ([]string, error) {
 	return s.inner.ListKeys()
 }
 
@@ -92,6 +118,115 @@ func TestRunUploadsAndSavesManifest(t *testing.T) {
 	}
 	if len(snapshots) != 1 {
 		t.Fatalf("unexpected snapshot count: %d", len(snapshots))
+	}
+}
+
+func TestRunReportsProgress(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	snapshotDir := filepath.Join(t.TempDir(), "manifests")
+	objectsDir := filepath.Join(t.TempDir(), "objects")
+
+	paths := []string{
+		filepath.Join(root, "a.txt"),
+		filepath.Join(root, "b.txt"),
+		filepath.Join(root, "c.txt"),
+	}
+	for i, path := range paths {
+		if err := os.WriteFile(path, []byte{byte('a' + i)}, 0o600); err != nil {
+			t.Fatalf("write source file: %v", err)
+		}
+	}
+
+	cfg := &config.Config{
+		BackupRoots: []string{root},
+		S3:          config.S3Config{},
+		Encryption:  config.EncryptionConfig{},
+	}
+	store := storage.NewLocalClient(objectsDir)
+
+	var mu sync.Mutex
+	var updates []ProgressUpdate
+	_, err := Run(cfg, RunOptions{
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: 30,
+		EncryptionKey:     []byte("01234567890123456789012345678901"),
+		KDFSalt:           testKDFSalt,
+		BackupSetID:       "local-test",
+		Store:             store,
+		Progress: func(update ProgressUpdate) {
+			mu.Lock()
+			defer mu.Unlock()
+			updates = append(updates, update)
+		},
+	})
+	if err != nil {
+		t.Fatalf("run backup: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(updates) != 4 {
+		t.Fatalf("unexpected progress update count: got %d want 4", len(updates))
+	}
+	if updates[0].Uploaded != 0 || updates[0].Total != 3 {
+		t.Fatalf("unexpected initial progress update: %+v", updates[0])
+	}
+	foundFinal := false
+	for _, update := range updates {
+		if update.Uploaded == 3 && update.Total == 3 {
+			foundFinal = true
+			break
+		}
+	}
+	if !foundFinal {
+		t.Fatalf("missing final progress update: %+v", updates)
+	}
+}
+
+func TestRunDoesNotWriteLocalSuccessMarkersWhenRemoteSnapshotWriteFails(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(t.TempDir(), "manifest.json")
+	snapshotDir := filepath.Join(t.TempDir(), "manifests")
+	objectsDir := filepath.Join(t.TempDir(), "objects")
+
+	filePath := filepath.Join(root, "doc.txt")
+	if err := os.WriteFile(filePath, []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	cfg := &config.Config{
+		BackupRoots: []string{root},
+		S3:          config.S3Config{},
+		Encryption:  config.EncryptionConfig{},
+	}
+	store := &keyFailingStore{
+		inner:      storage.NewLocalClient(objectsDir),
+		failPrefix: RemoteSnapshotManifestKeyPrefix(),
+	}
+
+	if _, err := Run(cfg, RunOptions{
+		ManifestPath:      manifestPath,
+		SnapshotDir:       snapshotDir,
+		SnapshotRetention: 30,
+		EncryptionKey:     []byte("01234567890123456789012345678901"),
+		KDFSalt:           testKDFSalt,
+		BackupSetID:       "local-test",
+		Store:             store,
+	}); err == nil {
+		t.Fatal("expected remote snapshot write failure")
+	}
+
+	if _, err := os.Stat(manifestPath); !os.IsNotExist(err) {
+		t.Fatalf("expected manifest to remain absent, got %v", err)
+	}
+	snapshots, err := ListSnapshotManifests(snapshotDir)
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(snapshots) != 0 {
+		t.Fatalf("expected no local snapshots after failed remote write, got %d", len(snapshots))
 	}
 }
 
@@ -407,8 +542,8 @@ func TestRunStoresVersionedCompressedPayload(t *testing.T) {
 
 	filePath := filepath.Join(root, "compressible.txt")
 	content := []byte("baxter-compressible-content-baxter-compressible-content-baxter-compressible-content")
-	repeated := make([]byte, 0, len(content)*256)
-	for i := 0; i < 256; i++ {
+	repeated := make([]byte, 0, len(content)*4096)
+	for i := 0; i < 4096; i++ {
 		repeated = append(repeated, content...)
 	}
 	if err := os.WriteFile(filePath, repeated, 0o600); err != nil {

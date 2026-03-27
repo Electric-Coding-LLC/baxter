@@ -70,3 +70,11 @@ func KDFSaltPath() (string, error) {
 	}
 	return filepath.Join(dir, "kdf_salt.bin"), nil
 }
+
+func DaemonStatusPath() (string, error) {
+	dir, err := AppDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "daemon_status.json"), nil
+}

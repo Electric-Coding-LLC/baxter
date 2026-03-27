@@ -25,7 +25,7 @@ enum BaxterWorkspaceSection: String, CaseIterable, Hashable, Identifiable {
         case .restore:
             return "Browse snapshots and restore files with confidence."
         case .settings:
-            return "Tune backup, verify, storage, and encrypti on behavior."
+            return "Tune backup, verify, storage, and encryption behavior."
         case .diagnostics:
             return "Inspect runtime state and export support bundles."
         }

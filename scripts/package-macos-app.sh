@@ -3,10 +3,20 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/package-macos-app.sh --output-dir /path/to/dist [--artifact-name Baxter-darwin-arm64.zip]
+Usage: ./scripts/package-macos-app.sh --output-dir /path/to/dist [options]
 
 Builds Baxter.app in Release configuration, embeds baxter helper binaries,
 and packages it as a zip artifact.
+
+Options:
+  --artifact-name NAME            Zip file name (default: Baxter-darwin-arm64.zip)
+  --derived-data-path PATH        Reuse an existing Xcode DerivedData path
+  --signing-identity NAME         Developer ID Application identity for codesign
+  --notarytool-profile PROFILE    Keychain profile name for xcrun notarytool
+
+Environment:
+  BAXTER_CODESIGN_IDENTITY        Default signing identity if flag is omitted
+  BAXTER_NOTARYTOOL_PROFILE       Default notarytool profile if flag is omitted
 EOF
 }
 
@@ -14,6 +24,8 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_DIR=""
 ARTIFACT_NAME="Baxter-darwin-arm64.zip"
 DERIVED_DATA_PATH=""
+SIGNING_IDENTITY="${BAXTER_CODESIGN_IDENTITY:-}"
+NOTARYTOOL_PROFILE="${BAXTER_NOTARYTOOL_PROFILE:-}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -27,6 +39,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --derived-data-path)
       DERIVED_DATA_PATH="${2:-}"
+      shift 2
+      ;;
+    --signing-identity)
+      SIGNING_IDENTITY="${2:-}"
+      shift 2
+      ;;
+    --notarytool-profile)
+      NOTARYTOOL_PROFILE="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -48,6 +68,23 @@ fi
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "package-macos-app.sh must run on macOS" >&2
+  exit 1
+fi
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+create_zip() {
+  rm -f "$ZIP_PATH"
+  ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+}
+
+if [ -n "$NOTARYTOOL_PROFILE" ] && [ -z "$SIGNING_IDENTITY" ]; then
+  echo "--notarytool-profile requires --signing-identity (or BAXTER_CODESIGN_IDENTITY)" >&2
   exit 1
 fi
 
@@ -94,7 +131,41 @@ GOOS=darwin GOARCH=arm64 go build -o "$HELPER_DIR/baxterd" ./cmd/baxterd
 popd >/dev/null
 chmod 0755 "$HELPER_DIR/baxter" "$HELPER_DIR/baxterd"
 
-rm -f "$ZIP_PATH"
-ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+if [ -n "$SIGNING_IDENTITY" ]; then
+  require_command codesign
+
+  codesign \
+    --force \
+    --timestamp \
+    --options runtime \
+    --sign "$SIGNING_IDENTITY" \
+    "$HELPER_DIR/baxter"
+  codesign \
+    --force \
+    --timestamp \
+    --options runtime \
+    --sign "$SIGNING_IDENTITY" \
+    "$HELPER_DIR/baxterd"
+  codesign \
+    --force \
+    --timestamp \
+    --options runtime \
+    --sign "$SIGNING_IDENTITY" \
+    "$APP_PATH"
+  codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+fi
+
+create_zip
+
+if [ -n "$NOTARYTOOL_PROFILE" ]; then
+  require_command xcrun
+
+  xcrun notarytool submit "$ZIP_PATH" \
+    --keychain-profile "$NOTARYTOOL_PROFILE" \
+    --wait
+  xcrun stapler staple "$APP_PATH"
+  spctl --assess --type execute --verbose=2 "$APP_PATH"
+  create_zip
+fi
 
 echo "Packaged app artifact: $ZIP_PATH"

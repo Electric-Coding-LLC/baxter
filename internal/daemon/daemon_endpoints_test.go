@@ -17,6 +17,10 @@ import (
 )
 
 func TestStatusEndpointDefaultsToIdle(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
 	d := New(config.DefaultConfig())
 	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
 	rr := httptest.NewRecorder()

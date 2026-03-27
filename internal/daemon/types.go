@@ -10,6 +10,7 @@ type daemonStatus struct {
 	LastBackupAt     time.Time
 	NextScheduledAt  time.Time
 	LastError        string
+	BackupProgress   backupProgressSummary
 	LastRestoreAt    time.Time
 	LastRestorePath  string
 	LastRestoreError string
@@ -29,11 +30,20 @@ type verifyResultSummary struct {
 	ChecksumErrors int
 }
 
+type backupProgressSummary struct {
+	Uploaded    int
+	Total       int
+	CurrentPath string
+}
+
 type statusResponse struct {
 	State                    string `json:"state"`
 	LastBackupAt             string `json:"last_backup_at,omitempty"`
 	NextScheduledAt          string `json:"next_scheduled_at,omitempty"`
 	LastError                string `json:"last_error,omitempty"`
+	BackupUploaded           int    `json:"backup_uploaded,omitempty"`
+	BackupTotal              int    `json:"backup_total,omitempty"`
+	BackupCurrentPath        string `json:"backup_current_path,omitempty"`
 	LastRestoreAt            string `json:"last_restore_at,omitempty"`
 	LastRestorePath          string `json:"last_restore_path,omitempty"`
 	LastRestoreError         string `json:"last_restore_error,omitempty"`

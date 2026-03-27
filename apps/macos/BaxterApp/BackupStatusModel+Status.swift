@@ -48,6 +48,9 @@ extension BackupStatusModel {
         } else {
             nextScheduledAt = nil
         }
+        backupUploaded = status.backupUploaded ?? 0
+        backupTotal = status.backupTotal ?? 0
+        backupCurrentPath = status.backupCurrentPath
         if let raw = status.lastRestoreAt {
             lastRestoreAt = iso8601.date(from: raw)
         } else {

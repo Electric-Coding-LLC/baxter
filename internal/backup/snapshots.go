@@ -29,6 +29,17 @@ type SnapshotPrunePolicy struct {
 }
 
 func SaveSnapshotManifest(snapshotDir string, m *Manifest) (ManifestSnapshot, error) {
+	snapshot, err := ReserveSnapshotManifest(snapshotDir, m)
+	if err != nil {
+		return ManifestSnapshot{}, err
+	}
+	if err := SaveSnapshotManifestAt(snapshot, m); err != nil {
+		return ManifestSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
+func ReserveSnapshotManifest(snapshotDir string, m *Manifest) (ManifestSnapshot, error) {
 	if strings.TrimSpace(snapshotDir) == "" {
 		return ManifestSnapshot{}, errors.New("snapshot directory is required")
 	}
@@ -51,15 +62,22 @@ func SaveSnapshotManifest(snapshotDir string, m *Manifest) (ManifestSnapshot, er
 		path = filepath.Join(snapshotDir, id+".json")
 	}
 
-	if err := SaveManifest(path, m); err != nil {
-		return ManifestSnapshot{}, err
-	}
 	return ManifestSnapshot{
 		ID:        id,
 		Path:      path,
 		CreatedAt: m.CreatedAt.UTC(),
 		Entries:   len(m.Entries),
 	}, nil
+}
+
+func SaveSnapshotManifestAt(snapshot ManifestSnapshot, m *Manifest) error {
+	if m == nil {
+		return errors.New("manifest is required")
+	}
+	if strings.TrimSpace(snapshot.Path) == "" {
+		return errors.New("snapshot path is required")
+	}
+	return SaveManifest(snapshot.Path, m)
 }
 
 func SnapshotID(t time.Time) string {

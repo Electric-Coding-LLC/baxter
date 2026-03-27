@@ -870,6 +870,38 @@ final class BackupStatusModelRestoreTests: XCTestCase {
 
         XCTAssertTrue(notifications.notifications.contains(where: { $0.0 == "Baxter backup completed" }))
     }
+
+    func testRefreshStatusLoadsBackupProgress() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let data = Data("""
+            {
+              "state": "running",
+              "backup_uploaded": 1250,
+              "backup_total": 15156,
+              "backup_current_path": "/Users/tester/Documents/report.txt"
+            }
+            """.utf8)
+            return (response, data)
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            queryLaunchdState: { .running },
+            autoStartPolling: false
+        )
+
+        model.refreshStatus()
+        await waitUntil("backup progress refresh") { model.backupTotal == 15156 }
+
+        XCTAssertEqual(model.state, .running)
+        XCTAssertEqual(model.backupUploaded, 1250)
+        XCTAssertEqual(model.backupTotal, 15156)
+        XCTAssertEqual(model.backupCurrentPath, "/Users/tester/Documents/report.txt")
+    }
 }
 
 final class DiagnosticsBundleBuilderTests: XCTestCase {

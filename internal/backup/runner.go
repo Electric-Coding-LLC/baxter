@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"baxter/internal/config"
@@ -16,6 +18,13 @@ import (
 )
 
 const defaultUploadMaxAttempts = 3
+const defaultUploadConcurrency = 4
+
+type ProgressUpdate struct {
+	Uploaded int
+	Total    int
+	Path     string
+}
 
 type RunOptions struct {
 	ManifestPath       string
@@ -24,11 +33,13 @@ type RunOptions struct {
 	SnapshotMaxAgeDays int
 	SnapshotPruneNow   time.Time
 	UploadMaxAttempts  int
+	UploadConcurrency  int
 	EncryptionKey      []byte
 	KDFSalt            []byte
 	WrappedMasterKey   []byte
 	BackupSetID        string
 	Store              storage.ObjectStore
+	Progress           func(ProgressUpdate)
 }
 
 type RunResult struct {
@@ -78,32 +89,25 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 	AssignObjectKeys(previous, current)
 
 	plan := PlanChanges(previous, current)
-	for _, entry := range plan.NewOrChanged {
-		plain, err := readEntryContent(entry)
-		if err != nil {
-			return RunResult{}, err
-		}
-		encrypted, err := crypto.EncryptBytes(opts.EncryptionKey, plain)
-		if err != nil {
-			return RunResult{}, fmt.Errorf("encrypt file %s: %w", entry.Path, err)
-		}
-		if err := putObjectWithRetry(opts.Store, entry.ObjectKey, encrypted, opts.effectiveUploadMaxAttempts()); err != nil {
-			return RunResult{}, fmt.Errorf("store object %s: %w", entry.Path, err)
-		}
+	if err := uploadChangedEntries(plan.NewOrChanged, opts); err != nil {
+		return RunResult{}, err
 	}
 
-	if err := SaveManifest(opts.ManifestPath, current); err != nil {
-		return RunResult{}, fmt.Errorf("save manifest: %w", err)
-	}
-	snapshot, err := SaveSnapshotManifest(opts.SnapshotDir, current)
+	snapshot, err := ReserveSnapshotManifest(opts.SnapshotDir, current)
 	if err != nil {
-		return RunResult{}, fmt.Errorf("save snapshot manifest: %w", err)
+		return RunResult{}, fmt.Errorf("reserve snapshot manifest: %w", err)
 	}
 	if err := WriteEncryptedSnapshotManifest(opts.Store, snapshot.ID, current, opts.EncryptionKey); err != nil {
 		return RunResult{}, err
 	}
 	if err := writeRecoveryMetadata(opts, snapshot.ID, current.CreatedAt); err != nil {
 		return RunResult{}, err
+	}
+	if err := SaveManifest(opts.ManifestPath, current); err != nil {
+		return RunResult{}, fmt.Errorf("save manifest: %w", err)
+	}
+	if err := SaveSnapshotManifestAt(snapshot, current); err != nil {
+		return RunResult{}, fmt.Errorf("save snapshot manifest: %w", err)
 	}
 	if _, err := PruneSnapshotManifestsWithPolicy(opts.SnapshotDir, SnapshotPrunePolicy{
 		Retain:     opts.SnapshotRetention,
@@ -125,6 +129,88 @@ func (o RunOptions) effectiveUploadMaxAttempts() int {
 		return defaultUploadMaxAttempts
 	}
 	return o.UploadMaxAttempts
+}
+
+func (o RunOptions) effectiveUploadConcurrency() int {
+	if o.UploadConcurrency <= 0 {
+		return defaultUploadConcurrency
+	}
+	return o.UploadConcurrency
+}
+
+func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
+	total := len(entries)
+	if opts.Progress != nil {
+		opts.Progress(ProgressUpdate{Total: total})
+	}
+	if total == 0 {
+		return nil
+	}
+
+	type uploadJob struct {
+		entry ManifestEntry
+	}
+
+	jobs := make(chan uploadJob)
+	errCh := make(chan error, 1)
+	var uploaded atomic.Int32
+	var once sync.Once
+	workerCount := opts.effectiveUploadConcurrency()
+	if workerCount > total {
+		workerCount = total
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
+				entry := job.entry
+				plain, err := readEntryContent(entry)
+				if err != nil {
+					once.Do(func() { errCh <- err })
+					return
+				}
+				encrypted, err := crypto.EncryptBytes(opts.EncryptionKey, plain)
+				if err != nil {
+					once.Do(func() { errCh <- fmt.Errorf("encrypt file %s: %w", entry.Path, err) })
+					return
+				}
+				if err := putObjectWithRetry(opts.Store, entry.ObjectKey, encrypted, opts.effectiveUploadMaxAttempts()); err != nil {
+					once.Do(func() { errCh <- fmt.Errorf("store object %s: %w", entry.Path, err) })
+					return
+				}
+				if opts.Progress != nil {
+					opts.Progress(ProgressUpdate{
+						Uploaded: int(uploaded.Add(1)),
+						Total:    total,
+						Path:     entry.Path,
+					})
+				}
+			}
+		}()
+	}
+
+	for _, entry := range entries {
+		select {
+		case err := <-errCh:
+			close(jobs)
+			wg.Wait()
+			return err
+		case jobs <- uploadJob{entry: entry}:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	select {
+	case err := <-errCh:
+		return err
+	default:
+	}
+
+	return nil
 }
 
 func putObjectWithRetry(store storage.ObjectStore, key string, data []byte, maxAttempts int) error {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
@@ -39,6 +40,7 @@ func (d *Daemon) triggerBackup() error {
 	d.running = true
 	d.status.State = "running"
 	d.status.LastError = ""
+	d.status.BackupProgress = backupProgressSummary{}
 	d.mu.Unlock()
 
 	go func() {
@@ -80,6 +82,7 @@ func (d *Daemon) performBackup(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 
+	var lastProgressLog time.Time
 	result, err := backup.Run(cfg, backup.RunOptions{
 		ManifestPath:       manifestPath,
 		SnapshotDir:        snapshotDir,
@@ -90,6 +93,28 @@ func (d *Daemon) performBackup(ctx context.Context, cfg *config.Config) error {
 		WrappedMasterKey:   keys.wrapped,
 		BackupSetID:        recovery.BackupSetID(cfg),
 		Store:              store,
+		Progress: func(update backup.ProgressUpdate) {
+			now := time.Now()
+			d.setBackupProgress(backupProgressSummary{
+				Uploaded:    update.Uploaded,
+				Total:       update.Total,
+				CurrentPath: update.Path,
+			})
+			switch {
+			case update.Total == 0:
+				fmt.Println("backup progress: no changed files")
+			case update.Uploaded == 0:
+				fmt.Printf("backup progress: uploading %d changed files\n", update.Total)
+			case update.Uploaded == update.Total:
+				fmt.Printf("backup progress: uploaded %d/%d\n", update.Uploaded, update.Total)
+			case update.Uploaded%250 == 0:
+				fmt.Printf("backup progress: uploaded %d/%d\n", update.Uploaded, update.Total)
+				lastProgressLog = now
+			case lastProgressLog.IsZero() || now.Sub(lastProgressLog) >= 5*time.Second:
+				fmt.Printf("backup progress: uploaded %d/%d\n", update.Uploaded, update.Total)
+				lastProgressLog = now
+			}
+		},
 	})
 	if err != nil {
 		return err

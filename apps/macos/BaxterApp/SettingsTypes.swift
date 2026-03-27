@@ -114,6 +114,9 @@ struct DaemonStatus: Decodable {
     let lastBackupAt: String?
     let nextScheduledAt: String?
     let lastError: String?
+    let backupUploaded: Int?
+    let backupTotal: Int?
+    let backupCurrentPath: String?
     let lastRestoreAt: String?
     let lastRestorePath: String?
     let lastRestoreError: String?
@@ -133,6 +136,9 @@ struct DaemonStatus: Decodable {
         case lastBackupAt = "last_backup_at"
         case nextScheduledAt = "next_scheduled_at"
         case lastError = "last_error"
+        case backupUploaded = "backup_uploaded"
+        case backupTotal = "backup_total"
+        case backupCurrentPath = "backup_current_path"
         case lastRestoreAt = "last_restore_at"
         case lastRestorePath = "last_restore_path"
         case lastRestoreError = "last_restore_error"
