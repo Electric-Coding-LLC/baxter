@@ -13,13 +13,14 @@ import (
 )
 
 const (
-	payloadVersionV2 byte = 2
-	payloadVersionV3 byte = 3
-	compressionNone  byte = 0
-	compressionGzip  byte = 1
-	nonceSize             = 12
-	derivedKeyLength      = 32
-	kdfSaltLength         = 16
+	payloadVersionV2    byte = 2
+	payloadVersionV3    byte = 3
+	compressionNone     byte = 0
+	compressionGzip     byte = 1
+	nonceSize                = 12
+	derivedKeyLength         = 32
+	kdfSaltLength            = 16
+	compressionMinBytes      = 256 * 1024
 )
 
 var (
@@ -159,6 +160,10 @@ func DecryptBytes(key []byte, payload []byte) ([]byte, error) {
 }
 
 func maybeCompressForEncryption(plaintext []byte) ([]byte, byte, error) {
+	if len(plaintext) < compressionMinBytes {
+		return plaintext, compressionNone, nil
+	}
+
 	compressed, err := gzipCompress(plaintext)
 	if err != nil {
 		return nil, 0, err

@@ -22,8 +22,8 @@ func AllowCreateWrappedKeyWithoutMetadata(manifestPath, snapshotDir, saltPath st
 	hasRemoteData := len(FilterDataObjectKeys(keys)) > 0
 
 	isFresh := !hasManifest && !hasSnapshots && len(keys) == 0
-	canMigrateLegacy := hasManifest && hasSalt && hasRemoteData
-	return isFresh || canMigrateLegacy, nil
+	canRepairRemoteData := hasSalt && hasRemoteData
+	return isFresh || canRepairRemoteData, nil
 }
 
 func fileExists(path string) bool {

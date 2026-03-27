@@ -47,3 +47,17 @@ func TestConfigPathUsesExplicitOverride(t *testing.T) {
 		t.Fatalf("ConfigPath() = %q, want %q", got, "/tmp/baxter-config.toml")
 	}
 }
+
+func TestDaemonStatusPathUsesAppDir(t *testing.T) {
+	t.Setenv("BAXTER_APP_SUPPORT_DIR", "/tmp/baxter-app-dir")
+
+	got, err := DaemonStatusPath()
+	if err != nil {
+		t.Fatalf("DaemonStatusPath() error = %v", err)
+	}
+
+	want := filepath.Join("/tmp/baxter-app-dir", "daemon_status.json")
+	if got != want {
+		t.Fatalf("DaemonStatusPath() = %q, want %q", got, want)
+	}
+}

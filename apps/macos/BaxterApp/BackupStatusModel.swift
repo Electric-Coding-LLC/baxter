@@ -38,6 +38,9 @@ final class BackupStatusModel: ObservableObject {
     @Published var lastBackupAt: Date?
     @Published var nextScheduledAt: Date?
     @Published var lastError: String?
+    @Published var backupUploaded: Int = 0
+    @Published var backupTotal: Int = 0
+    @Published var backupCurrentPath: String?
     @Published var lastVerifyAt: Date?
     @Published var nextVerifyAt: Date?
     @Published var lastVerifyError: String?

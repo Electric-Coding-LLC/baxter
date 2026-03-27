@@ -17,7 +17,9 @@ This playbook defines the supported distribution path for Baxter CLI + daemon + 
    - `curl -s http://127.0.0.1:41820/v1/status`
 
 Notes:
-- `Baxter-darwin-arm64.zip` is an unsigned developer artifact today and may require standard macOS confirmation steps when launched outside Xcode.
+- `Baxter-darwin-arm64.zip` can be produced as a signed and notarized artifact when the release machine has a `Developer ID Application` certificate plus a saved `notarytool` keychain profile.
+- `scripts/package-macos-app.sh` reads `BAXTER_CODESIGN_IDENTITY` and `BAXTER_NOTARYTOOL_PROFILE`, or accepts `--signing-identity` and `--notarytool-profile`, before zipping the app.
+- Store notarization credentials once on the release machine with `xcrun notarytool store-credentials <profile-name>`.
 - CLI + daemon artifacts remain available for manual installs, RC validation, and rollback workflows.
 - If you use a named AWS profile, set `aws_profile = "your-profile"` in `~/Library/Application Support/baxter/config.toml`. The app and launchd installer now propagate that saved profile name into the daemon install path, so Finder launches do not need shell-only `AWS_PROFILE` exports.
 
@@ -73,6 +75,15 @@ Use rollback when smoke checks fail after upgrade.
    - `xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' test`
 4. Build artifacts locally:
    - `./scripts/release.sh vX.Y.Z`
+   - `vX.Y.Z` is a placeholder; replace it with the real release version, for example `v0.4.0-rc1` or `v0.4.0`
+   - for signed/notarized app artifacts on the configured release Mac:
+     ```bash
+     export BAXTER_CODESIGN_IDENTITY="Developer ID Application: Electric Coding LLC (NFP7P6ZYW3)"
+     export BAXTER_NOTARYTOOL_PROFILE="baxter-notary"
+     ./scripts/release.sh vX.Y.Z
+     ```
+   - shortcut on the configured release Mac:
+     `./scripts/release-signed.sh v0.4.0-rc1`
    - on macOS, this now also produces `Baxter-darwin-arm64.zip` with bundled `baxter`/`baxterd` helpers
 5. Tag and publish:
    - `git tag vX.Y.Z && git push origin vX.Y.Z`

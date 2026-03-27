@@ -196,7 +196,10 @@ struct BaxterMenuContentView: View {
     }
 
     private var backupStatusHeadline: String {
-        "Backup is \(backupStatusWord)"
+        if let progressHeadline {
+            return progressHeadline
+        }
+        return "Backup is \(backupStatusWord)"
     }
 
     private var backupStatusWord: String {
@@ -249,6 +252,9 @@ struct BaxterMenuContentView: View {
 
     private var runBackupDisabledReason: String? {
         if model.state == .running {
+            if let progressDetail {
+                return progressDetail
+            }
             return "A backup is already running."
         }
         if model.isLifecycleBusy {
@@ -284,6 +290,29 @@ struct BaxterMenuContentView: View {
             return lastError
         }
         return "The last backup failed. Open Diagnostics for details."
+    }
+
+    private var progressHeadline: String? {
+        guard model.connectionState == .connected, model.state == .running, model.backupTotal > 0 else {
+            return nil
+        }
+        return "Backup is running (\(model.backupUploaded.formatted())/\(model.backupTotal.formatted()))"
+    }
+
+    private var progressDetail: String? {
+        guard model.connectionState == .connected, model.state == .running else {
+            return nil
+        }
+        guard model.backupTotal > 0 else {
+            return "Scanning files for changes."
+        }
+        if let currentPath = model.backupCurrentPath, !currentPath.isEmpty {
+            let fileName = URL(fileURLWithPath: currentPath).lastPathComponent
+            if !fileName.isEmpty {
+                return "Uploading \(model.backupUploaded.formatted()) of \(model.backupTotal.formatted()): \(fileName)"
+            }
+        }
+        return "Uploading \(model.backupUploaded.formatted()) of \(model.backupTotal.formatted()) changed files."
     }
 
     private var shouldShowStatusCard: Bool {

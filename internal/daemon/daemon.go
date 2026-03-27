@@ -57,6 +57,7 @@ func New(cfg *config.Config) *Daemon {
 	}
 	d.backupRunner = d.performBackup
 	d.handler = d.newHandler()
+	d.loadPersistedStatus()
 	return d
 }
 

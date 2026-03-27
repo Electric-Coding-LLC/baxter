@@ -81,6 +81,9 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 
 		walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
+				if shouldIgnoreManifestError(path, err) {
+					return nil
+				}
 				return err
 			}
 			cleanPath := filepath.Clean(path)
@@ -93,9 +96,15 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 			if d.IsDir() {
 				return nil
 			}
+			if shouldSkipManifestPath(cleanPath) {
+				return nil
+			}
 
 			info, err := d.Info()
 			if err != nil {
+				if shouldIgnoreManifestError(cleanPath, err) {
+					return nil
+				}
 				return err
 			}
 			if !info.Mode().IsRegular() {
@@ -105,6 +114,9 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 
 			hash, err := fileSHA256(path)
 			if err != nil {
+				if shouldIgnoreManifestError(cleanPath, err) {
+					return nil
+				}
 				return err
 			}
 
@@ -127,6 +139,17 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 	})
 
 	return &Manifest{CreatedAt: time.Now().UTC(), Entries: entries}, nil
+}
+
+func shouldSkipManifestPath(path string) bool {
+	return strings.EqualFold(filepath.Base(filepath.Clean(path)), ".localized")
+}
+
+func shouldIgnoreManifestError(path string, err error) bool {
+	if !shouldSkipManifestPath(path) || err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "resource deadlock avoided")
 }
 
 func PlanChanges(previous, current *Manifest) Plan {

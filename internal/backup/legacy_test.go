@@ -54,3 +54,26 @@ func TestAllowCreateWrappedKeyWithoutMetadataRejectsExistingStoreKeysWithoutMeta
 		t.Fatal("expected existing store keys to require recovery metadata")
 	}
 }
+
+func TestAllowCreateWrappedKeyWithoutMetadataAllowsRepairWhenSaltAndRemoteDataExist(t *testing.T) {
+	rootDir := t.TempDir()
+	manifestPath := filepath.Join(rootDir, "manifest.json")
+	snapshotDir := filepath.Join(rootDir, "manifests")
+	saltPath := filepath.Join(rootDir, "kdf_salt.bin")
+	store := storage.NewLocalClient(filepath.Join(rootDir, "objects"))
+
+	if err := os.WriteFile(saltPath, []byte("0123456789abcdef"), 0o600); err != nil {
+		t.Fatalf("write salt: %v", err)
+	}
+	if err := store.PutObject("sha256/file.enc", []byte("blob")); err != nil {
+		t.Fatalf("put object: %v", err)
+	}
+
+	allowed, err := AllowCreateWrappedKeyWithoutMetadata(manifestPath, snapshotDir, saltPath, store)
+	if err != nil {
+		t.Fatalf("AllowCreateWrappedKeyWithoutMetadata() error = %v", err)
+	}
+	if !allowed {
+		t.Fatal("expected salt + remote data state to allow repair")
+	}
+}
