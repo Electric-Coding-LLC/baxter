@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
@@ -188,6 +189,38 @@ func TestRunBackupAndRestoreNestedPaths(t *testing.T) {
 	}
 	if !bytes.Equal(restoredUpdated, updated) {
 		t.Fatalf("overwritten nested text mismatch: got %q want %q", string(restoredUpdated), string(updated))
+	}
+}
+
+func TestRestorePathRejectsCloudPlaceholderEntries(t *testing.T) {
+	homeDir := t.TempDir()
+	restoreRoot := filepath.Join(t.TempDir(), "restore")
+	sourcePath := "/Users/me/Documents/cloud.pdf"
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+	t.Setenv(passphraseEnv, "test-passphrase")
+
+	manifestPath, err := state.ManifestPath()
+	if err != nil {
+		t.Fatalf("manifest path: %v", err)
+	}
+	if err := backup.SaveManifest(manifestPath, &backup.Manifest{
+		CreatedAt: time.Now().UTC(),
+		Entries: []backup.ManifestEntry{{
+			Path:       sourcePath,
+			SourceKind: "cloud_placeholder",
+		}},
+	}); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	err = restorePath(config.DefaultConfig(), sourcePath, restoreOptions{ToDir: restoreRoot})
+	if err == nil {
+		t.Fatal("expected restore to reject cloud placeholder entry")
+	}
+	if !strings.Contains(err.Error(), "recover it through its cloud provider") {
+		t.Fatalf("unexpected restore error: %v", err)
 	}
 }
 

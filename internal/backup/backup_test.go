@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPlanChangesDetectsNewChangedRemoved(t *testing.T) {
@@ -110,6 +111,55 @@ func TestAssignObjectKeysUsesContentAddressForChangedEntries(t *testing.T) {
 
 	if got, want := curr.Entries[0].ObjectKey, ObjectKeyForContentSHA256(curr.Entries[0].SHA256); got != want {
 		t.Fatalf("object key mismatch: got %q want %q", got, want)
+	}
+}
+
+func TestAssignObjectKeysClearsCloudPlaceholderObjectKey(t *testing.T) {
+	prev := &Manifest{
+		Entries: []ManifestEntry{{
+			Path:      "/Users/me/Documents/report.txt",
+			Size:      7,
+			SHA256:    "old-sha",
+			ObjectKey: ObjectKeyForPath("/Users/me/Documents/report.txt"),
+		}},
+	}
+	curr := &Manifest{
+		Entries: []ManifestEntry{{
+			Path:       "/Users/me/Documents/report.txt",
+			Size:       7,
+			Mode:       0o600,
+			SourceKind: manifestSourceKindCloudPlaceholder,
+		}},
+	}
+
+	AssignObjectKeys(prev, curr)
+
+	if curr.Entries[0].ObjectKey != "" {
+		t.Fatalf("expected empty object key for cloud placeholder, got %q", curr.Entries[0].ObjectKey)
+	}
+	if ResolveObjectKey(curr.Entries[0]) != "" {
+		t.Fatalf("expected cloud placeholder to resolve to no object key")
+	}
+}
+
+func TestPlanChangesTreatsCloudPlaceholderMetadataAsStable(t *testing.T) {
+	modTime := time.Date(2026, time.March, 27, 12, 0, 0, 0, time.UTC)
+	prev := ManifestEntry{
+		Path:       "/Users/me/Documents/report.txt",
+		Size:       7,
+		Mode:       0o600,
+		ModTime:    modTime,
+		SourceKind: manifestSourceKindCloudPlaceholder,
+	}
+	curr := prev
+
+	if !manifestEntriesMatchForPlan(prev, curr) {
+		t.Fatal("expected placeholder entries with matching metadata to compare equal")
+	}
+
+	curr.ModTime = curr.ModTime.Add(time.Second)
+	if manifestEntriesMatchForPlan(prev, curr) {
+		t.Fatal("expected placeholder metadata change to be detected")
 	}
 }
 

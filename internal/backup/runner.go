@@ -118,7 +118,7 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 	}
 
 	return RunResult{
-		Uploaded: len(plan.NewOrChanged),
+		Uploaded: countStoredContentEntries(plan.NewOrChanged),
 		Removed:  len(plan.RemovedPaths),
 		Total:    len(current.Entries),
 	}, nil
@@ -139,7 +139,14 @@ func (o RunOptions) effectiveUploadConcurrency() int {
 }
 
 func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
-	total := len(entries)
+	uploadable := make([]ManifestEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.HasStoredContent() {
+			uploadable = append(uploadable, entry)
+		}
+	}
+
+	total := len(uploadable)
 	if opts.Progress != nil {
 		opts.Progress(ProgressUpdate{Total: total})
 	}
@@ -192,7 +199,7 @@ func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
 		}()
 	}
 
-	for _, entry := range entries {
+	for _, entry := range uploadable {
 		select {
 		case err := <-errCh:
 			close(jobs)
@@ -213,6 +220,16 @@ func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
 	return nil
 }
 
+func countStoredContentEntries(entries []ManifestEntry) int {
+	count := 0
+	for _, entry := range entries {
+		if entry.HasStoredContent() {
+			count++
+		}
+	}
+	return count
+}
+
 func putObjectWithRetry(store storage.ObjectStore, key string, data []byte, maxAttempts int) error {
 	if maxAttempts <= 0 {
 		maxAttempts = 1
@@ -230,8 +247,17 @@ func putObjectWithRetry(store storage.ObjectStore, key string, data []byte, maxA
 }
 
 func readEntryContent(entry ManifestEntry) ([]byte, error) {
+	if err := cloudPlaceholderRestoreError(entry); err != nil {
+		return nil, err
+	}
+	if err := cloudPlaceholderErrorForPath(entry.Path); err != nil {
+		return nil, err
+	}
 	plain, err := os.ReadFile(entry.Path)
 	if err != nil {
+		if placeholderErr := cloudPlaceholderErrorForPath(entry.Path); placeholderErr != nil {
+			return nil, placeholderErr
+		}
 		return nil, fmt.Errorf("read file %s: %w", entry.Path, err)
 	}
 	if int64(len(plain)) != entry.Size {

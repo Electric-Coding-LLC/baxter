@@ -71,6 +71,9 @@ func restorePath(cfg *config.Config, requestedPath string, opts restoreOptions) 
 	}
 
 	for _, target := range targets {
+		if err := backup.CloudPlaceholderRestoreErrorForEntry(target.entry); err != nil {
+			return err
+		}
 		payload, err := store.GetObject(backup.ResolveObjectKey(target.entry))
 		if err != nil {
 			switch {
