@@ -1,6 +1,6 @@
 # Baxter CI Stability Plan
 
-Last updated: March 14, 2026
+Last updated: March 28, 2026
 
 Purpose: make Baxter's required CI checks reliable enough for routine development, with failures that are fast to diagnose instead of intermittent mysteries.
 
@@ -95,6 +95,13 @@ Latest baseline evidence:
 ### Phase 2. Fix High-Frequency Flakes First
 
 Goal: remove the smallest set of causes that account for most rerun pain.
+
+Current chunk implemented locally:
+
+- Add a path-gated pre-merge packaged-app smoke job in `.github/workflows/ci.yml`.
+- The job packages `Baxter-darwin-arm64.zip`, launches the signed app, and verifies bundled-helper bootstrap through `/v1/status`.
+- Initial PR evidence exposed a helper-install timing race on the self-hosted macOS runner; the smoke script now waits for installed helper copies to match the bundled binaries and records helper diagnostics on timeout.
+- Local verification passed; next evidence needed is a normal PR run on the macOS runner.
 
 Priority order:
 

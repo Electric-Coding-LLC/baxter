@@ -15,6 +15,7 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
+      packaged_app_smoke: ${{ steps.set_outputs.outputs.packaged_app_smoke }}
       swift_style: ${{ steps.set_outputs.outputs.swift_style }}
       upgrade_smoke: ${{ steps.set_outputs.outputs.upgrade_smoke }}
     steps:
@@ -22,6 +23,7 @@ jobs:
         id: defaults
         if: github.event_name != 'pull_request'
         run: |
+          echo "packaged_app_smoke=true" >>"$GITHUB_OUTPUT"
           echo "swift_style=true" >>"$GITHUB_OUTPUT"
           echo "upgrade_smoke=true" >>"$GITHUB_OUTPUT"
       - name: Detect changed paths for PR events
@@ -30,6 +32,19 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
+            packaged_app_smoke:
+              - '.github/workflows/ci.yml'
+              - 'apps/macos/BaxterApp.xcodeproj/**'
+              - 'apps/macos/BaxterApp/**/*.swift'
+              - 'cmd/baxter/**'
+              - 'cmd/baxterd/**'
+              - 'internal/**'
+              - 'launchd/**'
+              - 'scripts/init-config.sh'
+              - 'scripts/package-macos-app.sh'
+              - 'scripts/packaged-app-smoke.sh'
+              - 'go.mod'
+              - 'go.sum'
             swift_style:
               - 'apps/macos/BaxterApp/**/*.swift'
               - 'apps/macos/BaxterAppTests/**/*.swift'
@@ -53,9 +68,11 @@ jobs:
         id: set_outputs
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "packaged_app_smoke=${{ steps.filter.outputs.packaged_app_smoke }}" >>"$GITHUB_OUTPUT"
             echo "swift_style=${{ steps.filter.outputs.swift_style }}" >>"$GITHUB_OUTPUT"
             echo "upgrade_smoke=${{ steps.filter.outputs.upgrade_smoke }}" >>"$GITHUB_OUTPUT"
           else
+            echo "packaged_app_smoke=${{ steps.defaults.outputs.packaged_app_smoke }}" >>"$GITHUB_OUTPUT"
             echo "swift_style=${{ steps.defaults.outputs.swift_style }}" >>"$GITHUB_OUTPUT"
             echo "upgrade_smoke=${{ steps.defaults.outputs.upgrade_smoke }}" >>"$GITHUB_OUTPUT"
           fi
@@ -162,6 +179,50 @@ jobs:
         with:
           name: macos-xcresult-${{ github.run_id }}
           path: ${{ env.RESULT_BUNDLE_PATH }}
+          if-no-files-found: warn
+
+  packaged-app-smoke:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.packaged_app_smoke == 'true' }}
+    runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
+    timeout-minutes: 45
+    env:
+      # Keep pre-merge packaging independent of Developer ID keychain access.
+      # Release and RC workflows still validate the Developer ID signed path.
+      BAXTER_CODESIGN_IDENTITY: "-"
+      BAXTER_NOTARYTOOL_PROFILE: ""
+      DERIVED_DATA_PATH: ${{ github.workspace }}/.ci/PackagedAppDerivedData
+      PACKAGED_APP_DIR: ${{ github.workspace }}/.ci/packaged-app
+      PACKAGED_APP_SMOKE_DIR: ${{ github.workspace }}/.ci/packaged-app-smoke
+    steps:
+      - uses: actions/checkout@v5
+      - name: Restore Xcode DerivedData cache
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ env.DERIVED_DATA_PATH }}
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-${{ hashFiles('apps/macos/BaxterApp.xcodeproj/project.pbxproj', 'apps/macos/BaxterApp/**/*.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-xcode-deriveddata-
+      - name: Package signed Baxter.app artifact
+        run: |
+          set -euo pipefail
+          rm -rf "$PACKAGED_APP_DIR" "$PACKAGED_APP_SMOKE_DIR"
+          mkdir -p "$PACKAGED_APP_DIR" "$PACKAGED_APP_SMOKE_DIR"
+          ./scripts/package-macos-app.sh \
+            --output-dir "$PACKAGED_APP_DIR" \
+            --derived-data-path "$DERIVED_DATA_PATH"
+      - name: Run packaged app smoke check
+        run: |
+          set -euo pipefail
+          ./scripts/packaged-app-smoke.sh \
+            --zip "$PACKAGED_APP_DIR/Baxter-darwin-arm64.zip" \
+            --debug-dir "$PACKAGED_APP_SMOKE_DIR"
+      - name: Upload packaged app smoke logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: packaged-app-smoke-${{ github.run_id }}
+          path: ${{ env.PACKAGED_APP_SMOKE_DIR }}
           if-no-files-found: warn
 
   upgrade-preservation-smoke:
