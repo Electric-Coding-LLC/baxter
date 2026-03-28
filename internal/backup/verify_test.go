@@ -84,3 +84,19 @@ func TestVerifyManifestEntriesDecryptAndChecksumFailure(t *testing.T) {
 		t.Fatalf("unexpected failure result: %+v", result)
 	}
 }
+
+func TestVerifyManifestEntriesSkipsCloudPlaceholders(t *testing.T) {
+	key := []byte("01234567890123456789012345678901")
+	store := storage.NewLocalClient(filepath.Join(t.TempDir(), "objects"))
+
+	result, err := VerifyManifestEntries([]ManifestEntry{{
+		Path:       "/Users/me/Documents/cloud.txt",
+		SourceKind: manifestSourceKindCloudPlaceholder,
+	}}, key, store)
+	if err != nil {
+		t.Fatalf("verify manifest entries: %v", err)
+	}
+	if result.Checked != 0 || result.OK != 0 || result.HasFailures() {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}

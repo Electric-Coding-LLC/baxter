@@ -45,8 +45,12 @@ func VerifyManifestEntriesWithKeys(entries []ManifestEntry, keys [][]byte, store
 		return VerifyResult{}, fmt.Errorf("at least one non-empty encryption key is required")
 	}
 
-	result := VerifyResult{Checked: len(entries)}
+	result := VerifyResult{}
 	for _, entry := range entries {
+		if !entry.HasStoredContent() {
+			continue
+		}
+		result.Checked++
 		payload, err := store.GetObject(ResolveObjectKey(entry))
 		if err != nil {
 			if isMissingObjectError(err) {

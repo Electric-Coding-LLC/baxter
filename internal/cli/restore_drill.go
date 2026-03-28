@@ -99,6 +99,9 @@ func runRestoreDrill(cfg *config.Config, opts restoreDrillOptions) error {
 }
 
 func runRestoreDrillEntry(tempDir string, entry backup.ManifestEntry, decryptionKeys [][]byte, store storage.ObjectStore) error {
+	if err := backup.CloudPlaceholderRestoreErrorForEntry(entry); err != nil {
+		return err
+	}
 	targetPath, err := resolvedRestorePath(entry.Path, tempDir)
 	if err != nil {
 		return fmt.Errorf("resolve target: %w", err)

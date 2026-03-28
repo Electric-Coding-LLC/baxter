@@ -618,3 +618,26 @@ func TestReadEntryContentRejectsChangedFile(t *testing.T) {
 		t.Fatal("expected changed file to be rejected")
 	}
 }
+
+func TestUploadChangedEntriesSkipsCloudPlaceholderEntries(t *testing.T) {
+	store := storage.NewLocalClient(filepath.Join(t.TempDir(), "objects"))
+
+	err := uploadChangedEntries([]ManifestEntry{{
+		Path:       "/Users/me/Documents/cloud.pdf",
+		SourceKind: manifestSourceKindCloudPlaceholder,
+	}}, RunOptions{
+		EncryptionKey: []byte("01234567890123456789012345678901"),
+		Store:         store,
+	})
+	if err != nil {
+		t.Fatalf("upload changed entries: %v", err)
+	}
+
+	keys, err := store.ListKeys()
+	if err != nil {
+		t.Fatalf("list keys: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Fatalf("expected no uploaded objects, got %v", keys)
+	}
+}

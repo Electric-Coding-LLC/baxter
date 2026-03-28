@@ -16,12 +16,13 @@ import (
 )
 
 type ManifestEntry struct {
-	Path      string      `json:"path"`
-	Size      int64       `json:"size"`
-	Mode      fs.FileMode `json:"mode"`
-	ModTime   time.Time   `json:"mod_time"`
-	SHA256    string      `json:"sha256"`
-	ObjectKey string      `json:"object_key,omitempty"`
+	Path       string      `json:"path"`
+	Size       int64       `json:"size"`
+	Mode       fs.FileMode `json:"mode"`
+	ModTime    time.Time   `json:"mod_time"`
+	SHA256     string      `json:"sha256"`
+	ObjectKey  string      `json:"object_key,omitempty"`
+	SourceKind string      `json:"source_kind,omitempty"`
 }
 
 type Manifest struct {
@@ -32,6 +33,23 @@ type Manifest struct {
 type Plan struct {
 	NewOrChanged []ManifestEntry
 	RemovedPaths []string
+}
+
+const manifestSourceKindCloudPlaceholder = "cloud_placeholder"
+
+func (e ManifestEntry) effectiveSourceKind() string {
+	if strings.TrimSpace(e.SourceKind) == "" {
+		return "file"
+	}
+	return e.SourceKind
+}
+
+func (e ManifestEntry) IsCloudPlaceholder() bool {
+	return e.effectiveSourceKind() == manifestSourceKindCloudPlaceholder
+}
+
+func (e ManifestEntry) HasStoredContent() bool {
+	return !e.IsCloudPlaceholder()
 }
 
 func LoadManifest(path string) (*Manifest, error) {
@@ -111,6 +129,10 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 				// Skip non-regular entries (for example symlinked framework dirs).
 				return nil
 			}
+			if placeholderEntry, ok := cloudPlaceholderManifestEntry(cleanPath, info); ok {
+				entries = append(entries, placeholderEntry)
+				return nil
+			}
 
 			hash, err := fileSHA256(path)
 			if err != nil {
@@ -178,7 +200,7 @@ func PlanChanges(previous, current *Manifest) Plan {
 	for _, e := range current.Entries {
 		currMap[e.Path] = e
 		prev, ok := prevMap[e.Path]
-		if !ok || prev.SHA256 != e.SHA256 || prev.Size != e.Size {
+		if !ok || !manifestEntriesMatchForPlan(prev, e) {
 			newOrChanged = append(newOrChanged, e)
 		}
 	}
@@ -196,6 +218,18 @@ func PlanChanges(previous, current *Manifest) Plan {
 	sort.Strings(removed)
 
 	return Plan{NewOrChanged: newOrChanged, RemovedPaths: removed}
+}
+
+func manifestEntriesMatchForPlan(previous, current ManifestEntry) bool {
+	if previous.effectiveSourceKind() != current.effectiveSourceKind() {
+		return false
+	}
+	if current.IsCloudPlaceholder() {
+		return previous.Size == current.Size &&
+			previous.Mode == current.Mode &&
+			previous.ModTime.Equal(current.ModTime)
+	}
+	return previous.SHA256 == current.SHA256 && previous.Size == current.Size
 }
 
 func fileSHA256(path string) (string, error) {
@@ -222,6 +256,9 @@ func ObjectKeyForContentSHA256(sha string) string {
 }
 
 func ResolveObjectKey(entry ManifestEntry) string {
+	if !entry.HasStoredContent() {
+		return ""
+	}
 	if key := strings.TrimSpace(entry.ObjectKey); key != "" {
 		return key
 	}
@@ -242,13 +279,31 @@ func AssignObjectKeys(previous, current *Manifest) {
 
 	for i := range current.Entries {
 		entry := &current.Entries[i]
+		if !entry.HasStoredContent() {
+			entry.ObjectKey = ""
+			continue
+		}
 		prev, ok := prevMap[filepath.Clean(entry.Path)]
-		if ok && prev.SHA256 == entry.SHA256 && prev.Size == entry.Size {
+		if ok && prev.HasStoredContent() && prev.SHA256 == entry.SHA256 && prev.Size == entry.Size {
 			entry.ObjectKey = ResolveObjectKey(prev)
 			continue
 		}
 		entry.ObjectKey = ObjectKeyForContentSHA256(entry.SHA256)
 	}
+}
+
+func CloudPlaceholderPaths(m *Manifest) []string {
+	if m == nil {
+		return nil
+	}
+	paths := make([]string, 0)
+	for _, entry := range m.Entries {
+		if entry.IsCloudPlaceholder() {
+			paths = append(paths, entry.Path)
+		}
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 func PathHasPrefix(path string, prefix string) bool {

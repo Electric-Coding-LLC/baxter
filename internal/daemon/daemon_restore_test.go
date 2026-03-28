@@ -685,6 +685,39 @@ func TestRestoreRunEndpointReturnsStorageTransientCode(t *testing.T) {
 	}
 }
 
+func TestRestoreDryRunEndpointReturnsExternalPlaceholderCode(t *testing.T) {
+	homeDir := t.TempDir()
+	sourcePath := "/Users/me/Documents/cloud.pdf"
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", homeDir)
+
+	manifestPath := testManifestPath(t)
+	if err := backup.SaveManifest(manifestPath, &backup.Manifest{
+		CreatedAt: time.Now().UTC(),
+		Entries: []backup.ManifestEntry{{
+			Path:       sourcePath,
+			SourceKind: "cloud_placeholder",
+		}},
+	}); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+
+	body := bytes.NewBufferString(`{"path":"` + sourcePath + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/restore/dry-run", body)
+	rr := httptest.NewRecorder()
+	d := New(config.DefaultConfig())
+	d.Handler().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status code: got %d want %d body=%s", rr.Code, http.StatusConflict, rr.Body.String())
+	}
+	errResp := decodeErrorResponse(t, rr)
+	if errResp.Code != "restore_external_placeholder" {
+		t.Fatalf("unexpected error code: got %q", errResp.Code)
+	}
+}
+
 func TestClassifyRestoreReadObjectError(t *testing.T) {
 	statusCode, code, _ := classifyRestoreReadObjectError("/Users/me/doc.txt", os.ErrNotExist)
 	if statusCode != http.StatusNotFound || code != "restore_object_missing" {

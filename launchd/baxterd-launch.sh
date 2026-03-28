@@ -2,8 +2,8 @@
 set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
-BUNDLE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
-DAEMON_BIN="$BUNDLE_ROOT/Contents/Resources/bin/baxterd"
+CONTENTS_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
+DAEMON_BIN="$CONTENTS_DIR/Resources/bin/baxterd"
 HOME_DIR="${HOME:-}"
 
 if [ -z "$HOME_DIR" ]; then

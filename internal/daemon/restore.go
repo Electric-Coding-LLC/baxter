@@ -16,6 +16,7 @@ var (
 	errRestoreManifestLoad  = errors.New("manifest load failed")
 	errRestorePathLookup    = errors.New("path lookup failed")
 	errRestoreTargetInvalid = errors.New("invalid restore target")
+	errRestoreExternal      = errors.New("restore source is external")
 )
 
 type restoreTarget struct {
@@ -47,6 +48,9 @@ func (d *Daemon) resolveRestoreTarget(requestedPath string, toDir string, snapsh
 
 	targets := make([]restoreTarget, 0, len(selection.Entries))
 	for _, entry := range selection.Entries {
+		if err := backup.CloudPlaceholderRestoreErrorForEntry(entry); err != nil {
+			return restoreTargetPlan{}, fmt.Errorf("%w: %v", errRestoreExternal, err)
+		}
 		entryTargetPath, err := resolvedRestorePath(entry.Path, toDir)
 		if err != nil {
 			return restoreTargetPlan{}, fmt.Errorf("%w: %v", errRestoreTargetInvalid, err)
@@ -72,6 +76,8 @@ func (d *Daemon) writeRestoreError(w http.ResponseWriter, err error) {
 		d.writeError(w, http.StatusBadRequest, "path_lookup_failed", err.Error())
 	case errors.Is(err, errRestoreTargetInvalid):
 		d.writeError(w, http.StatusBadRequest, "invalid_restore_target", err.Error())
+	case errors.Is(err, errRestoreExternal):
+		d.writeError(w, http.StatusConflict, "restore_external_placeholder", err.Error())
 	default:
 		d.writeError(w, http.StatusBadRequest, "restore_failed", err.Error())
 	}
