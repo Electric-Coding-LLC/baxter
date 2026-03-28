@@ -111,8 +111,22 @@ func TestShouldIgnoreManifestErrorOnlyIgnoresLocalizedDeadlock(t *testing.T) {
 	if !shouldIgnoreManifestError("/tmp/.localized", errors.New("resource deadlock avoided")) {
 		t.Fatalf("expected localized deadlock to be ignored")
 	}
+	if !shouldIgnoreManifestError("/tmp/Documents", &fs.PathError{
+		Op:   "read",
+		Path: "/tmp/Documents/.localized",
+		Err:  errors.New("resource deadlock avoided"),
+	}) {
+		t.Fatalf("expected parent directory read error for localized metadata to be ignored")
+	}
 	if shouldIgnoreManifestError("/tmp/notes.txt", errors.New("resource deadlock avoided")) {
 		t.Fatalf("did not expect non-localized deadlock to be ignored")
+	}
+	if shouldIgnoreManifestError("/tmp/Documents", &fs.PathError{
+		Op:   "read",
+		Path: "/tmp/Documents/report.txt",
+		Err:  errors.New("resource deadlock avoided"),
+	}) {
+		t.Fatalf("did not expect non-localized child path deadlock to be ignored")
 	}
 	if shouldIgnoreManifestError("/tmp/.localized", fs.ErrPermission) {
 		t.Fatalf("did not expect generic permission errors to be ignored")
