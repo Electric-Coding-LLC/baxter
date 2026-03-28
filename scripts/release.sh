@@ -10,6 +10,13 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
+if [ "$(uname -s)" = "Darwin" ] && command -v xcodebuild >/dev/null 2>&1; then
+  if [ -z "${BAXTER_CODESIGN_IDENTITY:-}" ]; then
+    echo "Refusing to package unsigned Baxter.app. Set BAXTER_CODESIGN_IDENTITY or use ./scripts/release-signed.sh." >&2
+    exit 1
+  fi
+fi
+
 DIST_DIR="$ROOT_DIR/dist/$VERSION"
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"

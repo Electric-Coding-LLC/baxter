@@ -17,11 +17,12 @@ This playbook defines the supported distribution path for Baxter CLI + daemon + 
    - `curl -s http://127.0.0.1:41820/v1/status`
 
 Notes:
-- `Baxter-darwin-arm64.zip` can be produced as a signed and notarized artifact when the release machine has a `Developer ID Application` certificate plus a saved `notarytool` keychain profile.
-- `scripts/package-macos-app.sh` reads `BAXTER_CODESIGN_IDENTITY` and `BAXTER_NOTARYTOOL_PROFILE`, or accepts `--signing-identity` and `--notarytool-profile`, before zipping the app.
+- `Baxter-darwin-arm64.zip` is a signed app artifact. The packaged app path is only supported when the release machine has a `Developer ID Application` certificate configured.
+- `scripts/package-macos-app.sh` requires `BAXTER_CODESIGN_IDENTITY` or `--signing-identity`, and optionally reads `BAXTER_NOTARYTOOL_PROFILE` or `--notarytool-profile` for notarization.
 - Store notarization credentials once on the release machine with `xcrun notarytool store-credentials <profile-name>`.
 - CLI + daemon artifacts remain available for manual installs, RC validation, and rollback workflows.
 - If you use a named AWS profile, set `aws_profile = "your-profile"` in `~/Library/Application Support/baxter/config.toml`. The app and launchd installer now propagate that saved profile name into the daemon install path, so Finder launches do not need shell-only `AWS_PROFILE` exports.
+- Xcode/debug runs remain a separate dev flow. Do not treat an unsigned locally packaged `Baxter.app` as a supported install path.
 
 ## Supported Upgrade Path
 
@@ -76,6 +77,7 @@ Use rollback when smoke checks fail after upgrade.
 4. Build artifacts locally:
    - `./scripts/release.sh vX.Y.Z`
    - `vX.Y.Z` is a placeholder; replace it with the real release version, for example `v0.4.0-rc1` or `v0.4.0`
+   - on macOS, `./scripts/release.sh` now requires `BAXTER_CODESIGN_IDENTITY`; otherwise it exits before packaging `Baxter.app`
    - for signed/notarized app artifacts on the configured release Mac:
      ```bash
      export BAXTER_CODESIGN_IDENTITY="Developer ID Application: Electric Coding LLC (NFP7P6ZYW3)"
