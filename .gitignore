@@ -1,4 +1,5 @@
 .codex/
+.claude/
 .DS_Store
 /dist/
 *.xcuserstate
