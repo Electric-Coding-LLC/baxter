@@ -187,7 +187,9 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
     timeout-minutes: 45
     env:
-      BAXTER_CODESIGN_IDENTITY: "Developer ID Application: Electric Coding LLC (NFP7P6ZYW3)"
+      # Keep pre-merge packaging independent of Developer ID keychain access.
+      # Release and RC workflows still validate the Developer ID signed path.
+      BAXTER_CODESIGN_IDENTITY: "-"
       BAXTER_NOTARYTOOL_PROFILE: ""
       DERIVED_DATA_PATH: ${{ github.workspace }}/.ci/PackagedAppDerivedData
       PACKAGED_APP_DIR: ${{ github.workspace }}/.ci/packaged-app
