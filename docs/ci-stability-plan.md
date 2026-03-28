@@ -100,6 +100,7 @@ Current chunk implemented locally:
 
 - Add a path-gated pre-merge packaged-app smoke job in `.github/workflows/ci.yml`.
 - The job packages `Baxter-darwin-arm64.zip`, launches the signed app, and verifies bundled-helper bootstrap through `/v1/status`.
+- Initial PR evidence exposed a helper-install timing race on the self-hosted macOS runner; the smoke script now waits for installed helper copies to match the bundled binaries and records helper diagnostics on timeout.
 - Local verification passed; next evidence needed is a normal PR run on the macOS runner.
 
 Priority order:

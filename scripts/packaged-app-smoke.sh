@@ -63,6 +63,7 @@ require_command codesign
 require_command cmp
 require_command launchctl
 require_command plutil
+require_command shasum
 require_command unzip
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -102,6 +103,7 @@ STATUS_JSON_PATH="$DEBUG_DIR/status.json"
 INSTALLED_CLI_STATUS_LOG="$DEBUG_DIR/installed-cli-status.log"
 RUNTIME_DAEMON_OUT_LOG="$DEBUG_DIR/runtime-baxterd.out.log"
 RUNTIME_DAEMON_ERR_LOG="$DEBUG_DIR/runtime-baxterd.err.log"
+HELPER_INSTALL_LOG="$DEBUG_DIR/helper-install.log"
 
 mkdir -p "$INSTALL_DIR" "$BACKUP_ROOT" "$BACKUP_DIR"
 
@@ -112,6 +114,42 @@ backup_existing_path() {
     mkdir -p "$(dirname "$backup_path")"
     mv "$source_path" "$backup_path"
   fi
+}
+
+wait_for_installed_helper() {
+  local name="$1"
+  local bundled_path="$2"
+  local installed_path="$3"
+  local timeout_seconds="${4:-30}"
+
+  : >"$HELPER_INSTALL_LOG"
+
+  for _ in $(seq 1 "$timeout_seconds"); do
+    if [ -x "$installed_path" ] && cmp -s "$bundled_path" "$installed_path"; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  {
+    echo "installed helper check failed for $name"
+    echo "bundled_path=$bundled_path"
+    echo "installed_path=$installed_path"
+    if [ -e "$bundled_path" ]; then
+      echo "bundled_sha256=$(shasum -a 256 "$bundled_path" | awk '{print $1}')"
+      ls -l "$bundled_path"
+    else
+      echo "bundled file missing"
+    fi
+    if [ -e "$installed_path" ]; then
+      echo "installed_sha256=$(shasum -a 256 "$installed_path" | awk '{print $1}')"
+      ls -l "$installed_path"
+    else
+      echo "installed file missing"
+    fi
+  } >>"$HELPER_INSTALL_LOG"
+
+  return 1
 }
 
 cleanup() {
@@ -234,10 +272,8 @@ launchctl print "$SERVICE_TARGET" >"$LAUNCHCTL_SERVICE_LOG" 2>&1
 grep -q 'managed_by = com.apple.xpc.ServiceManagement' "$LAUNCHCTL_SERVICE_LOG"
 grep -q 'parent bundle identifier = com.electriccoding.BaxterApp' "$LAUNCHCTL_SERVICE_LOG"
 grep -q 'program identifier = Contents/Resources/bin/baxterd-launch.sh' "$LAUNCHCTL_SERVICE_LOG"
-test -x "$INSTALLED_CLI"
-test -x "$INSTALLED_DAEMON"
-cmp -s "$BUNDLED_BIN_DIR/baxter" "$INSTALLED_CLI"
-cmp -s "$BUNDLED_BIN_DIR/baxterd" "$INSTALLED_DAEMON"
+wait_for_installed_helper "baxter" "$BUNDLED_BIN_DIR/baxter" "$INSTALLED_CLI"
+wait_for_installed_helper "baxterd" "$BUNDLED_BIN_DIR/baxterd" "$INSTALLED_DAEMON"
 "$INSTALLED_CLI" backup status >"$INSTALLED_CLI_STATUS_LOG"
 
 echo "packaged app smoke passed"
