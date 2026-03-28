@@ -2,16 +2,24 @@ import Foundation
 
 enum BaxterRuntime {
     #if DEBUG
-    private static let defaultStateDirectoryName = "baxter-dev"
-    private static let defaultDaemonLabel = "com.electriccoding.baxterd.dev"
-    private static let defaultIPCAddress = "127.0.0.1:43129"
-    private static let defaultLogStem = "baxterd-dev"
+    static let defaultStateDirectoryName = "baxter-dev"
+    static let defaultDaemonLabel = "com.electriccoding.baxterd.dev"
+    static let defaultIPCAddress = "127.0.0.1:43129"
+    static let defaultLogStem = "baxterd-dev"
     #else
-    private static let defaultStateDirectoryName = "baxter"
-    private static let defaultDaemonLabel = "com.electriccoding.baxterd"
-    private static let defaultIPCAddress = "127.0.0.1:41820"
-    private static let defaultLogStem = "baxterd"
+    static let defaultStateDirectoryName = "baxter"
+    static let defaultDaemonLabel = "com.electriccoding.baxterd"
+    static let defaultIPCAddress = "127.0.0.1:41820"
+    static let defaultLogStem = "baxterd"
     #endif
+
+    private static let appServiceBlockingEnvironmentVariables = [
+        "BAXTER_APP_SUPPORT_DIR",
+        "BAXTER_CONFIG_PATH",
+        "BAXTER_LAUNCHD_LABEL",
+        "BAXTER_IPC_ADDR",
+        "BAXTER_IPC_TOKEN",
+    ]
 
     private static func trimmedEnvironmentValue(_ name: String) -> String? {
         let value = ProcessInfo.processInfo.environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -57,6 +65,52 @@ enum BaxterRuntime {
 
     static var daemonLabel: String {
         trimmedEnvironmentValue("BAXTER_LAUNCHD_LABEL") ?? defaultDaemonLabel
+    }
+
+    static var bundledLaunchAgentPlistName: String {
+        "\(defaultDaemonLabel).plist"
+    }
+
+    static var bundledLaunchAgentURL: URL {
+        Bundle.main.bundleURL
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("Library")
+            .appendingPathComponent("LaunchAgents")
+            .appendingPathComponent(bundledLaunchAgentPlistName)
+    }
+
+    static var bundledDaemonLauncherURL: URL {
+        Bundle.main.bundleURL
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("bin")
+            .appendingPathComponent("baxterd-launch.sh")
+    }
+
+    static var bundledDaemonBinaryURL: URL {
+        Bundle.main.bundleURL
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("bin")
+            .appendingPathComponent("baxterd")
+    }
+
+    static func shouldUseBundledLaunchAgent(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundledPlistExists: Bool = FileManager.default.fileExists(atPath: bundledLaunchAgentURL.path),
+        bundledLauncherExecutable: Bool = FileManager.default.isExecutableFile(atPath: bundledDaemonLauncherURL.path),
+        bundledDaemonExecutable: Bool = FileManager.default.isExecutableFile(atPath: bundledDaemonBinaryURL.path)
+    ) -> Bool {
+        guard bundledPlistExists, bundledLauncherExecutable, bundledDaemonExecutable else {
+            return false
+        }
+        for name in appServiceBlockingEnvironmentVariables {
+            let value = environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !value.isEmpty {
+                return false
+            }
+        }
+        return true
     }
 
     static var launchAgentURL: URL {

@@ -1,6 +1,7 @@
 import AppKit
 import Darwin
 import Foundation
+import ServiceManagement
 import SwiftUI
 
 enum DaemonServiceState: String {
@@ -14,7 +15,14 @@ enum LaunchdController {
 
     private static var domainTarget: String { "gui/\(uid)" }
 
-    private static var serviceTarget: String { "\(domainTarget)/\(BaxterRuntime.daemonLabel)" }
+    private static var serviceTargets: [String] {
+        var labels = [BaxterRuntime.daemonLabel]
+        if BaxterRuntime.shouldUseBundledLaunchAgent(),
+           !labels.contains(BaxterRuntime.defaultDaemonLabel) {
+            labels.insert(BaxterRuntime.defaultDaemonLabel, at: 0)
+        }
+        return labels.map { "\(domainTarget)/\($0)" }
+    }
 
     private static var plistPath: String {
         BaxterRuntime.launchAgentURL.path
@@ -37,12 +45,17 @@ enum LaunchdController {
     }
 
     static func queryState() async -> DaemonServiceState {
-        do {
-            let result = try await runLaunchctlAllowFailure(["print", serviceTarget])
-            return result.status == 0 ? .running : .stopped
-        } catch {
-            return .unknown
+        for target in serviceTargets {
+            do {
+                let result = try await runLaunchctlAllowFailure(["print", target])
+                if result.status == 0 {
+                    return .running
+                }
+            } catch {
+                return .unknown
+            }
         }
+        return .stopped
     }
 
     static func hasConfigFile() -> Bool {
@@ -50,33 +63,27 @@ enum LaunchdController {
     }
 
     static func install() async throws -> String {
-        _ = try await prepareLaunchdInstallAssets()
-        _ = try await runLaunchctlAllowFailure(["bootout", serviceTarget])
-        _ = try await runLaunchctl(["bootstrap", domainTarget, plistPath])
-        _ = try await runLaunchctl(["enable", serviceTarget])
-        _ = try await runLaunchctl(["kickstart", "-k", serviceTarget])
-        return "Daemon installed and started."
+        if try await installBundledAgentIfAvailable() {
+            return "Daemon installed and started."
+        }
+        return try await installLegacyLaunchAgent()
     }
 
     static func start() async throws -> String {
-        _ = try await prepareLaunchdInstallAssets()
-
         let state = await queryState()
-        if state == .running {
-            _ = try await runLaunchctl(["kickstart", "-k", serviceTarget])
-            return "Daemon restarted."
+        if try await startBundledAgentIfAvailable() {
+            return state == .running ? "Daemon restarted." : "Daemon started."
         }
-
-        _ = try await runLaunchctl(["bootstrap", domainTarget, plistPath])
-        _ = try await runLaunchctl(["enable", serviceTarget])
-        _ = try await runLaunchctl(["kickstart", "-k", serviceTarget])
-        return "Daemon started."
+        return try await startLegacyLaunchAgent()
     }
 
     static func stop() async throws -> String {
         do {
-            _ = try await runLaunchctl(["bootout", serviceTarget])
-            return "Daemon stopped."
+            for target in serviceTargets {
+                _ = try await runLaunchctlAllowFailure(["bootout", target])
+            }
+            let state = await queryState()
+            return state == .stopped ? "Daemon stopped." : "Daemon already stopped."
         } catch {
             let state = await queryState()
             if state == .stopped {
@@ -106,69 +113,58 @@ enum LaunchdController {
         return output.isEmpty ? "Recovery bootstrap complete." : output
     }
 
-    private static func runLaunchctl(_ arguments: [String]) async throws -> CommandResult {
-        try await runProcess(executable: "/bin/launchctl", arguments: arguments)
+    private static func installLegacyLaunchAgent() async throws -> String {
+        _ = try await prepareLegacyLaunchdInstallAssets()
+        _ = try await runLaunchctlAllowFailure(["bootout", "\(domainTarget)/\(BaxterRuntime.daemonLabel)"])
+        _ = try await runLaunchctl(["bootstrap", domainTarget, plistPath])
+        _ = try await runLaunchctl(["enable", "\(domainTarget)/\(BaxterRuntime.daemonLabel)"])
+        _ = try await runLaunchctl(["kickstart", "-k", "\(domainTarget)/\(BaxterRuntime.daemonLabel)"])
+        return "Daemon installed and started."
     }
 
-    private static func runLaunchctlAllowFailure(_ arguments: [String]) async throws -> CommandResult {
-        try await runProcessAllowFailure(executable: "/bin/launchctl", arguments: arguments)
-    }
+    private static func startLegacyLaunchAgent() async throws -> String {
+        _ = try await prepareLegacyLaunchdInstallAssets()
 
-    private static func runProcess(
-        executable: String,
-        arguments: [String],
-        currentDirectory: URL? = nil,
-        environment: [String: String] = [:]
-    ) async throws -> CommandResult {
-        let result = try await runProcessAllowFailure(
-            executable: executable,
-            arguments: arguments,
-            currentDirectory: currentDirectory,
-            environment: environment
-        )
-        if result.status != 0 {
-            throw LaunchdError.commandFailed(command: executable, arguments: arguments, stderr: result.stderr)
+        let target = "\(domainTarget)/\(BaxterRuntime.daemonLabel)"
+        let state = await queryState()
+        if state == .running {
+            _ = try await runLaunchctl(["kickstart", "-k", target])
+            return "Daemon restarted."
         }
-        return result
+
+        _ = try await runLaunchctl(["bootstrap", domainTarget, plistPath])
+        _ = try await runLaunchctl(["enable", target])
+        _ = try await runLaunchctl(["kickstart", "-k", target])
+        return "Daemon started."
     }
 
-    private static func runProcessAllowFailure(
-        executable: String,
-        arguments: [String],
-        currentDirectory: URL? = nil,
-        environment: [String: String] = [:]
-    ) async throws -> CommandResult {
-        try await Task.detached(priority: .userInitiated) {
-            let process = Process()
-            let outputPipe = Pipe()
-            let errorPipe = Pipe()
+    private static func installBundledAgentIfAvailable() async throws -> Bool {
+        guard BaxterRuntime.shouldUseBundledLaunchAgent() else {
+            return false
+        }
 
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = arguments
-            process.currentDirectoryURL = currentDirectory
-            if !environment.isEmpty {
-                process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
-            }
-            process.standardOutput = outputPipe
-            process.standardError = errorPipe
-
-            do {
-                try process.run()
-                process.waitUntilExit()
-            } catch {
-                throw LaunchdError.executionFailed(error.localizedDescription)
-            }
-
-            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-            let stdout = String(data: outputData, encoding: .utf8) ?? ""
-            let stderr = String(data: errorData, encoding: .utf8) ?? ""
-            let status = process.terminationStatus
-            return CommandResult(status: status, stdout: stdout, stderr: stderr)
-        }.value
+        _ = try await prepareBundledAppServiceAssets()
+        try await unregisterBundledAgentIfNeeded()
+        try await removeLegacyLaunchAgentIfPresent()
+        try registerBundledAgent()
+        _ = try await runLaunchctlAllowFailure(["kickstart", "-k", "\(domainTarget)/\(BaxterRuntime.defaultDaemonLabel)"])
+        return true
     }
 
-    private static func prepareLaunchdInstallAssets() async throws -> String {
+    private static func startBundledAgentIfAvailable() async throws -> Bool {
+        guard BaxterRuntime.shouldUseBundledLaunchAgent() else {
+            return false
+        }
+
+        _ = try await prepareBundledAppServiceAssets()
+        try await removeLegacyLaunchAgentIfPresent()
+        try await unregisterBundledAgentIfNeeded()
+        try registerBundledAgent()
+        _ = try await runLaunchctlAllowFailure(["kickstart", "-k", "\(domainTarget)/\(BaxterRuntime.defaultDaemonLabel)"])
+        return true
+    }
+
+    private static func prepareLegacyLaunchdInstallAssets() async throws -> String {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: configPath) else {
             throw LaunchdError.missingConfig(configPath)
@@ -195,6 +191,24 @@ enum LaunchdController {
         )
         try plistData.write(to: URL(fileURLWithPath: plistPath), options: .atomic)
         return binaryPath
+    }
+
+    private static func prepareBundledAppServiceAssets() async throws -> String {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: configPath) else {
+            throw LaunchdError.missingConfig(configPath)
+        }
+        guard fileManager.fileExists(atPath: BaxterRuntime.bundledLaunchAgentURL.path) else {
+            throw LaunchdError.bundledAgentMissing(BaxterRuntime.bundledLaunchAgentURL.path)
+        }
+
+        try fileManager.createDirectory(
+            at: BaxterRuntime.daemonOutLogURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        _ = try installBundledHelpersIfAvailable()
+        return BaxterRuntime.bundledLaunchAgentURL.path
     }
 
     private static func ensureDaemonBinary() async throws -> String {
@@ -298,116 +312,6 @@ enum LaunchdController {
         return FileManager.default.isExecutableFile(atPath: path) ? path : nil
     }
 
-    static func resolveRepositoryRoot(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        currentDirectoryPath: String = FileManager.default.currentDirectoryPath
-    ) -> URL? {
-        if let configured = environment["BAXTER_REPO_ROOT"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !configured.isEmpty {
-            let url = URL(fileURLWithPath: configured)
-            if isRepositoryRoot(url) {
-                return url
-            }
-        }
-
-        for candidate in repositoryRootCandidates(currentDirectoryPath: currentDirectoryPath) {
-            if isRepositoryRoot(candidate) {
-                return candidate
-            }
-        }
-        return nil
-    }
-
-    private static func repositoryRootCandidates(currentDirectoryPath: String) -> [URL] {
-        var candidates: [URL] = []
-
-        func appendIfNeeded(_ url: URL?) {
-            guard let url else {
-                return
-            }
-            let standardized = url.standardizedFileURL
-            if !candidates.contains(where: { $0.standardizedFileURL.path == standardized.path }) {
-                candidates.append(standardized)
-            }
-        }
-
-        appendIfNeeded(debugSourceRepositoryRoot())
-
-        var candidate = URL(fileURLWithPath: currentDirectoryPath)
-        for _ in 0..<12 {
-            appendIfNeeded(candidate)
-            let parent = candidate.deletingLastPathComponent()
-            if parent.path == candidate.path {
-                break
-            }
-            candidate = parent
-        }
-
-        return candidates
-    }
-
-    private static func debugSourceRepositoryRoot() -> URL? {
-        #if DEBUG
-        var url = URL(fileURLWithPath: #filePath)
-        for _ in 0..<4 {
-            url.deleteLastPathComponent()
-        }
-        return url
-        #else
-        return nil
-        #endif
-    }
-
-    static func resolveGoBinaryPath(
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> String? {
-        let fileManager = FileManager.default
-
-        func executablePath(_ rawPath: String?) -> String? {
-            guard let rawPath else {
-                return nil
-            }
-            let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !path.isEmpty, fileManager.isExecutableFile(atPath: path) else {
-                return nil
-            }
-            return path
-        }
-
-        if let configured = executablePath(environment["BAXTER_GO_BINARY"]) {
-            return configured
-        }
-
-        if let pathValue = environment["PATH"] {
-            for directory in pathValue.split(separator: ":") {
-                let candidate = String(directory) + "/go"
-                if let resolved = executablePath(candidate) {
-                    return resolved
-                }
-            }
-        }
-
-        for candidate in [
-            "/usr/local/go/bin/go",
-            "/opt/homebrew/bin/go",
-            "/usr/local/bin/go",
-            "/usr/bin/go",
-        ] {
-            if let resolved = executablePath(candidate) {
-                return resolved
-            }
-        }
-
-        return nil
-    }
-
-    private static func isRepositoryRoot(_ url: URL) -> Bool {
-        let fileManager = FileManager.default
-        let goMod = url.appendingPathComponent("go.mod").path
-        let daemonMain = url.appendingPathComponent("cmd").appendingPathComponent("baxterd").appendingPathComponent("main.go").path
-        return fileManager.fileExists(atPath: goMod) && fileManager.fileExists(atPath: daemonMain)
-    }
-
     private static func launchAgentPlistData(
         daemonBinaryPath: String,
         configPath: String,
@@ -437,6 +341,7 @@ enum LaunchdController {
             "StandardOutPath": BaxterRuntime.daemonOutLogURL.path,
             "StandardErrorPath": BaxterRuntime.daemonErrLogURL.path,
             "EnvironmentVariables": environmentVariables,
+            "AssociatedBundleIdentifiers": Bundle.main.bundleIdentifier ?? "com.electriccoding.BaxterApp",
         ]
 
         do {
@@ -450,88 +355,53 @@ enum LaunchdController {
         }
     }
 
-    static func helperEnvironmentVariables(homePath: String) -> [String: String] {
-        let env = ProcessInfo.processInfo.environment
-        var variables: [String: String] = [
-            "HOME": homePath,
-            "BAXTER_APP_SUPPORT_DIR": BaxterRuntime.appSupportURL.path,
-            "BAXTER_CONFIG_PATH": BaxterRuntime.configURL.path,
-        ]
-        if let configuredProfile = configuredAWSProfile(), !configuredProfile.isEmpty {
-            variables["AWS_PROFILE"] = configuredProfile
-            variables["AWS_SDK_LOAD_CONFIG"] = "1"
-        }
-
-        for key in [
-            "AWS_PROFILE",
-            "AWS_SDK_LOAD_CONFIG",
-            "AWS_REGION",
-            "AWS_DEFAULT_REGION",
-            "AWS_SHARED_CREDENTIALS_FILE",
-            "AWS_CONFIG_FILE",
-            "AWS_ACCESS_KEY_ID",
-            "AWS_SECRET_ACCESS_KEY",
-            "AWS_SESSION_TOKEN",
-        ] {
-            let value = env[key]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !value.isEmpty {
-                variables[key] = value
-            }
-        }
-
-        return variables
+    private static func bundledAgentService() -> SMAppService {
+        SMAppService.agent(plistName: BaxterRuntime.bundledLaunchAgentPlistName)
     }
 
-    private static func configuredAWSProfile() -> String? {
-        guard let configText = try? String(contentsOfFile: configPath, encoding: .utf8) else {
-            return nil
+    private static func registerBundledAgent() throws {
+        do {
+            try bundledAgentService().register()
+        } catch let error as NSError {
+            throw LaunchdError.appServiceRegistrationFailed(messageForAppServiceError(error))
         }
-        let profile = decodeBaxterConfig(from: configText).s3AWSProfile
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return profile.isEmpty ? nil : profile
     }
-}
 
-private struct CommandResult {
-    let status: Int32
-    let stdout: String
-    let stderr: String
-}
+    private static func unregisterBundledAgentIfNeeded() async throws {
+        let service = bundledAgentService()
+        switch service.status {
+        case .enabled, .requiresApproval:
+            try await service.unregister()
+        case .notRegistered, .notFound:
+            return
+        @unknown default:
+            return
+        }
+    }
 
-private enum LaunchdError: LocalizedError {
-    case missingConfig(String)
-    case missingPassphrase
-    case repoRootNotFound
-    case goBinaryNotFound
-    case daemonBinaryMissing(String)
-    case cliBinaryMissing(String)
-    case executionFailed(String)
-    case commandFailed(command: String, arguments: [String], stderr: String)
+    private static func removeLegacyLaunchAgentIfPresent() async throws {
+        let fileManager = FileManager.default
+        let target = "\(domainTarget)/\(BaxterRuntime.daemonLabel)"
+        _ = try await runLaunchctlAllowFailure(["bootout", target])
+        if fileManager.fileExists(atPath: plistPath) {
+            try fileManager.removeItem(atPath: plistPath)
+        }
+    }
 
-    var errorDescription: String? {
-        switch self {
-        case .missingConfig(let path):
-            _ = path
-            return "Config not found. Open Settings and save config first."
-        case .missingPassphrase:
-            return "Passphrase is required."
-        case .repoRootNotFound:
-            return "Unable to find bundled Baxter helpers or auto-build them from the repo. Set BAXTER_REPO_ROOT for dev builds or install from the packaged app."
-        case .goBinaryNotFound:
-            return "Go is required to build Baxter helpers for the debug app, but no `go` binary was found. Install Go or set BAXTER_GO_BINARY."
-        case .daemonBinaryMissing(let path):
-            return "baxterd binary missing at \(path) after install/build."
-        case .cliBinaryMissing(let path):
-            return "baxter binary missing at \(path) after install/build."
-        case .executionFailed(let reason):
-            return "Failed to execute command: \(reason)"
-        case .commandFailed(let command, let arguments, let stderr):
-            let executable = URL(fileURLWithPath: command).lastPathComponent
-            let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            if detail.isEmpty {
-                return "\(executable) \(arguments.joined(separator: " ")) failed."
-            }
-            return detail
+    private static func messageForAppServiceError(_ error: NSError) -> String {
+        guard error.domain == SMAppServiceErrorDomain else {
+            return error.localizedDescription
+        }
+
+        switch error.code {
+        case kSMErrorInvalidSignature:
+            return "Bundled Baxter background helper requires a signed app build."
+        case kSMErrorJobPlistNotFound, kSMErrorToolNotValid:
+            return "Bundled Baxter background helper assets are incomplete. Reinstall the packaged app."
+        case kSMErrorLaunchDeniedByUser:
+            return "macOS denied the Baxter background item. Re-enable it in System Settings > Login Items."
+        default:
+            return error.localizedDescription
         }
     }
 }

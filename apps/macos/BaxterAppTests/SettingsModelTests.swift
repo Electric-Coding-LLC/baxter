@@ -168,6 +168,33 @@ final class SettingsModelTests: XCTestCase {
         XCTAssertEqual(env["BAXTER_CONFIG_PATH"], BaxterRuntime.configURL.path)
     }
 
+    func testBundledLaunchAgentRequiresBundledAssetsAndNoOverrides() {
+        XCTAssertFalse(BaxterRuntime.shouldUseBundledLaunchAgent(
+            environment: [:],
+            bundledPlistExists: false,
+            bundledLauncherExecutable: true,
+            bundledDaemonExecutable: true
+        ))
+        XCTAssertFalse(BaxterRuntime.shouldUseBundledLaunchAgent(
+            environment: ["BAXTER_CONFIG_PATH": "/tmp/custom.toml"],
+            bundledPlistExists: true,
+            bundledLauncherExecutable: true,
+            bundledDaemonExecutable: true
+        ))
+        XCTAssertFalse(BaxterRuntime.shouldUseBundledLaunchAgent(
+            environment: [:],
+            bundledPlistExists: true,
+            bundledLauncherExecutable: true,
+            bundledDaemonExecutable: false
+        ))
+        XCTAssertTrue(BaxterRuntime.shouldUseBundledLaunchAgent(
+            environment: [:],
+            bundledPlistExists: true,
+            bundledLauncherExecutable: true,
+            bundledDaemonExecutable: true
+        ))
+    }
+
     func testShouldOfferApplyNowWhenSaveSucceededAndDaemonRunning() {
         let model = BaxterSettingsModel()
         model.errorMessage = nil

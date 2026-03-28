@@ -6,16 +6,16 @@ usage() {
 Usage: ./scripts/package-macos-app.sh --output-dir /path/to/dist [options]
 
 Builds Baxter.app in Release configuration, embeds baxter helper binaries,
-and packages it as a zip artifact.
+codesigns the app bundle, and packages it as a zip artifact.
 
 Options:
   --artifact-name NAME            Zip file name (default: Baxter-darwin-arm64.zip)
   --derived-data-path PATH        Reuse an existing Xcode DerivedData path
-  --signing-identity NAME         Developer ID Application identity for codesign
+  --signing-identity NAME         Required Developer ID Application identity for codesign
   --notarytool-profile PROFILE    Keychain profile name for xcrun notarytool
 
 Environment:
-  BAXTER_CODESIGN_IDENTITY        Default signing identity if flag is omitted
+  BAXTER_CODESIGN_IDENTITY        Required default signing identity if flag is omitted
   BAXTER_NOTARYTOOL_PROFILE       Default notarytool profile if flag is omitted
 EOF
 }
@@ -83,8 +83,9 @@ create_zip() {
   ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
 }
 
-if [ -n "$NOTARYTOOL_PROFILE" ] && [ -z "$SIGNING_IDENTITY" ]; then
-  echo "--notarytool-profile requires --signing-identity (or BAXTER_CODESIGN_IDENTITY)" >&2
+if [ -z "$SIGNING_IDENTITY" ]; then
+  echo "Baxter.app packaging requires --signing-identity (or BAXTER_CODESIGN_IDENTITY)." >&2
+  echo "Use the Xcode project for debug runs, or build a signed packaged app for installation." >&2
   exit 1
 fi
 
@@ -118,6 +119,7 @@ popd >/dev/null
 APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release/Baxter.app"
 ZIP_PATH="$OUTPUT_DIR/$ARTIFACT_NAME"
 HELPER_DIR="$APP_PATH/Contents/Resources/bin"
+APP_LAUNCH_AGENTS_DIR="$APP_PATH/Contents/Library/LaunchAgents"
 
 if [ ! -d "$APP_PATH" ]; then
   echo "Built app not found at $APP_PATH" >&2
@@ -125,35 +127,37 @@ if [ ! -d "$APP_PATH" ]; then
 fi
 
 mkdir -p "$HELPER_DIR"
+mkdir -p "$APP_LAUNCH_AGENTS_DIR"
 pushd "$ROOT_DIR" >/dev/null
 GOOS=darwin GOARCH=arm64 go build -o "$HELPER_DIR/baxter" ./cmd/baxter
 GOOS=darwin GOARCH=arm64 go build -o "$HELPER_DIR/baxterd" ./cmd/baxterd
 popd >/dev/null
-chmod 0755 "$HELPER_DIR/baxter" "$HELPER_DIR/baxterd"
+cp "$ROOT_DIR/launchd/baxterd-launch.sh" "$HELPER_DIR/baxterd-launch.sh"
+cp "$ROOT_DIR/launchd/com.electriccoding.baxterd.bundle.plist" \
+  "$APP_LAUNCH_AGENTS_DIR/com.electriccoding.baxterd.plist"
+chmod 0755 "$HELPER_DIR/baxter" "$HELPER_DIR/baxterd" "$HELPER_DIR/baxterd-launch.sh"
 
-if [ -n "$SIGNING_IDENTITY" ]; then
-  require_command codesign
+require_command codesign
 
-  codesign \
-    --force \
-    --timestamp \
-    --options runtime \
-    --sign "$SIGNING_IDENTITY" \
-    "$HELPER_DIR/baxter"
-  codesign \
-    --force \
-    --timestamp \
-    --options runtime \
-    --sign "$SIGNING_IDENTITY" \
-    "$HELPER_DIR/baxterd"
-  codesign \
-    --force \
-    --timestamp \
-    --options runtime \
-    --sign "$SIGNING_IDENTITY" \
-    "$APP_PATH"
-  codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-fi
+codesign \
+  --force \
+  --timestamp \
+  --options runtime \
+  --sign "$SIGNING_IDENTITY" \
+  "$HELPER_DIR/baxter"
+codesign \
+  --force \
+  --timestamp \
+  --options runtime \
+  --sign "$SIGNING_IDENTITY" \
+  "$HELPER_DIR/baxterd"
+codesign \
+  --force \
+  --timestamp \
+  --options runtime \
+  --sign "$SIGNING_IDENTITY" \
+  "$APP_PATH"
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 create_zip
 
