@@ -146,10 +146,25 @@ func shouldSkipManifestPath(path string) bool {
 }
 
 func shouldIgnoreManifestError(path string, err error) bool {
-	if !shouldSkipManifestPath(path) || err == nil {
+	if err == nil || !isLocalizedDeadlockError(err) {
 		return false
 	}
-	return strings.Contains(strings.ToLower(err.Error()), "resource deadlock avoided")
+	if shouldSkipManifestPath(path) {
+		return true
+	}
+	return localizedPathInManifestError(err)
+}
+
+func isLocalizedDeadlockError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "resource deadlock avoided")
+}
+
+func localizedPathInManifestError(err error) bool {
+	var pathErr *fs.PathError
+	if !errors.As(err, &pathErr) {
+		return false
+	}
+	return shouldSkipManifestPath(pathErr.Path)
 }
 
 func PlanChanges(previous, current *Manifest) Plan {

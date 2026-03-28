@@ -115,10 +115,11 @@ enum LaunchdController {
 
     private static func installLegacyLaunchAgent() async throws -> String {
         _ = try await prepareLegacyLaunchdInstallAssets()
-        _ = try await runLaunchctlAllowFailure(["bootout", "\(domainTarget)/\(BaxterRuntime.daemonLabel)"])
+        let target = "\(domainTarget)/\(BaxterRuntime.daemonLabel)"
+        _ = try await runLaunchctlAllowFailure(["bootout", target])
+        _ = try await runLaunchctl(["enable", target])
         _ = try await runLaunchctl(["bootstrap", domainTarget, plistPath])
-        _ = try await runLaunchctl(["enable", "\(domainTarget)/\(BaxterRuntime.daemonLabel)"])
-        _ = try await runLaunchctl(["kickstart", "-k", "\(domainTarget)/\(BaxterRuntime.daemonLabel)"])
+        _ = try await runLaunchctl(["kickstart", "-k", target])
         return "Daemon installed and started."
     }
 
@@ -132,8 +133,8 @@ enum LaunchdController {
             return "Daemon restarted."
         }
 
-        _ = try await runLaunchctl(["bootstrap", domainTarget, plistPath])
         _ = try await runLaunchctl(["enable", target])
+        _ = try await runLaunchctl(["bootstrap", domainTarget, plistPath])
         _ = try await runLaunchctl(["kickstart", "-k", target])
         return "Daemon started."
     }
