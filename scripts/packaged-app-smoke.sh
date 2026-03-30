@@ -61,14 +61,13 @@ require_command() {
 require_command curl
 require_command codesign
 require_command cmp
+require_command ditto
 require_command launchctl
 require_command plutil
 require_command shasum
-require_command unzip
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUN_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/baxter-packaged-app-smoke.XXXXXX")"
-INSTALL_DIR="$RUN_ROOT/install"
 BACKUP_ROOT="$RUN_ROOT/backup-root"
 SERVICE_LABEL="com.electriccoding.baxterd"
 SERVICE_TARGET="gui/$(id -u)/$SERVICE_LABEL"
@@ -86,6 +85,8 @@ APP_SUPPORT_BACKUP="$BACKUP_DIR/app-support"
 LEGACY_LAUNCH_AGENT_BACKUP="$BACKUP_DIR/legacy-launch-agent.plist"
 DAEMON_OUT_LOG_BACKUP="$BACKUP_DIR/baxterd.out.log"
 DAEMON_ERR_LOG_BACKUP="$BACKUP_DIR/baxterd.err.log"
+INSTALLED_APP_PATH="/Applications/Baxter.app"
+INSTALLED_APP_BACKUP="$BACKUP_DIR/Baxter.app"
 
 if [ -n "$DEBUG_DIR" ]; then
   mkdir -p "$DEBUG_DIR"
@@ -105,7 +106,7 @@ RUNTIME_DAEMON_OUT_LOG="$DEBUG_DIR/runtime-baxterd.out.log"
 RUNTIME_DAEMON_ERR_LOG="$DEBUG_DIR/runtime-baxterd.err.log"
 HELPER_INSTALL_LOG="$DEBUG_DIR/helper-install.log"
 
-mkdir -p "$INSTALL_DIR" "$BACKUP_ROOT" "$BACKUP_DIR"
+mkdir -p "$BACKUP_ROOT" "$BACKUP_DIR"
 
 backup_existing_path() {
   local source_path="$1"
@@ -167,6 +168,7 @@ cleanup() {
   rm -rf "$APP_SUPPORT_DIR"
   rm -f "$LEGACY_LAUNCH_AGENT_PATH"
   rm -f "$DAEMON_OUT_LOG" "$DAEMON_ERR_LOG"
+  rm -rf "$INSTALLED_APP_PATH"
   if [ -e "$APP_SUPPORT_BACKUP" ]; then
     mkdir -p "$APP_SUPPORT_PARENT_DIR"
     mv "$APP_SUPPORT_BACKUP" "$APP_SUPPORT_DIR"
@@ -182,6 +184,9 @@ cleanup() {
   if [ -e "$DAEMON_ERR_LOG_BACKUP" ]; then
     mkdir -p "$LOG_DIR"
     mv "$DAEMON_ERR_LOG_BACKUP" "$DAEMON_ERR_LOG"
+  fi
+  if [ -e "$INSTALLED_APP_BACKUP" ]; then
+    mv "$INSTALLED_APP_BACKUP" "$INSTALLED_APP_PATH"
   fi
   if [ "${service_was_running:-0}" = "1" ]; then
     launchctl kickstart -k "$SERVICE_TARGET" >/dev/null 2>&1 || true
@@ -207,9 +212,10 @@ backup_existing_path "$APP_SUPPORT_DIR" "$APP_SUPPORT_BACKUP"
 backup_existing_path "$LEGACY_LAUNCH_AGENT_PATH" "$LEGACY_LAUNCH_AGENT_BACKUP"
 backup_existing_path "$DAEMON_OUT_LOG" "$DAEMON_OUT_LOG_BACKUP"
 backup_existing_path "$DAEMON_ERR_LOG" "$DAEMON_ERR_LOG_BACKUP"
+backup_existing_path "$INSTALLED_APP_PATH" "$INSTALLED_APP_BACKUP"
 
-unzip -q "$ZIP_PATH" -d "$INSTALL_DIR"
-APP_PATH="$INSTALL_DIR/Baxter.app"
+ditto -x -k "$ZIP_PATH" "/Applications"
+APP_PATH="$INSTALLED_APP_PATH"
 INFO_PLIST_PATH="$APP_PATH/Contents/Info.plist"
 BUNDLED_BIN_DIR="$APP_PATH/Contents/Resources/bin"
 BUNDLED_LAUNCH_AGENT="$APP_PATH/Contents/Library/LaunchAgents/com.electriccoding.baxterd.plist"

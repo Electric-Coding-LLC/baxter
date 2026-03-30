@@ -306,13 +306,7 @@ struct BaxterMenuContentView: View {
         guard model.backupTotal > 0 else {
             return "Scanning files for changes."
         }
-        if let currentPath = model.backupCurrentPath, !currentPath.isEmpty {
-            let fileName = URL(fileURLWithPath: currentPath).lastPathComponent
-            if !fileName.isEmpty {
-                return "Uploading \(model.backupUploaded.formatted()) of \(model.backupTotal.formatted()): \(fileName)"
-            }
-        }
-        return "Uploading \(model.backupUploaded.formatted()) of \(model.backupTotal.formatted()) changed files."
+        return "Uploading changed files."
     }
 
     private var shouldShowStatusCard: Bool {
