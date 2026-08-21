@@ -130,7 +130,7 @@ jobs:
         run: |
           mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
           pkill -9 -f "$DERIVED_DATA_PATH/Build/Products/Debug/$BAXTER_CI_PRODUCT_NAME.app/Contents/MacOS/$BAXTER_CI_PRODUCT_NAME" >/dev/null 2>&1 || true
-          xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" BAXTER_APP_PRODUCT_NAME="$BAXTER_CI_PRODUCT_NAME" PRODUCT_BUNDLE_IDENTIFIER="$BAXTER_CI_BUNDLE_IDENTIFIER" test
+          launchctl asuser "$(id -u)" /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" BAXTER_APP_PRODUCT_NAME="$BAXTER_CI_PRODUCT_NAME" PRODUCT_BUNDLE_IDENTIFIER="$BAXTER_CI_BUNDLE_IDENTIFIER" test
       - name: Run launchd IPC smoke check
         env:
           BAXTER_IPC_TOKEN: ci-smoke-current-token,ci-smoke-next-token
