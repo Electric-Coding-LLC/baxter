@@ -56,7 +56,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Package BaxterApp RC artifact
-        run: ./scripts/package-macos-app.sh --output-dir "dist/${{ inputs.version }}" --version '${{ inputs.version }}'
+        run: |
+          ./scripts/run-in-gui-session.sh \
+            ./scripts/package-macos-app.sh \
+            --output-dir "dist/${{ inputs.version }}" \
+            --version '${{ inputs.version }}' \
+            --signing-identity "$BAXTER_CODESIGN_IDENTITY" \
+            --notarytool-profile "$BAXTER_NOTARYTOOL_PROFILE"
       - name: Upload RC app artifact
         uses: actions/upload-artifact@v7
         with:
