@@ -47,7 +47,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Package BaxterApp release artifact
-        run: ./scripts/package-macos-app.sh --output-dir "dist/${GITHUB_REF_NAME}" --version "${GITHUB_REF_NAME}"
+        run: |
+          ./scripts/run-in-gui-session.sh \
+            ./scripts/package-macos-app.sh \
+            --output-dir "dist/${GITHUB_REF_NAME}" \
+            --version "${GITHUB_REF_NAME}" \
+            --signing-identity "$BAXTER_CODESIGN_IDENTITY" \
+            --notarytool-profile "$BAXTER_NOTARYTOOL_PROFILE"
       - name: Upload macOS app release artifact
         uses: actions/upload-artifact@v7
         with:
