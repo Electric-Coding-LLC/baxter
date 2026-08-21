@@ -2,11 +2,13 @@ import Foundation
 
 enum BaxterRuntime {
     #if DEBUG
+    static let applicationName = "Baxter Dev"
     static let defaultStateDirectoryName = "baxter-dev"
     static let defaultDaemonLabel = "com.electriccoding.baxterd.dev"
     static let defaultIPCAddress = "127.0.0.1:43129"
     static let defaultLogStem = "baxterd-dev"
     #else
+    static let applicationName = "Baxter"
     static let defaultStateDirectoryName = "baxter"
     static let defaultDaemonLabel = "com.electriccoding.baxterd"
     static let defaultIPCAddress = "127.0.0.1:41820"

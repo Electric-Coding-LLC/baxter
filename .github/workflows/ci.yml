@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.13"
           cache: true
       - run: go mod download
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -115,6 +115,8 @@ jobs:
       RESULT_BUNDLE_PATH: ${{ github.workspace }}/.ci/TestResults/BaxterApp.xcresult
       BAXTER_CI_HOME_DIR: ${{ github.workspace }}/.ci/baxter-ci-home-${{ github.run_id }}-${{ github.run_attempt }}
       BAXTER_CI_LAUNCHD_LABEL: com.electriccoding.baxterd.ci.${{ github.run_id }}.${{ github.run_attempt }}
+      BAXTER_CI_BUNDLE_IDENTIFIER: com.electriccoding.BaxterApp.ci.run${{ github.run_id }}.attempt${{ github.run_attempt }}
+      BAXTER_CI_PRODUCT_NAME: BaxterCI${{ github.run_id }}Attempt${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v5
       - name: Restore Xcode DerivedData cache
@@ -127,7 +129,8 @@ jobs:
       - name: Run macOS app tests
         run: |
           mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
-          xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" test
+          pkill -9 -f "$DERIVED_DATA_PATH/Build/Products/Debug/$BAXTER_CI_PRODUCT_NAME.app/Contents/MacOS/$BAXTER_CI_PRODUCT_NAME" >/dev/null 2>&1 || true
+          ./scripts/run-in-gui-session.sh /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" BAXTER_APP_PRODUCT_NAME="$BAXTER_CI_PRODUCT_NAME" PRODUCT_BUNDLE_IDENTIFIER="$BAXTER_CI_BUNDLE_IDENTIFIER" test
       - name: Run launchd IPC smoke check
         env:
           BAXTER_IPC_TOKEN: ci-smoke-current-token,ci-smoke-next-token
@@ -171,6 +174,7 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
+          pkill -9 -f "$DERIVED_DATA_PATH/Build/Products/Debug/$BAXTER_CI_PRODUCT_NAME.app/Contents/MacOS/$BAXTER_CI_PRODUCT_NAME" >/dev/null 2>&1 || true
           chmod -R u+w "$BAXTER_CI_HOME_DIR" >/dev/null 2>&1 || true
           rm -rf "$BAXTER_CI_HOME_DIR"
       - name: Upload macOS test result bundle (on failure)
@@ -210,7 +214,8 @@ jobs:
           mkdir -p "$PACKAGED_APP_DIR" "$PACKAGED_APP_SMOKE_DIR"
           ./scripts/package-macos-app.sh \
             --output-dir "$PACKAGED_APP_DIR" \
-            --derived-data-path "$DERIVED_DATA_PATH"
+            --derived-data-path "$DERIVED_DATA_PATH" \
+            --version v0.0.0
       - name: Run packaged app smoke check
         run: |
           set -euo pipefail
@@ -236,7 +241,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.13"
           cache: true
       - run: go mod download
       - name: Build before/after CLI binaries

@@ -7,19 +7,21 @@ struct BaxterApp: App {
     @StateObject private var model = BackupStatusModel(notificationDispatcher: UNUserNotificationDispatcher())
     @StateObject private var settingsModel = BaxterSettingsModel()
     @StateObject private var workspaceRouter = BaxterWorkspaceRouter()
+    @StateObject private var workspaceWindowCoordinator = BaxterWorkspaceWindowCoordinator()
 
     var body: some Scene {
-        MenuBarExtra("Baxter", systemImage: iconName) {
+        MenuBarExtra(BaxterRuntime.applicationName, systemImage: iconName) {
             BaxterMenuContentView(model: model, openWorkspace: openWorkspace)
                 .frame(width: 340)
         }
         .menuBarExtraStyle(.window)
 
-        Window("Baxter", id: "workspace") {
+        Window(BaxterRuntime.applicationName, id: "workspace") {
             BaxterWorkspaceView(
                 statusModel: model,
                 settingsModel: settingsModel,
-                router: workspaceRouter
+                router: workspaceRouter,
+                windowCoordinator: workspaceWindowCoordinator
             )
         }
     }
@@ -31,17 +33,14 @@ struct BaxterApp: App {
     private func openWorkspace(section: BaxterWorkspaceSection) {
         workspaceRouter.selectedSection = section
         closeMenuBarPanel()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            openWindow(id: "workspace")
-            NSApplication.shared.activate(ignoringOtherApps: true)
-        }
+        openWindow(id: "workspace")
+        workspaceWindowCoordinator.requestPresentation()
     }
 
     private func closeMenuBarPanel() {
         if let keyWindow = NSApplication.shared.keyWindow, isMenuBarPanelWindow(keyWindow) {
             keyWindow.orderOut(nil)
         }
-        _ = NSApplication.shared.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
     }
 
     private func isMenuBarPanelWindow(_ window: NSWindow) -> Bool {

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/package-macos-app.sh --output-dir /path/to/dist [options]
+Usage: ./scripts/package-macos-app.sh --output-dir /path/to/dist --version vX.Y.Z [options]
 
 Builds Baxter.app in Release configuration, embeds baxter helper binaries,
 codesigns the app bundle, and packages it as a zip artifact.
@@ -11,6 +11,7 @@ codesigns the app bundle, and packages it as a zip artifact.
 Options:
   --artifact-name NAME            Zip file name (default: Baxter-darwin-arm64.zip)
   --derived-data-path PATH        Reuse an existing Xcode DerivedData path
+  --version VERSION               Release version (vX.Y.Z or vX.Y.Z-rcN)
   --signing-identity NAME         Required Developer ID Application identity for codesign
   --notarytool-profile PROFILE    Keychain profile name for xcrun notarytool
 
@@ -22,6 +23,7 @@ EOF
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_DIR=""
+VERSION=""
 ARTIFACT_NAME="Baxter-darwin-arm64.zip"
 DERIVED_DATA_PATH=""
 SIGNING_IDENTITY="${BAXTER_CODESIGN_IDENTITY:-}"
@@ -39,6 +41,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --derived-data-path)
       DERIVED_DATA_PATH="${2:-}"
+      shift 2
+      ;;
+    --version)
+      VERSION="${2:-}"
       shift 2
       ;;
     --signing-identity)
@@ -61,8 +67,16 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-if [ -z "$OUTPUT_DIR" ]; then
+if [ -z "$OUTPUT_DIR" ] || [ -z "$VERSION" ]; then
   usage
+  exit 1
+fi
+
+if [[ "$VERSION" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)(-rc[0-9]+)?$ ]]; then
+  MARKETING_VERSION="${BASH_REMATCH[1]}"
+else
+  echo "Invalid release version: $VERSION" >&2
+  echo "Expected vX.Y.Z or vX.Y.Z-rcN." >&2
   exit 1
 fi
 
@@ -113,6 +127,7 @@ xcodebuild \
   -configuration Release \
   -destination 'platform=macOS' \
   -derivedDataPath "$DERIVED_DATA_PATH" \
+  MARKETING_VERSION="$MARKETING_VERSION" \
   build
 popd >/dev/null
 

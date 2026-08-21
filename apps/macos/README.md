@@ -23,7 +23,9 @@ Menu bar UI for Baxter. Target: macOS Tahoe 26.2+.
 - If IPC token auth is enabled, set `BAXTER_IPC_TOKEN` before running the smoke check.
 - The app includes a workspace window with dedicated `Restore`, `Settings`, and `Diagnostics` sections.
 - Menu actions (`Restore...`, `Settings...`, `Diagnostics...`) deep-link into the matching workspace section.
-- The Settings section edits `~/Library/Application Support/baxter/config.toml` and includes a first-run setup card with backup root selection, schedule, storage mode validation, and a `Run First Backup Now` entry point.
+- Release builds appear as `Baxter` and edit `~/Library/Application Support/baxter/config.toml`.
+- Debug builds appear as `Baxter Dev`, use bundle identifier `com.electriccoding.BaxterApp.dev`, and edit `~/Library/Application Support/baxter-dev/config.toml` so macOS cannot confuse them with the installed production app.
+- The Settings section includes a first-run setup card with backup root selection, schedule, storage mode validation, and a `Run First Backup Now` entry point.
 
 ## Next Steps
 - Open the project in Xcode:

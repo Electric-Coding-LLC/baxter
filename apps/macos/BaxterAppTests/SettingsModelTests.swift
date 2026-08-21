@@ -80,11 +80,13 @@ final class SettingsModelTests: XCTestCase {
 
     func testDebugRuntimeUsesDedicatedStateAndIPC() {
         #if DEBUG
+        XCTAssertEqual(BaxterRuntime.applicationName, "Baxter Dev")
         XCTAssertTrue(BaxterRuntime.appSupportURL.path.hasSuffix("/Library/Application Support/baxter-dev"))
         XCTAssertTrue(BaxterRuntime.configURL.path.hasSuffix("/Library/Application Support/baxter-dev/config.toml"))
         XCTAssertEqual(BaxterRuntime.daemonLabel, "com.electriccoding.baxterd.dev")
         XCTAssertEqual(BaxterRuntime.ipcAddress, "127.0.0.1:43129")
         #else
+        XCTAssertEqual(BaxterRuntime.applicationName, "Baxter")
         XCTAssertTrue(BaxterRuntime.appSupportURL.path.hasSuffix("/Library/Application Support/baxter"))
         XCTAssertTrue(BaxterRuntime.configURL.path.hasSuffix("/Library/Application Support/baxter/config.toml"))
         XCTAssertEqual(BaxterRuntime.daemonLabel, "com.electriccoding.baxterd")

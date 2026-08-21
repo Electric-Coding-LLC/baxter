@@ -19,6 +19,7 @@ This playbook defines the supported distribution path for Baxter CLI + daemon + 
 Notes:
 - `Baxter-darwin-arm64.zip` is a signed app artifact. The packaged app path is only supported when the release machine has a `Developer ID Application` certificate configured.
 - `scripts/package-macos-app.sh` requires `BAXTER_CODESIGN_IDENTITY` or `--signing-identity`, and optionally reads `BAXTER_NOTARYTOOL_PROFILE` or `--notarytool-profile` for notarization.
+- `scripts/package-macos-app.sh` also requires `--version`; tag and RC workflows pass their release version so the app bundle version matches the artifact version.
 - Store notarization credentials once on the release machine with `xcrun notarytool store-credentials <profile-name>`.
 - CLI + daemon artifacts remain available for manual installs, RC validation, and rollback workflows.
 - If you use a named AWS profile, set `aws_profile = "your-profile"` in `~/Library/Application Support/baxter/config.toml`. The app and launchd installer now propagate that saved profile name into the daemon install path, so Finder launches do not need shell-only `AWS_PROFILE` exports.
