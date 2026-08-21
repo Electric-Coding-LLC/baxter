@@ -50,6 +50,9 @@ jobs:
   build-rc-macos-app:
     runs-on: [self-hosted, macOS, ARM64, baxter-macos26]
     timeout-minutes: 45
+    env:
+      BAXTER_CODESIGN_IDENTITY: "Developer ID Application: Electric Coding LLC (NFP7P6ZYW3)"
+      BAXTER_NOTARYTOOL_PROFILE: baxter-notary
     steps:
       - uses: actions/checkout@v5
       - name: Package BaxterApp RC artifact
