@@ -116,6 +116,7 @@ jobs:
       BAXTER_CI_HOME_DIR: ${{ github.workspace }}/.ci/baxter-ci-home-${{ github.run_id }}-${{ github.run_attempt }}
       BAXTER_CI_LAUNCHD_LABEL: com.electriccoding.baxterd.ci.${{ github.run_id }}.${{ github.run_attempt }}
       BAXTER_CI_BUNDLE_IDENTIFIER: com.electriccoding.BaxterApp.ci.run${{ github.run_id }}.attempt${{ github.run_attempt }}
+      BAXTER_CI_PRODUCT_NAME: BaxterCI${{ github.run_id }}Attempt${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v5
       - name: Restore Xcode DerivedData cache
@@ -128,8 +129,8 @@ jobs:
       - name: Run macOS app tests
         run: |
           mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
-          pkill -9 -f "$DERIVED_DATA_PATH/Build/Products/Debug/Baxter.app/Contents/MacOS/Baxter" >/dev/null 2>&1 || true
-          xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" PRODUCT_BUNDLE_IDENTIFIER="$BAXTER_CI_BUNDLE_IDENTIFIER" test
+          pkill -9 -f "$DERIVED_DATA_PATH/Build/Products/Debug/$BAXTER_CI_PRODUCT_NAME.app/Contents/MacOS/$BAXTER_CI_PRODUCT_NAME" >/dev/null 2>&1 || true
+          xcodebuild -project apps/macos/BaxterApp.xcodeproj -scheme BaxterApp -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" -resultBundlePath "$RESULT_BUNDLE_PATH" BAXTER_APP_PRODUCT_NAME="$BAXTER_CI_PRODUCT_NAME" PRODUCT_BUNDLE_IDENTIFIER="$BAXTER_CI_BUNDLE_IDENTIFIER" test
       - name: Run launchd IPC smoke check
         env:
           BAXTER_IPC_TOKEN: ci-smoke-current-token,ci-smoke-next-token
@@ -173,7 +174,7 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          pkill -9 -f "$DERIVED_DATA_PATH/Build/Products/Debug/Baxter.app/Contents/MacOS/Baxter" >/dev/null 2>&1 || true
+          pkill -9 -f "$DERIVED_DATA_PATH/Build/Products/Debug/$BAXTER_CI_PRODUCT_NAME.app/Contents/MacOS/$BAXTER_CI_PRODUCT_NAME" >/dev/null 2>&1 || true
           chmod -R u+w "$BAXTER_CI_HOME_DIR" >/dev/null 2>&1 || true
           rm -rf "$BAXTER_CI_HOME_DIR"
       - name: Upload macOS test result bundle (on failure)

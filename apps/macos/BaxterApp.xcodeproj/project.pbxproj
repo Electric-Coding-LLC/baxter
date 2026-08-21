@@ -385,6 +385,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				BAXTER_APP_PRODUCT_NAME = "Baxter Dev";
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "-";
@@ -404,7 +405,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.2;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.electriccoding.BaxterApp.dev;
-				PRODUCT_NAME = Baxter;
+				PRODUCT_NAME = "$(BAXTER_APP_PRODUCT_NAME)";
 				PRODUCT_MODULE_NAME = BaxterApp;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
@@ -444,6 +445,7 @@
 		A00000000000000000000054 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BAXTER_APP_PRODUCT_NAME = "Baxter Dev";
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
@@ -455,7 +457,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Baxter.app/Contents/MacOS/Baxter";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/$(BAXTER_APP_PRODUCT_NAME).app/Contents/MacOS/$(BAXTER_APP_PRODUCT_NAME)";
 			};
 			name = Debug;
 		};
