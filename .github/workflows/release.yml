@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25.8"
+          go-version: "1.25.13"
           cache: true
       - run: go mod download
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Package BaxterApp release artifact
-        run: ./scripts/package-macos-app.sh --output-dir "dist/${GITHUB_REF_NAME}"
+        run: ./scripts/package-macos-app.sh --output-dir "dist/${GITHUB_REF_NAME}" --version "${GITHUB_REF_NAME}"
       - name: Upload macOS app release artifact
         uses: actions/upload-artifact@v7
         with:

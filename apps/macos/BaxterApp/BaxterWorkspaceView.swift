@@ -52,6 +52,7 @@ struct BaxterWorkspaceView: View {
     @ObservedObject var statusModel: BackupStatusModel
     @ObservedObject var settingsModel: BaxterSettingsModel
     @ObservedObject var router: BaxterWorkspaceRouter
+    @ObservedObject var windowCoordinator: BaxterWorkspaceWindowCoordinator
 
     var body: some View {
         NavigationSplitView {
@@ -123,95 +124,13 @@ struct BaxterWorkspaceView: View {
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 1400, minHeight: 760)
         .background {
-            WorkspaceWindowTitleSync(title: router.selectedSection.title, trailingTitle: "Baxter")
+            WorkspaceWindowTitleSync(
+                title: router.selectedSection.title,
+                trailingTitle: BaxterRuntime.applicationName,
+                windowCoordinator: windowCoordinator
+            )
                 .frame(width: 0, height: 0)
         }
-    }
-}
-
-private struct WorkspaceWindowTitleSync: NSViewRepresentable {
-    let title: String
-    let trailingTitle: String
-
-    final class Coordinator {
-        weak var window: NSWindow?
-        weak var trailingLabel: NSTextField?
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async {
-            guard let window = view.window else {
-                return
-            }
-            synchronizeWindow(window, coordinator: context.coordinator)
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let window = nsView.window else {
-                return
-            }
-            synchronizeWindow(window, coordinator: context.coordinator)
-        }
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.trailingLabel?.removeFromSuperview()
-    }
-
-    private func synchronizeWindow(_ window: NSWindow, coordinator: Coordinator) {
-        removeRightTitlebarAccessories(from: window)
-        window.title = title
-        installOrUpdateTrailingLabel(on: window, coordinator: coordinator)
-    }
-
-    private func removeRightTitlebarAccessories(from window: NSWindow) {
-        let indexedAccessories = Array(window.titlebarAccessoryViewControllers.enumerated())
-        for (index, accessory) in indexedAccessories.reversed() where accessory.layoutAttribute == .right {
-            window.removeTitlebarAccessoryViewController(at: index)
-        }
-    }
-
-    private func installOrUpdateTrailingLabel(on window: NSWindow, coordinator: Coordinator) {
-        guard let titlebarView = window.standardWindowButton(.closeButton)?.superview else {
-            return
-        }
-
-        let label: NSTextField
-        if let existing = coordinator.trailingLabel, existing.superview === titlebarView {
-            label = existing
-        } else {
-            let created = NSTextField(labelWithString: trailingTitle)
-            created.identifier = NSUserInterfaceItemIdentifier("baxter.trailing.title.label")
-            created.font = NSFont.systemFont(
-                ofSize: NSFont.titleBarFont(ofSize: NSFont.systemFontSize).pointSize,
-                weight: .semibold
-            )
-            created.textColor = .labelColor
-            created.alignment = .right
-            created.lineBreakMode = .byTruncatingTail
-            created.translatesAutoresizingMaskIntoConstraints = false
-
-            titlebarView.addSubview(created)
-            NSLayoutConstraint.activate([
-                created.trailingAnchor.constraint(equalTo: titlebarView.trailingAnchor, constant: -24),
-                created.centerYAnchor.constraint(equalTo: titlebarView.centerYAnchor)
-            ])
-
-            coordinator.trailingLabel = created
-            coordinator.window = window
-            label = created
-        }
-
-        label.stringValue = trailingTitle
-        label.sizeToFit()
     }
 }
 
