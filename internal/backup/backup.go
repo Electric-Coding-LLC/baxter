@@ -88,7 +88,15 @@ func BuildManifest(roots []string) (*Manifest, error) {
 }
 
 func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, error) {
+	m, _, err := ScanManifest(roots, opts)
+	return m, err
+}
+
+// ScanManifest builds a manifest of the roots and returns the paths it could
+// not read. Only a failure on a configured root itself fails the scan.
+func ScanManifest(roots []string, opts BuildOptions) (*Manifest, []SkippedFile, error) {
 	entries := make([]ManifestEntry, 0)
+	skipped := make([]SkippedFile, 0)
 	matcher := newExclusionMatcher(opts)
 
 	for _, root := range roots {
@@ -96,13 +104,21 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 		if matcher.isExcluded(cleanRoot) {
 			continue
 		}
+		scanFailure := func(path string, err error) error {
+			cleanPath := filepath.Clean(path)
+			if shouldIgnoreScanError(cleanRoot, cleanPath, err) {
+				return nil
+			}
+			if cleanPath == cleanRoot {
+				return err
+			}
+			skipped = append(skipped, SkippedFile{Path: cleanPath, Reason: skipReason(err)})
+			return nil
+		}
 
 		walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				if shouldIgnoreScanError(cleanRoot, path, err) {
-					return nil
-				}
-				return err
+				return scanFailure(path, err)
 			}
 			cleanPath := filepath.Clean(path)
 			if matcher.isExcluded(cleanPath) {
@@ -120,10 +136,7 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 
 			info, err := d.Info()
 			if err != nil {
-				if shouldIgnoreScanError(cleanRoot, cleanPath, err) {
-					return nil
-				}
-				return err
+				return scanFailure(cleanPath, err)
 			}
 			if !info.Mode().IsRegular() {
 				// Skip non-regular entries (for example symlinked framework dirs).
@@ -136,10 +149,7 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 
 			hash, err := fileSHA256(path)
 			if err != nil {
-				if shouldIgnoreScanError(cleanRoot, cleanPath, err) {
-					return nil
-				}
-				return err
+				return scanFailure(cleanPath, err)
 			}
 
 			entries = append(entries, ManifestEntry{
@@ -152,18 +162,18 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 			return nil
 		})
 		if walkErr != nil {
-			return nil, walkErr
+			return nil, nil, walkErr
 		}
 	}
 
 	if err := validateManifestRoots(roots, opts); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Path < entries[j].Path
 	})
 
-	return &Manifest{CreatedAt: time.Now().UTC(), Entries: entries}, nil
+	return &Manifest{CreatedAt: time.Now().UTC(), Entries: entries}, sortedSkippedFiles(skipped), nil
 }
 
 func shouldIgnoreScanError(root, path string, err error) bool {

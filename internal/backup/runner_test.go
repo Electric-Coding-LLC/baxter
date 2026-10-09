@@ -593,11 +593,10 @@ func TestRunStoresVersionedCompressedPayload(t *testing.T) {
 	}
 }
 
-func TestReadEntryContentRejectsChangedFile(t *testing.T) {
+func TestReadEntryContentDescribesChangedFile(t *testing.T) {
 	root := t.TempDir()
 	filePath := filepath.Join(root, "doc.txt")
-	original := []byte("original")
-	if err := os.WriteFile(filePath, original, 0o600); err != nil {
+	if err := os.WriteFile(filePath, []byte("original"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -609,20 +608,33 @@ func TestReadEntryContentRejectsChangedFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find manifest entry: %v", err)
 	}
+	if _, actual, err := readEntryContent(entry); err != nil || actual != entry {
+		t.Fatalf("unchanged file must match its entry: %+v, %v", actual, err)
+	}
 
-	if err := os.WriteFile(filePath, []byte("updated"), 0o600); err != nil {
+	if err := os.WriteFile(filePath, []byte("updated!"), 0o600); err != nil {
 		t.Fatalf("update file: %v", err)
 	}
 
-	if _, err := readEntryContent(entry); err == nil {
-		t.Fatal("expected changed file to be rejected")
+	plain, actual, err := readEntryContent(entry)
+	if err != nil {
+		t.Fatalf("read changed file: %v", err)
+	}
+	if string(plain) != "updated!" || actual.SHA256 == entry.SHA256 {
+		t.Fatalf("changed file must describe what was read: %q %+v", plain, actual)
+	}
+	if err := VerifyEntryContent(actual, plain); err != nil {
+		t.Fatalf("changed entry must match its content: %v", err)
+	}
+	if actual.ObjectKey != ObjectKeyForContentSHA256(actual.SHA256) {
+		t.Fatalf("changed entry must be content addressed: %q", actual.ObjectKey)
 	}
 }
 
 func TestUploadChangedEntriesSkipsCloudPlaceholderEntries(t *testing.T) {
 	store := storage.NewLocalClient(filepath.Join(t.TempDir(), "objects"))
 
-	_, _, err := uploadChangedEntries([]ManifestEntry{{
+	_, err := uploadChangedEntries([]ManifestEntry{{
 		Path:       "/Users/me/Documents/cloud.pdf",
 		SourceKind: manifestSourceKindCloudPlaceholder,
 	}}, RunOptions{
