@@ -2,7 +2,7 @@ module baxter
 
 go 1.24.0
 
-toolchain go1.25.13
+toolchain go1.26.9
 
 require (
 	github.com/BurntSushi/toml v1.3.2

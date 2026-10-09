@@ -2,6 +2,7 @@ package state
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -59,5 +60,35 @@ func TestDaemonStatusPathUsesAppDir(t *testing.T) {
 	want := filepath.Join("/tmp/baxter-app-dir", "daemon_status.json")
 	if got != want {
 		t.Fatalf("DaemonStatusPath() = %q, want %q", got, want)
+	}
+}
+
+func TestAppDirRefusesNonTemporaryDefaultUnderTest(t *testing.T) {
+	t.Setenv("BAXTER_APP_SUPPORT_DIR", "")
+	t.Setenv("BAXTER_HOME_DIR", "")
+	t.Setenv("HOME", "/Users/someone")
+	t.Setenv("XDG_CONFIG_HOME", "/Users/someone/.config")
+
+	if got, err := AppDir(); err == nil {
+		t.Fatalf("AppDir() = %q, want refusal outside a temporary directory", got)
+	}
+	if _, err := ManifestPath(); err == nil {
+		t.Fatal("ManifestPath() must fail when the app directory is refused")
+	}
+}
+
+func TestAppDirAllowsTemporaryHomeUnderTest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("BAXTER_APP_SUPPORT_DIR", "")
+	t.Setenv("BAXTER_HOME_DIR", "")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+
+	got, err := AppDir()
+	if err != nil {
+		t.Fatalf("AppDir() error = %v", err)
+	}
+	if !strings.HasPrefix(got, home) {
+		t.Fatalf("AppDir() = %q, want it under %q", got, home)
 	}
 }
