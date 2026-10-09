@@ -129,6 +129,9 @@ struct DaemonStatus: Decodable {
     let lastVerifyReadErrors: Int?
     let lastVerifyDecryptErrors: Int?
     let lastVerifyChecksumErrors: Int?
+    let backupOverdue: Bool?
+    let daysSinceLastBackup: Int?
+    let lastBackupSkippedCount: Int?
 
     enum CodingKeys: String, CodingKey {
         case state
@@ -151,6 +154,9 @@ struct DaemonStatus: Decodable {
         case lastVerifyReadErrors = "last_verify_read_errors"
         case lastVerifyDecryptErrors = "last_verify_decrypt_errors"
         case lastVerifyChecksumErrors = "last_verify_checksum_errors"
+        case backupOverdue = "backup_overdue"
+        case daysSinceLastBackup = "days_since_last_backup"
+        case lastBackupSkippedCount = "last_backup_skipped_count"
     }
 }
 

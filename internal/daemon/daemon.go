@@ -26,6 +26,9 @@ type Daemon struct {
 	configLoader          func(string) (*config.Config, error)
 	clockNow              func() time.Time
 	timerAfter            func(time.Duration) <-chan time.Time
+	alertTick             func(time.Duration) <-chan time.Time
+	notifier              func(title string, body string)
+	lastStatusPollAt      time.Time
 	backupRunner          func(context.Context, *config.Config) error
 	scheduleChanged       chan struct{}
 	verifyScheduleChanged chan struct{}
@@ -47,6 +50,8 @@ func New(cfg *config.Config) *Daemon {
 		configLoader:          config.Load,
 		clockNow:              time.Now,
 		timerAfter:            time.After,
+		alertTick:             time.After,
+		notifier:              defaultNotifier,
 		scheduleChanged:       make(chan struct{}, 1),
 		verifyScheduleChanged: make(chan struct{}, 1),
 		ipcAddr:               DefaultIPCAddress,
@@ -99,6 +104,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	go d.runScheduler(ctx)
 	go d.runVerifyScheduler(ctx)
+	go d.runAlertMonitor(ctx)
 
 	err := srv.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {

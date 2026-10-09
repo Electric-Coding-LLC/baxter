@@ -76,6 +76,9 @@ extension BackupStatusModel {
         lastVerifyDecryptErrors = status.lastVerifyDecryptErrors ?? 0
         lastVerifyChecksumErrors = status.lastVerifyChecksumErrors ?? 0
         lastError = status.lastError
+        backupOverdue = status.backupOverdue ?? false
+        daysSinceLastBackup = status.daysSinceLastBackup ?? 0
+        lastBackupSkippedCount = status.lastBackupSkippedCount ?? 0
 
         dispatchStatusTransitionNotifications(
             previousState: previousState,
