@@ -8,6 +8,10 @@ Usage: ./scripts/packaged-app-smoke.sh --zip /path/to/Baxter-darwin-arm64.zip [-
 Validates the packaged Baxter.app install path by unpacking the signed app,
 launching it with a temporarily cleaned Baxter home for the current user, and
 verifying bundled-helper bootstrap.
+
+The smoke replaces /Applications/Baxter.app, the Baxter app support directory,
+and the launchd service of the current user while it runs. It skips when a live
+install is present unless BAXTER_PACKAGED_SMOKE_ALLOW_LIVE_INSTALL=1 is set.
 EOF
 }
 
@@ -114,6 +118,23 @@ backup_existing_path() {
   if [ -e "$source_path" ]; then
     mkdir -p "$(dirname "$backup_path")"
     mv "$source_path" "$backup_path"
+  else
+    # Marks a path this smoke may create and later delete.
+    : >"$backup_path.absent"
+  fi
+}
+
+# Puts back what backup_existing_path moved aside. A path that existed but
+# could not be moved aside has neither a backup nor a marker and is left alone.
+restore_backed_up_path() {
+  local source_path="$1"
+  local backup_path="$2"
+  if [ -e "$backup_path" ]; then
+    rm -rf "$source_path"
+    mkdir -p "$(dirname "$source_path")"
+    mv "$backup_path" "$source_path"
+  elif [ -e "$backup_path.absent" ]; then
+    rm -rf "$source_path"
   fi
 }
 
@@ -154,6 +175,13 @@ wait_for_installed_helper() {
 }
 
 cleanup() {
+  # Nothing below may run unless this script replaced the install itself.
+  if [ "${install_swapped:-0}" != "1" ]; then
+    if [ -z "${KEEP_RUN_ROOT:-}" ]; then
+      rm -rf "$RUN_ROOT"
+    fi
+    return
+  fi
   launchctl bootout "$SERVICE_TARGET" >/dev/null 2>&1 || true
   if [ -n "${app_pid:-}" ]; then
     kill "$app_pid" >/dev/null 2>&1 || true
@@ -165,29 +193,11 @@ cleanup() {
   if [ -f "$DAEMON_ERR_LOG" ]; then
     cp -f "$DAEMON_ERR_LOG" "$RUNTIME_DAEMON_ERR_LOG" >/dev/null 2>&1 || true
   fi
-  rm -rf "$APP_SUPPORT_DIR"
-  rm -f "$LEGACY_LAUNCH_AGENT_PATH"
-  rm -f "$DAEMON_OUT_LOG" "$DAEMON_ERR_LOG"
-  rm -rf "$INSTALLED_APP_PATH"
-  if [ -e "$APP_SUPPORT_BACKUP" ]; then
-    mkdir -p "$APP_SUPPORT_PARENT_DIR"
-    mv "$APP_SUPPORT_BACKUP" "$APP_SUPPORT_DIR"
-  fi
-  if [ -e "$LEGACY_LAUNCH_AGENT_BACKUP" ]; then
-    mkdir -p "$LAUNCH_AGENTS_DIR"
-    mv "$LEGACY_LAUNCH_AGENT_BACKUP" "$LEGACY_LAUNCH_AGENT_PATH"
-  fi
-  if [ -e "$DAEMON_OUT_LOG_BACKUP" ]; then
-    mkdir -p "$LOG_DIR"
-    mv "$DAEMON_OUT_LOG_BACKUP" "$DAEMON_OUT_LOG"
-  fi
-  if [ -e "$DAEMON_ERR_LOG_BACKUP" ]; then
-    mkdir -p "$LOG_DIR"
-    mv "$DAEMON_ERR_LOG_BACKUP" "$DAEMON_ERR_LOG"
-  fi
-  if [ -e "$INSTALLED_APP_BACKUP" ]; then
-    mv "$INSTALLED_APP_BACKUP" "$INSTALLED_APP_PATH"
-  fi
+  restore_backed_up_path "$APP_SUPPORT_DIR" "$APP_SUPPORT_BACKUP"
+  restore_backed_up_path "$LEGACY_LAUNCH_AGENT_PATH" "$LEGACY_LAUNCH_AGENT_BACKUP"
+  restore_backed_up_path "$DAEMON_OUT_LOG" "$DAEMON_OUT_LOG_BACKUP"
+  restore_backed_up_path "$DAEMON_ERR_LOG" "$DAEMON_ERR_LOG_BACKUP"
+  restore_backed_up_path "$INSTALLED_APP_PATH" "$INSTALLED_APP_BACKUP"
   if [ "${service_was_running:-0}" = "1" ]; then
     launchctl kickstart -k "$SERVICE_TARGET" >/dev/null 2>&1 || true
   fi
@@ -203,11 +213,38 @@ if ! launchctl print "gui/$(id -u)" >"$LAUNCHCTL_DOMAIN_LOG" 2>&1; then
 fi
 
 service_was_running=0
+service_registered=0
 SERVICE_BEFORE_LOG="$RUN_ROOT/service-before.log"
-if launchctl print "$SERVICE_TARGET" >"$SERVICE_BEFORE_LOG" 2>&1 && \
-  grep -q 'state = running' "$SERVICE_BEFORE_LOG"; then
-  service_was_running=1
+if launchctl print "$SERVICE_TARGET" >"$SERVICE_BEFORE_LOG" 2>&1; then
+  service_registered=1
+  if grep -q 'state = running' "$SERVICE_BEFORE_LOG"; then
+    service_was_running=1
+  fi
 fi
+
+# This smoke replaces /Applications/Baxter.app, the app support directory, and
+# the launchd service for the current user. Refuse to do that to a real install.
+if [ "${BAXTER_PACKAGED_SMOKE_ALLOW_LIVE_INSTALL:-0}" != "1" ]; then
+  live_install=""
+  if [ "$service_registered" = "1" ]; then
+    live_install="launchd service $SERVICE_LABEL"
+  fi
+  for live_path in "$INSTALLED_APP_PATH" "$APP_SUPPORT_DIR" "$LEGACY_LAUNCH_AGENT_PATH"; do
+    if [ -e "$live_path" ]; then
+      live_install="$live_path"
+    fi
+  done
+  if [ -n "$live_install" ]; then
+    echo "Skipping packaged app smoke: live Baxter install found ($live_install)."
+    echo "Set BAXTER_PACKAGED_SMOKE_ALLOW_LIVE_INSTALL=1 to replace it for the duration of the smoke."
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then
+      echo "::warning title=Packaged app smoke skipped::Live Baxter install found on this runner ($live_install); the packaged app path was not tested."
+    fi
+    exit 0
+  fi
+fi
+
+install_swapped=1
 backup_existing_path "$APP_SUPPORT_DIR" "$APP_SUPPORT_BACKUP"
 backup_existing_path "$LEGACY_LAUNCH_AGENT_PATH" "$LEGACY_LAUNCH_AGENT_BACKUP"
 backup_existing_path "$DAEMON_OUT_LOG" "$DAEMON_OUT_LOG_BACKUP"
