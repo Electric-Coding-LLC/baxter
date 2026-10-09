@@ -5,14 +5,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"baxter/internal/config"
-	"baxter/internal/crypto"
 	"baxter/internal/recovery"
 	"baxter/internal/storage"
 )
@@ -46,6 +42,7 @@ type RunResult struct {
 	Uploaded int
 	Removed  int
 	Total    int
+	Skipped  []SkippedFile
 }
 
 func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
@@ -79,40 +76,30 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 		return RunResult{}, fmt.Errorf("load manifest: %w", err)
 	}
 
-	current, err := BuildManifestWithOptions(cfg.BackupRoots, BuildOptions{
+	buildOpts := BuildOptions{
 		ExcludePaths: cfg.ExcludePaths,
 		ExcludeGlobs: cfg.ExcludeGlobs,
-	})
+	}
+	current, skipped, err := ScanManifest(cfg.BackupRoots, buildOpts)
 	if err != nil {
 		return RunResult{}, fmt.Errorf("build manifest: %w", err)
 	}
+	carryForwardSkipped(previous, current, skipped, buildOpts)
 	AssignObjectKeys(previous, current)
 
 	plan := PlanChanges(previous, current)
-	vanished, uploaded, err := uploadChangedEntries(entriesMissingStoredContent(previous, plan.NewOrChanged), opts)
+	outcome, err := uploadChangedEntries(entriesMissingStoredContent(previous, plan.NewOrChanged), opts)
 	if err != nil {
 		return RunResult{}, err
 	}
-	if err := validateManifestRoots(cfg.BackupRoots, BuildOptions{
-		ExcludePaths: cfg.ExcludePaths,
-		ExcludeGlobs: cfg.ExcludeGlobs,
-	}); err != nil {
+	if err := validateManifestRoots(cfg.BackupRoots, buildOpts); err != nil {
 		return RunResult{}, err
 	}
-	if len(vanished) > 0 {
-		missing := make(map[string]bool, len(vanished))
-		for _, path := range vanished {
-			missing[path] = true
-		}
-		kept := current.Entries[:0]
-		for _, entry := range current.Entries {
-			if !missing[entry.Path] {
-				kept = append(kept, entry)
-			}
-		}
-		current.Entries = kept
+	if outcome.changesManifest() {
+		outcome.applyTo(previous, current)
 		plan = PlanChanges(previous, current)
 	}
+	skipped = sortedSkippedFiles(append(skipped, outcome.skipped...))
 
 	snapshot, err := ReserveSnapshotManifest(opts.SnapshotDir, current)
 	if err != nil {
@@ -139,9 +126,10 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 	}
 
 	return RunResult{
-		Uploaded: uploaded,
+		Uploaded: outcome.stored,
 		Removed:  len(plan.RemovedPaths),
 		Total:    len(current.Entries),
+		Skipped:  skipped,
 	}, nil
 }
 
@@ -183,169 +171,6 @@ func entriesMissingStoredContent(previous *Manifest, entries []ManifestEntry) []
 		missing = append(missing, entry)
 	}
 	return missing
-}
-
-// uploadChangedEntries stores one object per distinct object key and returns
-// the paths that vanished before they could be read plus the object count stored.
-func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) ([]string, int, error) {
-	type uploadJob struct {
-		entries []ManifestEntry
-	}
-
-	uploadable := make([]uploadJob, 0, len(entries))
-	jobIndex := make(map[string]int, len(entries))
-	for _, entry := range entries {
-		if !entry.HasStoredContent() {
-			continue
-		}
-		if i, ok := jobIndex[entry.ObjectKey]; ok {
-			uploadable[i].entries = append(uploadable[i].entries, entry)
-			continue
-		}
-		jobIndex[entry.ObjectKey] = len(uploadable)
-		uploadable = append(uploadable, uploadJob{entries: []ManifestEntry{entry}})
-	}
-
-	total := len(uploadable)
-	if opts.Progress != nil {
-		opts.Progress(ProgressUpdate{Total: total})
-	}
-	if total == 0 {
-		return nil, 0, nil
-	}
-
-	jobs := make(chan uploadJob)
-	errCh := make(chan error, 1)
-	var uploaded atomic.Int32
-	var skipped atomic.Int32
-	var once sync.Once
-	var vanishedMu sync.Mutex
-	var vanished []string
-	workerCount := opts.effectiveUploadConcurrency()
-	if workerCount > total {
-		workerCount = total
-	}
-
-	var wg sync.WaitGroup
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for job := range jobs {
-				var entry ManifestEntry
-				var plain []byte
-				var missing []string
-				var readErr error
-				read := false
-				for _, entry = range job.entries {
-					plain, readErr = readEntryContent(entry)
-					if readErr == nil {
-						read = true
-						break
-					}
-					// A live source can be deleted between scanning and uploading.
-					// Return its path so no snapshot references content we did not store.
-					if !errors.Is(readErr, os.ErrNotExist) {
-						break
-					}
-					missing = append(missing, entry.Path)
-					readErr = nil
-				}
-				if readErr != nil {
-					once.Do(func() { errCh <- readErr })
-					return
-				}
-				if len(missing) > 0 {
-					vanishedMu.Lock()
-					vanished = append(vanished, missing...)
-					vanishedMu.Unlock()
-				}
-				if !read {
-					skipped.Add(1)
-					continue
-				}
-				encrypted, err := crypto.EncryptBytes(opts.EncryptionKey, plain)
-				if err != nil {
-					once.Do(func() { errCh <- fmt.Errorf("encrypt file %s: %w", entry.Path, err) })
-					return
-				}
-				if err := putObjectWithRetry(opts.Store, entry.ObjectKey, encrypted, opts.effectiveUploadMaxAttempts()); err != nil {
-					once.Do(func() { errCh <- fmt.Errorf("store object %s: %w", entry.Path, err) })
-					return
-				}
-				if opts.Progress != nil {
-					opts.Progress(ProgressUpdate{
-						Uploaded: int(uploaded.Add(1)),
-						Total:    total,
-						Path:     entry.Path,
-					})
-				}
-			}
-		}()
-	}
-
-	for _, job := range uploadable {
-		select {
-		case err := <-errCh:
-			close(jobs)
-			wg.Wait()
-			return nil, 0, err
-		case jobs <- job:
-		}
-	}
-	close(jobs)
-	wg.Wait()
-
-	select {
-	case err := <-errCh:
-		return nil, 0, err
-	default:
-	}
-
-	stored := total - int(skipped.Load())
-	if stored != total && opts.Progress != nil {
-		opts.Progress(ProgressUpdate{Uploaded: stored, Total: stored})
-	}
-	return vanished, stored, nil
-}
-
-func putObjectWithRetry(store storage.ObjectStore, key string, data []byte, maxAttempts int) error {
-	if maxAttempts <= 0 {
-		maxAttempts = 1
-	}
-
-	var lastErr error
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		if err := store.PutObject(key, data); err == nil {
-			return nil
-		} else {
-			lastErr = err
-		}
-	}
-	return lastErr
-}
-
-func readEntryContent(entry ManifestEntry) ([]byte, error) {
-	if err := cloudPlaceholderRestoreError(entry); err != nil {
-		return nil, err
-	}
-	if err := cloudPlaceholderErrorForPath(entry.Path); err != nil {
-		return nil, err
-	}
-	plain, err := os.ReadFile(entry.Path)
-	if err != nil {
-		if placeholderErr := cloudPlaceholderErrorForPath(entry.Path); placeholderErr != nil {
-			return nil, placeholderErr
-		}
-		return nil, fmt.Errorf("read file %s: %w", entry.Path, err)
-	}
-	if int64(len(plain)) != entry.Size {
-		return nil, fmt.Errorf("source file changed during backup: %s size mismatch", entry.Path)
-	}
-	if err := VerifyEntryContent(entry, plain); err != nil {
-		return nil, fmt.Errorf("source file changed during backup: %w", err)
-	}
-	return plain, nil
 }
 
 func writeRecoveryMetadata(opts RunOptions, latestSnapshotID string, now time.Time) error {

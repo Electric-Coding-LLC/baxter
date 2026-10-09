@@ -130,8 +130,8 @@ type missingPutStore struct{ storage.ObjectStore }
 
 func (s missingPutStore) PutObject(string, []byte) error { return os.ErrNotExist }
 
-func TestRunPreservesBackupOnSourceOrStorageFailure(t *testing.T) {
-	for _, failure := range []string{"root-deleted", "permission", "size-changed", "checksum-changed", "store-missing"} {
+func TestRunPreservesBackupOnRootOrStorageFailure(t *testing.T) {
+	for _, failure := range []string{"root-deleted", "store-missing"} {
 		t.Run(failure, func(t *testing.T) {
 			root := t.TempDir()
 			path := filepath.Join(root, "document.txt")
@@ -161,18 +161,10 @@ func TestRunPreservesBackupOnSourceOrStorageFailure(t *testing.T) {
 			var once sync.Once
 			opts.Progress = func(ProgressUpdate) {
 				once.Do(func() {
-					var err error
-					switch failure {
-					case "root-deleted":
-						err = os.RemoveAll(root)
-					case "permission":
-						err = os.Chmod(path, 0)
-					case "size-changed":
-						err = os.WriteFile(path, []byte("longer content"), 0o600)
-					case "checksum-changed":
-						err = os.WriteFile(path, []byte("replaced"), 0o600)
+					if failure != "root-deleted" {
+						return
 					}
-					if err != nil {
+					if err := os.RemoveAll(root); err != nil {
 						t.Error(err)
 					}
 				})
@@ -182,8 +174,6 @@ func TestRunPreservesBackupOnSourceOrStorageFailure(t *testing.T) {
 			}
 			if _, err := Run(cfg, opts); err == nil {
 				t.Fatal("expected backup failure")
-			} else if failure == "permission" && !errors.Is(err, fs.ErrPermission) {
-				t.Fatalf("expected permission failure: %v", err)
 			}
 			after, err := os.ReadFile(opts.ManifestPath)
 			if err != nil || !bytes.Equal(before, after) {

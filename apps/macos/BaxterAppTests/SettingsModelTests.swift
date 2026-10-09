@@ -900,6 +900,31 @@ final class BackupStatusModelRestoreTests: XCTestCase {
         XCTAssertTrue(notifications.notifications.contains(where: { $0.0 == "Baxter backup completed" }))
     }
 
+    func testRefreshStatusLoadsBackupHealthWarnings() async throws {
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)
+            )
+            let body =
+                "{\"state\":\"idle\",\"backup_overdue\":true,\"days_since_last_backup\":4,"
+                + "\"last_backup_skipped_count\":2}"
+            return (response, Data(body.utf8))
+        }
+
+        let model = BackupStatusModel(
+            baseURL: URL(string: "http://example.test")!,
+            urlSession: makeMockURLSession(),
+            queryLaunchdState: { .running },
+            autoStartPolling: false
+        )
+
+        model.refreshStatus()
+        await waitUntil("backup health refresh") { model.backupOverdue }
+
+        XCTAssertEqual(model.daysSinceLastBackup, 4)
+        XCTAssertEqual(model.lastBackupSkippedCount, 2)
+    }
+
     func testRefreshStatusLoadsBackupProgress() async throws {
         MockURLProtocol.requestHandler = { request in
             let response = try XCTUnwrap(

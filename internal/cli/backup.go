@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"baxter/internal/backup"
 	"baxter/internal/config"
@@ -51,7 +52,10 @@ func runBackup(cfg *config.Config) error {
 		return err
 	}
 
-	fmt.Printf("backup complete: uploaded=%d removed=%d total=%d\n", result.Uploaded, result.Removed, result.Total)
+	fmt.Printf("backup complete: uploaded=%d removed=%d total=%d skipped=%d\n", result.Uploaded, result.Removed, result.Total, len(result.Skipped))
+	for _, file := range result.Skipped {
+		fmt.Fprintf(os.Stderr, "skipped %s: %s\n", file.Path, file.Reason)
+	}
 	return nil
 }
 

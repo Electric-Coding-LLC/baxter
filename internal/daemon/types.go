@@ -1,24 +1,36 @@
 package daemon
 
-import "time"
+import (
+	"time"
+
+	"baxter/internal/backup"
+)
 
 const DefaultIPCAddress = "127.0.0.1:41820"
 const passphraseEnv = "BAXTER_PASSPHRASE"
 
 type daemonStatus struct {
-	State            string
-	LastBackupAt     time.Time
-	NextScheduledAt  time.Time
-	LastError        string
-	BackupProgress   backupProgressSummary
-	LastRestoreAt    time.Time
-	LastRestorePath  string
-	LastRestoreError string
-	VerifyState      string
-	LastVerifyAt     time.Time
-	NextVerifyAt     time.Time
-	LastVerifyError  string
-	LastVerifyResult verifyResultSummary
+	State           string
+	LastBackupAt    time.Time
+	NextScheduledAt time.Time
+	LastError       string
+	LastFailureAt   time.Time
+	// ConsecutiveFailures counts failed runs since the last successful backup.
+	ConsecutiveFailures int
+	// LastSkipped lists up to maxReportedSkippedFiles paths the last
+	// successful backup left out; LastSkippedCount is the full count.
+	LastSkippedCount   int
+	LastSkipped        []backup.SkippedFile
+	LastOverdueAlertAt time.Time
+	BackupProgress     backupProgressSummary
+	LastRestoreAt      time.Time
+	LastRestorePath    string
+	LastRestoreError   string
+	VerifyState        string
+	LastVerifyAt       time.Time
+	NextVerifyAt       time.Time
+	LastVerifyError    string
+	LastVerifyResult   verifyResultSummary
 }
 
 type verifyResultSummary struct {
@@ -37,26 +49,32 @@ type backupProgressSummary struct {
 }
 
 type statusResponse struct {
-	State                    string `json:"state"`
-	LastBackupAt             string `json:"last_backup_at,omitempty"`
-	NextScheduledAt          string `json:"next_scheduled_at,omitempty"`
-	LastError                string `json:"last_error,omitempty"`
-	BackupUploaded           int    `json:"backup_uploaded,omitempty"`
-	BackupTotal              int    `json:"backup_total,omitempty"`
-	BackupCurrentPath        string `json:"backup_current_path,omitempty"`
-	LastRestoreAt            string `json:"last_restore_at,omitempty"`
-	LastRestorePath          string `json:"last_restore_path,omitempty"`
-	LastRestoreError         string `json:"last_restore_error,omitempty"`
-	VerifyState              string `json:"verify_state"`
-	LastVerifyAt             string `json:"last_verify_at,omitempty"`
-	NextVerifyAt             string `json:"next_verify_at,omitempty"`
-	LastVerifyError          string `json:"last_verify_error,omitempty"`
-	LastVerifyChecked        int    `json:"last_verify_checked,omitempty"`
-	LastVerifyOK             int    `json:"last_verify_ok,omitempty"`
-	LastVerifyMissing        int    `json:"last_verify_missing,omitempty"`
-	LastVerifyReadErrors     int    `json:"last_verify_read_errors,omitempty"`
-	LastVerifyDecryptErrors  int    `json:"last_verify_decrypt_errors,omitempty"`
-	LastVerifyChecksumErrors int    `json:"last_verify_checksum_errors,omitempty"`
+	State                    string               `json:"state"`
+	LastBackupAt             string               `json:"last_backup_at,omitempty"`
+	NextScheduledAt          string               `json:"next_scheduled_at,omitempty"`
+	LastError                string               `json:"last_error,omitempty"`
+	LastFailureAt            string               `json:"last_failure_at,omitempty"`
+	ConsecutiveFailures      int                  `json:"consecutive_failures,omitempty"`
+	BackupOverdue            bool                 `json:"backup_overdue,omitempty"`
+	DaysSinceLastBackup      int                  `json:"days_since_last_backup,omitempty"`
+	LastBackupSkippedCount   int                  `json:"last_backup_skipped_count,omitempty"`
+	LastBackupSkipped        []backup.SkippedFile `json:"last_backup_skipped,omitempty"`
+	BackupUploaded           int                  `json:"backup_uploaded,omitempty"`
+	BackupTotal              int                  `json:"backup_total,omitempty"`
+	BackupCurrentPath        string               `json:"backup_current_path,omitempty"`
+	LastRestoreAt            string               `json:"last_restore_at,omitempty"`
+	LastRestorePath          string               `json:"last_restore_path,omitempty"`
+	LastRestoreError         string               `json:"last_restore_error,omitempty"`
+	VerifyState              string               `json:"verify_state"`
+	LastVerifyAt             string               `json:"last_verify_at,omitempty"`
+	NextVerifyAt             string               `json:"next_verify_at,omitempty"`
+	LastVerifyError          string               `json:"last_verify_error,omitempty"`
+	LastVerifyChecked        int                  `json:"last_verify_checked,omitempty"`
+	LastVerifyOK             int                  `json:"last_verify_ok,omitempty"`
+	LastVerifyMissing        int                  `json:"last_verify_missing,omitempty"`
+	LastVerifyReadErrors     int                  `json:"last_verify_read_errors,omitempty"`
+	LastVerifyDecryptErrors  int                  `json:"last_verify_decrypt_errors,omitempty"`
+	LastVerifyChecksumErrors int                  `json:"last_verify_checksum_errors,omitempty"`
 }
 
 type restoreListResponse struct {

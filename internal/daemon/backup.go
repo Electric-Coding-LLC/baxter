@@ -119,7 +119,15 @@ func (d *Daemon) performBackup(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("backup complete: uploaded=%d removed=%d total=%d\n", result.Uploaded, result.Removed, result.Total)
+	fmt.Printf("backup complete: uploaded=%d removed=%d total=%d skipped=%d\n", result.Uploaded, result.Removed, result.Total, len(result.Skipped))
+	for i, file := range result.Skipped {
+		if i == maxReportedSkippedFiles {
+			fmt.Printf("backup skipped %d more files\n", len(result.Skipped)-i)
+			break
+		}
+		fmt.Printf("backup skipped %s: %s\n", file.Path, file.Reason)
+	}
+	d.recordSkippedFiles(result.Skipped)
 	return nil
 }
 

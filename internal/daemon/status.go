@@ -14,9 +14,12 @@ func (d *Daemon) setFailed(err error) {
 	d.running = false
 	d.status.State = "failed"
 	d.status.LastError = err.Error()
+	d.status.LastFailureAt = d.now().UTC()
+	d.status.ConsecutiveFailures++
 	d.status.BackupProgress = backupProgressSummary{}
 	d.mu.Unlock()
 	d.persistStatus()
+	d.alertBackupFailed(err)
 }
 
 func (d *Daemon) setIdleSuccess() {
@@ -25,6 +28,7 @@ func (d *Daemon) setIdleSuccess() {
 	d.status.State = "idle"
 	d.status.LastBackupAt = d.now().UTC()
 	d.status.LastError = ""
+	d.status.ConsecutiveFailures = 0
 	d.status.BackupProgress = backupProgressSummary{}
 	d.mu.Unlock()
 	d.persistStatus()
@@ -172,6 +176,13 @@ func (d *Daemon) snapshot() statusResponse {
 	if !d.status.LastBackupAt.IsZero() {
 		resp.LastBackupAt = d.status.LastBackupAt.Format(time.RFC3339)
 	}
+	if !d.status.LastFailureAt.IsZero() {
+		resp.LastFailureAt = d.status.LastFailureAt.Format(time.RFC3339)
+	}
+	resp.ConsecutiveFailures = d.status.ConsecutiveFailures
+	resp.DaysSinceLastBackup, resp.BackupOverdue = backupOverdue(d.status.LastBackupAt, d.cfg.Schedule, d.now())
+	resp.LastBackupSkippedCount = d.status.LastSkippedCount
+	resp.LastBackupSkipped = append([]backup.SkippedFile(nil), d.status.LastSkipped...)
 	if !d.status.NextScheduledAt.IsZero() {
 		resp.NextScheduledAt = d.status.NextScheduledAt.Format(time.RFC3339)
 	}

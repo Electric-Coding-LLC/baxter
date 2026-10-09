@@ -27,7 +27,13 @@ struct BaxterApp: App {
     }
 
     private var iconName: String {
-        model.state == .running ? "arrow.triangle.2.circlepath.circle.fill" : "externaldrive"
+        if model.state == .running {
+            return "arrow.triangle.2.circlepath.circle.fill"
+        }
+        if model.state == .failed || model.backupOverdue {
+            return "exclamationmark.triangle.fill"
+        }
+        return "externaldrive"
     }
 
     private func openWorkspace(section: BaxterWorkspaceSection) {

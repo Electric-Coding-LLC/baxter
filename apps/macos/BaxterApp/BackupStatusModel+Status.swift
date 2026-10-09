@@ -19,6 +19,7 @@ extension BackupStatusModel {
         let previousState = state
         let previousVerifyState = verifyState
         let previousLastBackupAt = lastBackupAt
+        let previousLastFailureAt = lastFailureAt
         let previousLastVerifyAt = lastVerifyAt
 
         switch status.state.lowercased() {
@@ -76,12 +77,17 @@ extension BackupStatusModel {
         lastVerifyDecryptErrors = status.lastVerifyDecryptErrors ?? 0
         lastVerifyChecksumErrors = status.lastVerifyChecksumErrors ?? 0
         lastError = status.lastError
+        lastFailureAt = status.lastFailureAt
+        backupOverdue = status.backupOverdue ?? false
+        daysSinceLastBackup = status.daysSinceLastBackup ?? 0
+        lastBackupSkippedCount = status.lastBackupSkippedCount ?? 0
 
         dispatchStatusTransitionNotifications(
             previousState: previousState,
             previousVerifyState: previousVerifyState,
             previousLastBackupAt: previousLastBackupAt,
-            previousLastVerifyAt: previousLastVerifyAt
+            previousLastVerifyAt: previousLastVerifyAt,
+            previousLastFailureAt: previousLastFailureAt
         )
     }
 
@@ -128,9 +134,12 @@ extension BackupStatusModel {
         previousState: State,
         previousVerifyState: VerifyState,
         previousLastBackupAt: Date?,
-        previousLastVerifyAt: Date?
+        previousLastVerifyAt: Date?,
+        previousLastFailureAt: String?
     ) {
-        if state == .failed && previousState != .failed {
+        // A run can fail again between two polls without ever being seen as running.
+        let failedAgain = previousState == .failed && lastFailureAt != nil && lastFailureAt != previousLastFailureAt
+        if state == .failed && (previousState != .failed || failedAgain) {
             notificationDispatcher.sendNotification(
                 title: "Baxter backup failed",
                 body: lastError ?? "A backup run failed. Open Baxter for details."

@@ -36,6 +36,7 @@ func (d *Daemon) handleStatus(w http.ResponseWriter, r *http.Request) {
 		d.writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
+	d.noteStatusPoll()
 	d.writeJSON(w, http.StatusOK, d.snapshot())
 }
 

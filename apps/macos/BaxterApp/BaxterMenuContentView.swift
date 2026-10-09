@@ -19,12 +19,13 @@ struct BaxterMenuContentView: View {
                 inlineMetricLine(label: "Last Backup", value: lastBackupText)
                 inlineMetricLine(label: "Next Backup", value: nextBackupText)
                 if let backupFailureMessage {
-                    Label(backupFailureMessage, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                    backupWarningLabel(backupFailureMessage, tint: .red)
+                }
+                if let backupOverdueMessage {
+                    backupWarningLabel(backupOverdueMessage, tint: .red)
+                }
+                if let skippedFilesMessage {
+                    backupWarningLabel(skippedFilesMessage, tint: .orange)
                 }
                 menuActionButton(
                     "Run Backup",
@@ -290,6 +291,32 @@ struct BaxterMenuContentView: View {
             return lastError
         }
         return "The last backup failed. Open Diagnostics for details."
+    }
+
+    private var backupOverdueMessage: String? {
+        guard model.connectionState == .connected, model.backupOverdue else {
+            return nil
+        }
+        return "No successful backup in \(model.daysSinceLastBackup.formatted()) days."
+    }
+
+    private var skippedFilesMessage: String? {
+        guard model.connectionState == .connected, model.lastBackupSkippedCount > 0 else {
+            return nil
+        }
+        if model.lastBackupSkippedCount == 1 {
+            return "The last backup skipped 1 file it could not read."
+        }
+        return "The last backup skipped \(model.lastBackupSkippedCount.formatted()) files it could not read."
+    }
+
+    private func backupWarningLabel(_ message: String, tint: Color) -> some View {
+        Label(message, systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(tint)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var progressHeadline: String? {
