@@ -8,6 +8,10 @@ Usage: ./scripts/packaged-app-smoke.sh --zip /path/to/Baxter-darwin-arm64.zip [-
 Validates the packaged Baxter.app install path by unpacking the signed app,
 launching it with a temporarily cleaned Baxter home for the current user, and
 verifying bundled-helper bootstrap.
+
+The smoke replaces /Applications/Baxter.app, the Baxter app support directory,
+and the launchd service of the current user while it runs. It skips when a live
+install is present unless BAXTER_PACKAGED_SMOKE_ALLOW_LIVE_INSTALL=1 is set.
 EOF
 }
 
@@ -154,6 +158,13 @@ wait_for_installed_helper() {
 }
 
 cleanup() {
+  # Nothing below may run unless this script replaced the install itself.
+  if [ "${install_swapped:-0}" != "1" ]; then
+    if [ -z "${KEEP_RUN_ROOT:-}" ]; then
+      rm -rf "$RUN_ROOT"
+    fi
+    return
+  fi
   launchctl bootout "$SERVICE_TARGET" >/dev/null 2>&1 || true
   if [ -n "${app_pid:-}" ]; then
     kill "$app_pid" >/dev/null 2>&1 || true
@@ -208,6 +219,20 @@ if launchctl print "$SERVICE_TARGET" >"$SERVICE_BEFORE_LOG" 2>&1 && \
   grep -q 'state = running' "$SERVICE_BEFORE_LOG"; then
   service_was_running=1
 fi
+
+# This smoke replaces /Applications/Baxter.app, the app support directory, and
+# the launchd service for the current user. Refuse to do that to a real install.
+if [ "${BAXTER_PACKAGED_SMOKE_ALLOW_LIVE_INSTALL:-0}" != "1" ]; then
+  for live_path in "$INSTALLED_APP_PATH" "$APP_SUPPORT_DIR/config.toml" "$APP_SUPPORT_DIR/manifest.json"; do
+    if [ -e "$live_path" ]; then
+      echo "Skipping packaged app smoke: live Baxter install found at $live_path."
+      echo "Set BAXTER_PACKAGED_SMOKE_ALLOW_LIVE_INSTALL=1 to replace it for the duration of the smoke."
+      exit 0
+    fi
+  done
+fi
+
+install_swapped=1
 backup_existing_path "$APP_SUPPORT_DIR" "$APP_SUPPORT_BACKUP"
 backup_existing_path "$LEGACY_LAUNCH_AGENT_PATH" "$LEGACY_LAUNCH_AGENT_BACKUP"
 backup_existing_path "$DAEMON_OUT_LOG" "$DAEMON_OUT_LOG_BACKUP"
