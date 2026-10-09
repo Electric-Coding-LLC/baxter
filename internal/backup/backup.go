@@ -99,7 +99,7 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 
 		walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
-				if shouldIgnoreManifestError(path, err) {
+				if shouldIgnoreScanError(cleanRoot, path, err) {
 					return nil
 				}
 				return err
@@ -120,7 +120,7 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 
 			info, err := d.Info()
 			if err != nil {
-				if shouldIgnoreManifestError(cleanPath, err) {
+				if shouldIgnoreScanError(cleanRoot, cleanPath, err) {
 					return nil
 				}
 				return err
@@ -136,7 +136,7 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 
 			hash, err := fileSHA256(path)
 			if err != nil {
-				if shouldIgnoreManifestError(cleanPath, err) {
+				if shouldIgnoreScanError(cleanRoot, cleanPath, err) {
 					return nil
 				}
 				return err
@@ -156,11 +156,34 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 		}
 	}
 
+	if err := validateManifestRoots(roots, opts); err != nil {
+		return nil, err
+	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Path < entries[j].Path
 	})
 
 	return &Manifest{CreatedAt: time.Now().UTC(), Entries: entries}, nil
+}
+
+func shouldIgnoreScanError(root, path string, err error) bool {
+	// Missing configured roots remain fatal; only disappearing descendants
+	// represent ordinary deletions during a live scan.
+	return (filepath.Clean(path) != filepath.Clean(root) && errors.Is(err, fs.ErrNotExist)) ||
+		shouldIgnoreManifestError(path, err)
+}
+
+func validateManifestRoots(roots []string, opts BuildOptions) error {
+	matcher := newExclusionMatcher(opts)
+	for _, root := range roots {
+		if matcher.isExcluded(filepath.Clean(root)) {
+			continue
+		}
+		if _, err := os.Stat(root); err != nil {
+			return fmt.Errorf("check backup root %s: %w", root, err)
+		}
+	}
+	return nil
 }
 
 func shouldSkipManifestPath(path string) bool {

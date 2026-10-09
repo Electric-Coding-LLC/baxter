@@ -89,8 +89,29 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 	AssignObjectKeys(previous, current)
 
 	plan := PlanChanges(previous, current)
-	if err := uploadChangedEntries(plan.NewOrChanged, opts); err != nil {
+	vanished, err := uploadChangedEntries(plan.NewOrChanged, opts)
+	if err != nil {
 		return RunResult{}, err
+	}
+	if err := validateManifestRoots(cfg.BackupRoots, BuildOptions{
+		ExcludePaths: cfg.ExcludePaths,
+		ExcludeGlobs: cfg.ExcludeGlobs,
+	}); err != nil {
+		return RunResult{}, err
+	}
+	if len(vanished) > 0 {
+		missing := make(map[string]bool, len(vanished))
+		for _, path := range vanished {
+			missing[path] = true
+		}
+		kept := current.Entries[:0]
+		for _, entry := range current.Entries {
+			if !missing[entry.Path] {
+				kept = append(kept, entry)
+			}
+		}
+		current.Entries = kept
+		plan = PlanChanges(previous, current)
 	}
 
 	snapshot, err := ReserveSnapshotManifest(opts.SnapshotDir, current)
@@ -138,7 +159,7 @@ func (o RunOptions) effectiveUploadConcurrency() int {
 	return o.UploadConcurrency
 }
 
-func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
+func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) ([]string, error) {
 	uploadable := make([]ManifestEntry, 0, len(entries))
 	for _, entry := range entries {
 		if entry.HasStoredContent() {
@@ -151,7 +172,7 @@ func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
 		opts.Progress(ProgressUpdate{Total: total})
 	}
 	if total == 0 {
-		return nil
+		return nil, nil
 	}
 
 	type uploadJob struct {
@@ -162,6 +183,8 @@ func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
 	errCh := make(chan error, 1)
 	var uploaded atomic.Int32
 	var once sync.Once
+	var vanishedMu sync.Mutex
+	var vanished []string
 	workerCount := opts.effectiveUploadConcurrency()
 	if workerCount > total {
 		workerCount = total
@@ -176,6 +199,14 @@ func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
 				entry := job.entry
 				plain, err := readEntryContent(entry)
 				if err != nil {
+					// A live source can be deleted between scanning and uploading.
+					// Return its path so no snapshot references content we did not store.
+					if errors.Is(err, os.ErrNotExist) {
+						vanishedMu.Lock()
+						vanished = append(vanished, entry.Path)
+						vanishedMu.Unlock()
+						continue
+					}
 					once.Do(func() { errCh <- err })
 					return
 				}
@@ -204,7 +235,7 @@ func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
 		case err := <-errCh:
 			close(jobs)
 			wg.Wait()
-			return err
+			return nil, err
 		case jobs <- uploadJob{entry: entry}:
 		}
 	}
@@ -213,11 +244,15 @@ func uploadChangedEntries(entries []ManifestEntry, opts RunOptions) error {
 
 	select {
 	case err := <-errCh:
-		return err
+		return nil, err
 	default:
 	}
 
-	return nil
+	if len(vanished) > 0 && opts.Progress != nil {
+		remaining := total - len(vanished)
+		opts.Progress(ProgressUpdate{Uploaded: remaining, Total: remaining})
+	}
+	return vanished, nil
 }
 
 func countStoredContentEntries(entries []ManifestEntry) int {
