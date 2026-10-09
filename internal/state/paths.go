@@ -1,9 +1,11 @@
 package state
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"testing"
 )
 
 const AppName = "baxter"
@@ -24,7 +26,36 @@ func AppDir() (string, error) {
 		}
 		dir = filepath.Join(home, "Library", "Application Support")
 	}
-	return filepath.Join(dir, AppName), nil
+	appDir := filepath.Join(dir, AppName)
+	if err := rejectRealAppDirUnderTest(appDir); err != nil {
+		return "", err
+	}
+	return appDir, nil
+}
+
+// rejectRealAppDirUnderTest stops a test binary from resolving the app
+// directory of the machine it runs on. Tests must point HOME at a temporary
+// directory or set an explicit override.
+func rejectRealAppDirUnderTest(appDir string) error {
+	if !testing.Testing() {
+		return nil
+	}
+	tempDir := os.TempDir()
+	if pathWithin(appDir, tempDir) {
+		return nil
+	}
+	if resolved, err := filepath.EvalSymlinks(tempDir); err == nil && pathWithin(appDir, resolved) {
+		return nil
+	}
+	return fmt.Errorf("refusing to use app directory %s during go test: point HOME at a temporary directory", appDir)
+}
+
+func pathWithin(path, parent string) bool {
+	rel, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func ConfigPath() (string, error) {
