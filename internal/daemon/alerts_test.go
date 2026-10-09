@@ -191,6 +191,16 @@ func TestSkippedFilesAreReportedInStatus(t *testing.T) {
 		t.Fatalf("skipped files must notify once when they start: %+v", notifications.titles)
 	}
 
+	d.recordSkippedFiles(append(append([]backup.SkippedFile(nil), skipped...), skipped...))
+	if notifications.count() != 2 || notifications.titles[1] != "Baxter skipped 110 files" {
+		t.Fatalf("a jump in skipped files must notify again: %+v", notifications.titles)
+	}
+	d.recordSkippedFiles(skipped)
+	d.setIdleSuccess()
+	if notifications.count() != 2 {
+		t.Fatalf("fewer skipped files must not notify: %+v", notifications.titles)
+	}
+
 	reloaded := New(config.DefaultConfig())
 	if got := reloaded.snapshot().LastBackupSkippedCount; got != len(skipped) {
 		t.Fatalf("skipped files must survive a restart: got %d", got)

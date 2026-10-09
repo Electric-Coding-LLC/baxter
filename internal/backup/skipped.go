@@ -60,7 +60,7 @@ func carryForwardSkipped(previous, current *Manifest, skipped []SkippedFile, opt
 		if _, ok := scanned[path]; ok {
 			continue
 		}
-		if !underUnreadablePath(path, unreadable) || matcher.isExcluded(path) {
+		if !underUnreadablePath(path, unreadable) || excludedAtOrAbove(path, matcher) {
 			continue
 		}
 		current.Entries = append(current.Entries, entry)
@@ -76,6 +76,21 @@ func carryForwardSkipped(previous, current *Manifest, skipped []SkippedFile, opt
 func underUnreadablePath(path string, unreadable map[string]struct{}) bool {
 	for {
 		if _, ok := unreadable[path]; ok {
+			return true
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return false
+		}
+		path = parent
+	}
+}
+
+// excludedAtOrAbove mirrors the scan, which never descends into an excluded
+// directory.
+func excludedAtOrAbove(path string, matcher exclusionMatcher) bool {
+	for {
+		if matcher.isExcluded(path) {
 			return true
 		}
 		parent := filepath.Dir(path)

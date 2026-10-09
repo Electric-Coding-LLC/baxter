@@ -38,6 +38,7 @@ final class BackupStatusModel: ObservableObject {
     @Published var lastBackupAt: Date?
     @Published var nextScheduledAt: Date?
     @Published var lastError: String?
+    @Published var lastFailureAt: String?
     @Published var backupOverdue: Bool = false
     @Published var daysSinceLastBackup: Int = 0
     @Published var lastBackupSkippedCount: Int = 0

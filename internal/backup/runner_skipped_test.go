@@ -213,3 +213,27 @@ func TestRunStoresSharedContentWhenOneCopyChangesAfterScan(t *testing.T) {
 	}
 	assertLatestManifestVerifies(t, opts, 2)
 }
+
+func TestCarryForwardSkippedHonorsExcludes(t *testing.T) {
+	previous := &Manifest{Entries: []ManifestEntry{
+		{Path: "/root/private/keep.txt", SHA256: "a"},
+		{Path: "/root/private/node_modules/pkg/index.js", SHA256: "b"},
+		{Path: "/root/private/cache/blob", SHA256: "c"},
+		{Path: "/root/elsewhere/gone.txt", SHA256: "d"},
+	}}
+	current := &Manifest{Entries: []ManifestEntry{{Path: "/root/readable.txt", SHA256: "e"}}}
+
+	carryForwardSkipped(previous, current, []SkippedFile{{Path: "/root/private", Reason: "permission denied"}}, BuildOptions{
+		ExcludePaths: []string{"/root/private/cache"},
+		ExcludeGlobs: []string{"node_modules"},
+	})
+
+	got := make([]string, 0, len(current.Entries))
+	for _, entry := range current.Entries {
+		got = append(got, entry.Path)
+	}
+	want := []string{"/root/private/keep.txt", "/root/readable.txt"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("carried entries = %v, want %v", got, want)
+	}
+}

@@ -95,7 +95,8 @@ func (d *Daemon) noteStatusPoll() {
 }
 
 // recordSkippedFiles stores what the latest completed backup left out and
-// notifies when a backup starts skipping files.
+// notifies when a backup starts skipping files or skips at least twice as many
+// as the one before.
 func (d *Daemon) recordSkippedFiles(skipped []backup.SkippedFile) {
 	reported := skipped
 	if len(reported) > maxReportedSkippedFiles {
@@ -108,7 +109,7 @@ func (d *Daemon) recordSkippedFiles(skipped []backup.SkippedFile) {
 	d.status.LastSkipped = append([]backup.SkippedFile(nil), reported...)
 	d.mu.Unlock()
 
-	if previousCount > 0 || len(skipped) == 0 {
+	if len(skipped) == 0 || (previousCount > 0 && len(skipped) < 2*previousCount) {
 		return
 	}
 	title := fmt.Sprintf("Baxter skipped %d files", len(skipped))
