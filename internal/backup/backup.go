@@ -274,8 +274,10 @@ func ObjectKeyForPath(path string) string {
 	return hex.EncodeToString(sum[:]) + ".enc"
 }
 
+const contentObjectKeyPrefix = "sha256/"
+
 func ObjectKeyForContentSHA256(sha string) string {
-	return "sha256/" + strings.ToLower(strings.TrimSpace(sha)) + ".enc"
+	return contentObjectKeyPrefix + strings.ToLower(strings.TrimSpace(sha)) + ".enc"
 }
 
 func ResolveObjectKey(entry ManifestEntry) string {
