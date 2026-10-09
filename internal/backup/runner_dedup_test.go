@@ -173,3 +173,55 @@ func TestRunUploadsDuplicateContentWhenFirstCopyVanishes(t *testing.T) {
 	}
 	assertLatestManifestVerifies(t, opts, 1)
 }
+
+func TestEntriesMissingStoredContentOnlyTrustsStoredContentKeys(t *testing.T) {
+	const sha = "280849638b1ec29f5101434d8f3972c1b6b82d38af1c0d844f9e0286bf77dbea"
+	contentKey := ObjectKeyForContentSHA256(sha)
+	candidate := ManifestEntry{Path: "/new/file.txt", SHA256: sha, ObjectKey: contentKey}
+
+	for _, tc := range []struct {
+		name     string
+		previous *Manifest
+		wantKept bool
+	}{
+		{"no previous manifest", nil, true},
+		{"empty previous manifest", &Manifest{}, true},
+		{
+			"same content stored under its content key",
+			&Manifest{Entries: []ManifestEntry{{Path: "/old/file.txt", SHA256: sha, ObjectKey: contentKey}}},
+			false,
+		},
+		{
+			"same content stored under a legacy path key",
+			&Manifest{Entries: []ManifestEntry{{Path: "/old/file.txt", SHA256: sha, ObjectKey: ObjectKeyForPath("/old/file.txt")}}},
+			true,
+		},
+		{
+			"same content with no recorded key",
+			&Manifest{Entries: []ManifestEntry{{Path: "/old/file.txt", SHA256: sha}}},
+			true,
+		},
+		{
+			"cloud placeholder that never stored content",
+			&Manifest{Entries: []ManifestEntry{{
+				Path:       "/old/file.txt",
+				SHA256:     sha,
+				ObjectKey:  contentKey,
+				SourceKind: manifestSourceKindCloudPlaceholder,
+			}}},
+			true,
+		},
+		{
+			"different content",
+			&Manifest{Entries: []ManifestEntry{{Path: "/old/file.txt", SHA256: "aa", ObjectKey: ObjectKeyForContentSHA256("aa")}}},
+			true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := entriesMissingStoredContent(tc.previous, []ManifestEntry{candidate})
+			if kept := len(got) == 1; kept != tc.wantKept {
+				t.Fatalf("kept for upload = %v, want %v", kept, tc.wantKept)
+			}
+		})
+	}
+}
