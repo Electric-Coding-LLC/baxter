@@ -622,7 +622,7 @@ func TestReadEntryContentRejectsChangedFile(t *testing.T) {
 func TestUploadChangedEntriesSkipsCloudPlaceholderEntries(t *testing.T) {
 	store := storage.NewLocalClient(filepath.Join(t.TempDir(), "objects"))
 
-	err := uploadChangedEntries([]ManifestEntry{{
+	_, err := uploadChangedEntries([]ManifestEntry{{
 		Path:       "/Users/me/Documents/cloud.pdf",
 		SourceKind: manifestSourceKindCloudPlaceholder,
 	}}, RunOptions{

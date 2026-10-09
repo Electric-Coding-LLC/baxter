@@ -65,6 +65,7 @@ A simple, secure macOS backup utility with an S3 backend.
 
 ## CLI (current)
 - `baxter backup run`: scan configured roots, skip configured excludes, encrypt changed files, and store objects.
+- Backups scan live files: files deleted during scanning or before upload are omitted from the new snapshot; older snapshots retain their stored versions. Missing backup roots, unreadable files, and content changes between scan and upload still fail the run.
 - `baxter backup status`: show manifest/object counts.
 - `baxter snapshot list [--limit n]`: list available manifest snapshots (newest first).
 - `baxter gc [--dry-run]`: apply snapshot retention policy, then delete objects not referenced by latest/retained manifest sources.
