@@ -17,7 +17,7 @@
 		A0000000000000000000001A /* BaxterApp/NotificationSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* BaxterApp/NotificationSettings.swift */; };
 		A0000000000000000000001B /* BaxterApp/BaxterMenuContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* BaxterApp/BaxterMenuContentView.swift */; };
 		A0000000000000000000001C /* BaxterApp/BaxterWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000A /* BaxterApp/BaxterWorkspaceView.swift */; };
-		A0000000000000000000001D /* BaxterApp/MenuLinkButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000B /* BaxterApp/MenuLinkButtonStyle.swift */; };
+		A0000000000000000000001D /* BaxterApp/BaxterMenuStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000000B /* BaxterApp/BaxterMenuStatus.swift */; };
 		A00000000000000000000090 /* BaxterApp/BaxterRestoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000096 /* BaxterApp/BaxterRestoreView.swift */; };
 		A00000000000000000000091 /* BaxterApp/BaxterRestoreView+Browser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000097 /* BaxterApp/BaxterRestoreView+Browser.swift */; };
 		A00000000000000000000092 /* BaxterApp/SettingsTimeOfDay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000098 /* BaxterApp/SettingsTimeOfDay.swift */; };
@@ -36,6 +36,7 @@
 		A000000000000000000000B1 /* BaxterApp/LaunchdSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000B0 /* BaxterApp/LaunchdSupport.swift */; };
 		A000000000000000000000C1 /* BaxterApp/BaxterWorkspaceWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000C0 /* BaxterApp/BaxterWorkspaceWindow.swift */; };
 		A000000000000000000000C3 /* BaxterAppTests/WorkspaceWindowCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000C2 /* BaxterAppTests/WorkspaceWindowCoordinatorTests.swift */; };
+		A000000000000000000000D3 /* BaxterAppTests/BaxterMenuStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000D2 /* BaxterAppTests/BaxterMenuStatusTests.swift */; };
 		A000000000000000000000D1 /* BaxterAppTests/SettingsTimeOfDayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000D0 /* BaxterAppTests/SettingsTimeOfDayTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -60,7 +61,7 @@
 		A00000000000000000000008 /* BaxterApp/NotificationSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/NotificationSettings.swift; sourceTree = "<group>"; };
 		A00000000000000000000009 /* BaxterApp/BaxterMenuContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterMenuContentView.swift; sourceTree = "<group>"; };
 		A0000000000000000000000A /* BaxterApp/BaxterWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterWorkspaceView.swift; sourceTree = "<group>"; };
-		A0000000000000000000000B /* BaxterApp/MenuLinkButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/MenuLinkButtonStyle.swift; sourceTree = "<group>"; };
+		A0000000000000000000000B /* BaxterApp/BaxterMenuStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterMenuStatus.swift; sourceTree = "<group>"; };
 		A00000000000000000000096 /* BaxterApp/BaxterRestoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterRestoreView.swift; sourceTree = "<group>"; };
 		A00000000000000000000097 /* BaxterApp/BaxterRestoreView+Browser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/BaxterRestoreView+Browser.swift"; sourceTree = "<group>"; };
 		A00000000000000000000098 /* BaxterApp/SettingsTimeOfDay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/SettingsTimeOfDay.swift; sourceTree = "<group>"; };
@@ -80,6 +81,7 @@
 		A000000000000000000000B0 /* BaxterApp/LaunchdSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/LaunchdSupport.swift; sourceTree = "<group>"; };
 		A000000000000000000000C0 /* BaxterApp/BaxterWorkspaceWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterWorkspaceWindow.swift; sourceTree = "<group>"; };
 		A000000000000000000000C2 /* BaxterAppTests/WorkspaceWindowCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterAppTests/WorkspaceWindowCoordinatorTests.swift; sourceTree = "<group>"; };
+		A000000000000000000000D2 /* BaxterAppTests/BaxterMenuStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterAppTests/BaxterMenuStatusTests.swift; sourceTree = "<group>"; };
 		A000000000000000000000D0 /* BaxterAppTests/SettingsTimeOfDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterAppTests/SettingsTimeOfDayTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000072 /* BaxterAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BaxterAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -124,7 +126,7 @@
 				A00000000000000000000008 /* BaxterApp/NotificationSettings.swift */,
 				A00000000000000000000009 /* BaxterApp/BaxterMenuContentView.swift */,
 				A0000000000000000000000A /* BaxterApp/BaxterWorkspaceView.swift */,
-				A0000000000000000000000B /* BaxterApp/MenuLinkButtonStyle.swift */,
+				A0000000000000000000000B /* BaxterApp/BaxterMenuStatus.swift */,
 				A00000000000000000000096 /* BaxterApp/BaxterRestoreView.swift */,
 				A00000000000000000000097 /* BaxterApp/BaxterRestoreView+Browser.swift */,
 				A00000000000000000000098 /* BaxterApp/SettingsTimeOfDay.swift */,
@@ -159,6 +161,7 @@
 				A00000000000000000000071 /* BaxterAppTests/SettingsModelTests.swift */,
 				A000000000000000000000A5 /* BaxterAppTests/RecoveryOnboardingTests.swift */,
 				A000000000000000000000C2 /* BaxterAppTests/WorkspaceWindowCoordinatorTests.swift */,
+				A000000000000000000000D2 /* BaxterAppTests/BaxterMenuStatusTests.swift */,
 				A000000000000000000000D0 /* BaxterAppTests/SettingsTimeOfDayTests.swift */,
 			);
 			path = .;
@@ -253,7 +256,7 @@
 				A0000000000000000000001A /* BaxterApp/NotificationSettings.swift in Sources */,
 				A0000000000000000000001B /* BaxterApp/BaxterMenuContentView.swift in Sources */,
 				A0000000000000000000001C /* BaxterApp/BaxterWorkspaceView.swift in Sources */,
-				A0000000000000000000001D /* BaxterApp/MenuLinkButtonStyle.swift in Sources */,
+				A0000000000000000000001D /* BaxterApp/BaxterMenuStatus.swift in Sources */,
 				A00000000000000000000090 /* BaxterApp/BaxterRestoreView.swift in Sources */,
 				A00000000000000000000091 /* BaxterApp/BaxterRestoreView+Browser.swift in Sources */,
 				A00000000000000000000092 /* BaxterApp/SettingsTimeOfDay.swift in Sources */,
@@ -279,6 +282,7 @@
 				A00000000000000000000061 /* BaxterAppTests/SettingsModelTests.swift in Sources */,
 				A000000000000000000000AA /* BaxterAppTests/RecoveryOnboardingTests.swift in Sources */,
 				A000000000000000000000C3 /* BaxterAppTests/WorkspaceWindowCoordinatorTests.swift in Sources */,
+				A000000000000000000000D3 /* BaxterAppTests/BaxterMenuStatusTests.swift in Sources */,
 				A000000000000000000000D1 /* BaxterAppTests/SettingsTimeOfDayTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
