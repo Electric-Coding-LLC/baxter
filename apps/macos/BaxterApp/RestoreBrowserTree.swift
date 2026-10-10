@@ -29,15 +29,12 @@ struct RestoreBrowserTree: View {
                 return
             }
             if isDirectory(path) {
-                guard !forceExpanded else {
-                    return
-                }
-                onSetExpanded(path, !expandedPaths.contains(path))
+                expansionBinding(for: path).wrappedValue.toggle()
             } else {
                 onQuickLook(path)
             }
         }
-        .onKeyPress(.space) {
+        .onKeyPress(.space, phases: .down) { _ in
             guard let selection else {
                 return .ignored
             }
@@ -70,6 +67,10 @@ private struct RestoreBrowserNodeRows: View {
                     if node.children.isEmpty {
                         if tree.loadingPaths.contains(node.path) {
                             Text("Loading…")
+                                .foregroundStyle(.secondary)
+                                .selectionDisabled()
+                        } else if !tree.forceExpanded {
+                            Text("No Items")
                                 .foregroundStyle(.secondary)
                                 .selectionDisabled()
                         }
