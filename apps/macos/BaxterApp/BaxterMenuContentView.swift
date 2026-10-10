@@ -4,6 +4,8 @@ import SwiftUI
 struct BaxterMenuContentView: View {
     @ObservedObject var model: BackupStatusModel
     let openWorkspace: (BaxterWorkspaceSection) -> Void
+    let dismissMenu: () -> Void
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -56,7 +58,9 @@ struct BaxterMenuContentView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 menuActionButton("Settings...") {
-                    openWorkspace(.settings)
+                    dismissMenu()
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                    openSettings()
                 }
                 menuActionButton("Diagnostics...") {
                     openWorkspace(.diagnostics)

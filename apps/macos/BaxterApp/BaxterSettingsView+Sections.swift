@@ -1,310 +1,262 @@
 import SwiftUI
 
 extension BaxterSettingsView {
-    var backupSection: some View {
-        SettingsCard(title: "Backup", subtitle: "Choose folders to include in backups.") {
-            VStack(alignment: .leading, spacing: 12) {
-                SettingRow(label: "Folders", error: model.validationMessage(for: .backupRoots)) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        backupRootsList
+    @ViewBuilder
+    var generalSections: some View {
+        backupRootsSection(footer: "Baxter backs up everything inside these folders.")
 
-                        HStack(spacing: 8) {
-                            Button("Add Folder...") {
-                                model.chooseBackupRoots()
-                            }
-                            .buttonStyle(.bordered)
-
-                            Button("Remove All") {
-                                model.clearBackupRoots()
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(model.backupRoots.isEmpty)
-                        }
-                    }
+        Section {
+            TextEditor(text: $model.excludePathsText)
+                .font(.body.monospaced())
+                .frame(height: 72)
+                .onChange(of: model.excludePathsText) { _, _ in
+                    model.validateDraft()
                 }
+            fieldError(.excludePaths)
+        } header: {
+            Text("Excluded Paths")
+        } footer: {
+            Text("Absolute paths, one per line.")
+        }
 
-                SettingRow(label: "Exclude Paths", error: model.validationMessage(for: .excludePaths)) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Absolute paths, one per line.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextEditor(text: $model.excludePathsText)
-                            .scrollContentBackground(.hidden)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 82, maxHeight: 108)
-                            .settingsEditorSurface()
-                            .onChange(of: model.excludePathsText) { _, _ in
-                                model.validateDraft()
-                            }
-                    }
+        Section {
+            TextEditor(text: $model.excludeGlobsText)
+                .font(.body.monospaced())
+                .frame(height: 72)
+                .onChange(of: model.excludeGlobsText) { _, _ in
+                    model.validateDraft()
                 }
+            fieldError(.excludeGlobs)
+        } header: {
+            Text("Excluded Patterns")
+        } footer: {
+            Text("Glob patterns, one per line.")
+        }
 
-                SettingRow(label: "Exclude Globs", error: model.validationMessage(for: .excludeGlobs)) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Glob patterns, one per line.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        TextEditor(text: $model.excludeGlobsText)
-                            .scrollContentBackground(.hidden)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 82, maxHeight: 108)
-                            .settingsEditorSurface()
-                            .onChange(of: model.excludeGlobsText) { _, _ in
-                                model.validateDraft()
-                            }
-                    }
-                }
+        Section {
+            LabeledContent("Config File") {
+                Text(model.configURL.path)
+                    .font(.callout.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+        }
+    }
 
-                SettingRow(label: "Schedule", error: nil) {
-                    Picker("Backup Schedule", selection: $model.schedule) {
-                        ForEach(BackupSchedule.allCases) { schedule in
-                            Text(schedule.rawValue.capitalized).tag(schedule)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 160, alignment: .leading)
-                    .onChange(of: model.schedule) { _, _ in
-                        model.validateDraft()
-                    }
-                }
-
-                if model.schedule == .daily {
-                    SettingRow(label: "Daily Time", error: model.validationMessage(for: .dailyTime)) {
-                        TextField("HH:MM", text: $model.dailyTime)
-                            .settingsField(width: 92, monospaced: true)
-                            .onChange(of: model.dailyTime) { _, _ in
-                                model.validateDraft()
-                            }
-                    }
-                }
-
-                if model.schedule == .weekly {
-                    SettingRow(label: "Weekly Day", error: model.validationMessage(for: .weeklyDay)) {
-                        Picker("Weekly Day", selection: $model.weeklyDay) {
-                            ForEach(WeekdayOption.allCases) { day in
-                                Text(day.rawValue.capitalized).tag(day)
+    func backupRootsSection(footer: String) -> some View {
+        Section {
+            List(selection: $selectedBackupRoots) {
+                ForEach(model.backupRoots, id: \.self) { root in
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(root)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            if let warning = model.backupRootWarning(for: root) {
+                                Text(warning)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
                             }
                         }
-                        .labelsHidden()
-                        .frame(width: 150, alignment: .leading)
-                        .onChange(of: model.weeklyDay) { _, _ in
-                            model.validateDraft()
-                        }
-                    }
-
-                    SettingRow(label: "Weekly Time", error: model.validationMessage(for: .weeklyTime)) {
-                        TextField("HH:MM", text: $model.weeklyTime)
-                            .settingsField(width: 92, monospaced: true)
-                            .onChange(of: model.weeklyTime) { _, _ in
-                                model.validateDraft()
-                            }
+                    } icon: {
+                        Image(systemName: "folder")
                     }
                 }
             }
+            .frame(height: 120)
+            .overlay {
+                if model.backupRoots.isEmpty {
+                    Text("No Folders")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onDeleteCommand(perform: removeSelectedBackupRoots)
+
+            HStack(spacing: 12) {
+                Button {
+                    model.chooseBackupRoots()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("Add folders to back up")
+                .accessibilityLabel("Add Folder")
+
+                Button(action: removeSelectedBackupRoots) {
+                    Image(systemName: "minus")
+                }
+                .disabled(selectedBackupRoots.isEmpty)
+                .help("Remove the selected folders")
+                .accessibilityLabel("Remove Folder")
+
+                Spacer()
+            }
+            .buttonStyle(.borderless)
+
+            fieldError(.backupRoots)
+        } header: {
+            Text("Folders")
+        } footer: {
+            Text(footer)
+        }
+    }
+
+    private func removeSelectedBackupRoots() {
+        for root in selectedBackupRoots {
+            model.removeBackupRoot(root)
+        }
+        selectedBackupRoots = []
+    }
+
+    @ViewBuilder
+    var scheduleSections: some View {
+        Section("Backup") {
+            schedulePicker("Run Backups", selection: $model.schedule)
+            if model.schedule == .weekly {
+                weekdayPicker(selection: $model.weeklyDay)
+                timePicker(\.weeklyTime)
+                fieldError(.weeklyTime)
+            }
+            if model.schedule == .daily {
+                timePicker(\.dailyTime)
+                fieldError(.dailyTime)
+            }
+        }
+
+        Section("Verify") {
+            schedulePicker("Run Verification", selection: $model.verifySchedule)
+            if model.verifySchedule == .weekly {
+                weekdayPicker(selection: $model.verifyWeeklyDay)
+                timePicker(\.verifyWeeklyTime)
+                fieldError(.verifyWeeklyTime)
+            }
+            if model.verifySchedule == .daily {
+                timePicker(\.verifyDailyTime)
+                fieldError(.verifyDailyTime)
+            }
+        }
+
+        Section {
+            TextField("Path Prefix", text: $model.verifyPrefix, prompt: Text("All backed-up paths"))
+                .onChange(of: model.verifyPrefix) { _, _ in
+                    model.validateDraft()
+                }
+
+            TextField("Limit", text: $model.verifyLimit, prompt: Text("0"))
+                .onChange(of: model.verifyLimit) { _, _ in
+                    model.validateDraft()
+                }
+            fieldError(.verifyLimit)
+
+            TextField("Sample", text: $model.verifySample, prompt: Text("0"))
+                .onChange(of: model.verifySample) { _, _ in
+                    model.validateDraft()
+                }
+            fieldError(.verifySample)
+        } header: {
+            Text("Verify Scope")
+        } footer: {
+            Text("Limit and sample are file counts. Use 0 to check everything.")
+        }
+    }
+
+    func schedulePicker(_ title: String, selection: Binding<BackupSchedule>) -> some View {
+        Picker(title, selection: selection) {
+            ForEach(BackupSchedule.allCases) { schedule in
+                Text(schedule.rawValue.capitalized).tag(schedule)
+            }
+        }
+        .onChange(of: selection.wrappedValue) { _, _ in
+            model.validateDraft()
+        }
+    }
+
+    private func weekdayPicker(selection: Binding<WeekdayOption>) -> some View {
+        Picker("Day", selection: selection) {
+            ForEach(WeekdayOption.allCases) { day in
+                Text(day.rawValue.capitalized).tag(day)
+            }
+        }
+        .onChange(of: selection.wrappedValue) { _, _ in
+            model.validateDraft()
+        }
+    }
+
+    private func timePicker(_ keyPath: ReferenceWritableKeyPath<BaxterSettingsModel, String>) -> some View {
+        DatePicker("Time", selection: model.timeOfDayBinding(keyPath), displayedComponents: .hourAndMinute)
+    }
+
+    @ViewBuilder
+    var storageSections: some View {
+        Section {
+            s3Fields
+        } header: {
+            Text("S3")
+        } footer: {
+            Text(model.s3ModeHint)
         }
     }
 
     @ViewBuilder
-    var backupRootsList: some View {
-        SettingsInsetGroup {
-            if model.backupRoots.isEmpty {
-                Text("No folders selected.")
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-            } else {
-                ForEach(Array(model.backupRoots.enumerated()), id: \.element) { index, root in
-                    if index > 0 {
-                        Divider()
-                            .padding(.leading, 12)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "folder")
-                                .foregroundStyle(Color(nsColor: .systemBlue))
-                            Text(root)
-                                .font(.system(.body, design: .monospaced))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer(minLength: 0)
-                            Button {
-                                model.removeBackupRoot(root)
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                            .buttonStyle(.borderless)
-                        }
-
-                        if let warning = model.backupRootWarning(for: root) {
-                            Text(warning)
-                                .font(.caption)
-                                .foregroundStyle(.red)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                }
+    var s3Fields: some View {
+        TextField("Bucket", text: $model.s3Bucket, prompt: Text("my-backups"))
+            .onChange(of: model.s3Bucket) { _, _ in
+                model.validateDraft()
             }
+        fieldError(.s3Bucket)
+
+        TextField("Region", text: $model.s3Region, prompt: Text("us-west-2"))
+            .onChange(of: model.s3Region) { _, _ in
+                model.validateDraft()
+            }
+        fieldError(.s3Region)
+
+        TextField("Endpoint", text: $model.s3Endpoint, prompt: Text("Optional"))
+            .onChange(of: model.s3Endpoint) { _, _ in
+                model.validateDraft()
+            }
+        fieldError(.s3Endpoint)
+
+        TextField("Prefix", text: $model.s3Prefix, prompt: Text("baxter/"))
+            .onChange(of: model.s3Prefix) { _, _ in
+                model.validateDraft()
+            }
+        fieldError(.s3Prefix)
+
+        TextField("AWS Profile", text: $model.s3AWSProfile, prompt: Text("Optional"))
+            .onChange(of: model.s3AWSProfile) { _, _ in
+                model.validateDraft()
+            }
+        fieldError(.s3AWSProfile)
+    }
+
+    @ViewBuilder
+    var encryptionSections: some View {
+        Section {
+            TextField("Service", text: $model.keychainService, prompt: Text("baxter"))
+                .onChange(of: model.keychainService) { _, _ in
+                    model.validateDraft()
+                }
+            fieldError(.keychainService)
+
+            TextField("Account", text: $model.keychainAccount, prompt: Text("default"))
+                .onChange(of: model.keychainAccount) { _, _ in
+                    model.validateDraft()
+                }
+            fieldError(.keychainAccount)
+        } header: {
+            Text("Keychain Item")
+        } footer: {
+            Text("Baxter reads the passphrase from this keychain item when BAXTER_PASSPHRASE is not set.")
         }
     }
 
-    var verifySection: some View {
-        SettingsCard(title: "Verify", subtitle: "Schedule and scope integrity verification runs.") {
-            VStack(alignment: .leading, spacing: 10) {
-                SettingRow(label: "Schedule", error: nil) {
-                    Picker("Verify Schedule", selection: $model.verifySchedule) {
-                        ForEach(BackupSchedule.allCases) { schedule in
-                            Text(schedule.rawValue.capitalized).tag(schedule)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 160, alignment: .leading)
-                    .onChange(of: model.verifySchedule) { _, _ in
-                        model.validateDraft()
-                    }
-                }
-
-                if model.verifySchedule == .daily {
-                    SettingRow(label: "Daily Time", error: model.validationMessage(for: .verifyDailyTime)) {
-                        TextField("HH:MM", text: $model.verifyDailyTime)
-                            .settingsField(width: 92, monospaced: true)
-                            .onChange(of: model.verifyDailyTime) { _, _ in
-                                model.validateDraft()
-                            }
-                    }
-                }
-
-                if model.verifySchedule == .weekly {
-                    SettingRow(label: "Weekly Day", error: model.validationMessage(for: .verifyWeeklyDay)) {
-                        Picker("Weekly Day", selection: $model.verifyWeeklyDay) {
-                            ForEach(WeekdayOption.allCases) { day in
-                                Text(day.rawValue.capitalized).tag(day)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(width: 150, alignment: .leading)
-                        .onChange(of: model.verifyWeeklyDay) { _, _ in
-                            model.validateDraft()
-                        }
-                    }
-
-                    SettingRow(label: "Weekly Time", error: model.validationMessage(for: .verifyWeeklyTime)) {
-                        TextField("HH:MM", text: $model.verifyWeeklyTime)
-                            .settingsField(width: 92, monospaced: true)
-                            .onChange(of: model.verifyWeeklyTime) { _, _ in
-                                model.validateDraft()
-                            }
-                    }
-                }
-
-                SettingRow(label: "Prefix", error: nil) {
-                    TextField("/Users/you/Documents (optional)", text: $model.verifyPrefix)
-                        .settingsField(width: 420, monospaced: true)
-                        .onChange(of: model.verifyPrefix) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-
-                SettingRow(label: "Limit", error: model.validationMessage(for: .verifyLimit)) {
-                    TextField("0", text: $model.verifyLimit)
-                        .settingsField(width: 108, monospaced: true)
-                        .onChange(of: model.verifyLimit) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-
-                SettingRow(label: "Sample", error: model.validationMessage(for: .verifySample)) {
-                    TextField("0", text: $model.verifySample)
-                        .settingsField(width: 108, monospaced: true)
-                        .onChange(of: model.verifySample) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-            }
-        }
-    }
-
-    var s3Section: some View {
-        SettingsCard(title: "S3", subtitle: "Leave bucket empty for local object storage.") {
-            VStack(alignment: .leading, spacing: 10) {
-                SettingRow(label: "Endpoint", error: model.validationMessage(for: .s3Endpoint)) {
-                    TextField("Optional, for example https://s3.amazonaws.com", text: $model.s3Endpoint)
-                        .settingsField(width: 420)
-                        .onChange(of: model.s3Endpoint) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-
-                SettingRow(label: "Region", error: model.validationMessage(for: .s3Region)) {
-                    TextField("Example: us-west-2", text: $model.s3Region)
-                        .settingsField(width: 180)
-                        .onChange(of: model.s3Region) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-
-                SettingRow(label: "Bucket", error: model.validationMessage(for: .s3Bucket)) {
-                    TextField("Example: my-backups", text: $model.s3Bucket)
-                        .settingsField(width: 240)
-                        .onChange(of: model.s3Bucket) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-
-                SettingRow(label: "Prefix", error: model.validationMessage(for: .s3Prefix)) {
-                    TextField("baxter/", text: $model.s3Prefix)
-                        .settingsField(width: 180)
-                        .onChange(of: model.s3Prefix) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-
-                SettingRow(label: "AWS Profile", error: model.validationMessage(for: .s3AWSProfile)) {
-                    TextField("Optional, for example baxter", text: $model.s3AWSProfile)
-                        .settingsField(width: 220, monospaced: true)
-                        .onChange(of: model.s3AWSProfile) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-
-                SettingsAlignedContent {
-                    Text(model.s3ModeHint)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    var encryptionSection: some View {
-        SettingsCard(title: "Encryption", subtitle: "Keychain item used when BAXTER_PASSPHRASE is not set.") {
-            VStack(alignment: .leading, spacing: 10) {
-                SettingRow(label: "Service", error: model.validationMessage(for: .keychainService)) {
-                    TextField("baxter", text: $model.keychainService)
-                        .settingsField(width: 180)
-                        .onChange(of: model.keychainService) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-
-                SettingRow(label: "Account", error: model.validationMessage(for: .keychainAccount)) {
-                    TextField("default", text: $model.keychainAccount)
-                        .settingsField(width: 180)
-                        .onChange(of: model.keychainAccount) { _, _ in
-                            model.validateDraft()
-                        }
-                }
-            }
-        }
-    }
-
-    var notificationsSection: some View {
-        SettingsCard(title: "Notifications", subtitle: "Failure alerts are always enabled; success alerts are optional.") {
-            SettingRow(label: "Success Alerts", error: nil) {
-                Toggle("Notify after successful backup and verify runs", isOn: $statusModel.notifyOnSuccess)
-                    .toggleStyle(.switch)
-            }
+    @ViewBuilder
+    var notificationsSections: some View {
+        Section {
+            Toggle("Notify after successful runs", isOn: $statusModel.notifyOnSuccess)
+        } footer: {
+            Text("Baxter always notifies you when a backup or verify run fails.")
         }
     }
 }
