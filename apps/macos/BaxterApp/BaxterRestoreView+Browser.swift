@@ -86,8 +86,17 @@ extension BaxterRestoreView {
         !browserFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var renderedRestoreBrowserRows: [RestoreBrowserRenderedRow] {
-        restoreBrowserRenderedRowsCache.rows
+    var browserSelectionBinding: Binding<String?> {
+        Binding(
+            get: { selectedBrowserPath },
+            set: { path in
+                if let path {
+                    selectBrowserPath(path)
+                } else {
+                    clearBrowserSelection()
+                }
+            }
+        )
     }
 
     var filteredRestoreBrowserNodeCount: Int {
@@ -210,23 +219,13 @@ extension BaxterRestoreView {
     }
 
     func selectBrowserPath(_ path: String) {
-        let previousSelection = selectedBrowserPath
         selectedBrowserPath = path
         restorePath = path
-        guard previousSelection != path else {
-            return
-        }
-        refreshRestoreBrowserDerivedState()
     }
 
     func clearBrowserSelection() {
-        let hadSelection = selectedBrowserPath != nil
         selectedBrowserPath = nil
         restorePath = ""
-        guard hadSelection else {
-            return
-        }
-        refreshRestoreBrowserDerivedState()
     }
 
     func searchRestorePaths() {
@@ -267,10 +266,7 @@ extension BaxterRestoreView {
     }
 
     func iconName(for path: String) -> String {
-        if restoreBrowserIndex.isDirectoryByPath[path] == true {
-            return "folder"
-        }
-        return isTextLikeRestorePath(path) ? "doc.text" : "doc"
+        restoreBrowserIconName(for: path, isDirectory: restoreBrowserIndex.isDirectoryByPath[path] == true)
     }
 
     func iconColor(for path: String) -> Color {
@@ -406,24 +402,7 @@ extension BaxterRestoreView {
             rootPrefix: restoreRootPrefix,
             query: browserFilter
         )
-        var visibleRowsCache = restoreBrowserVisibleRowsCache
-        visibleRowsCache.resolve(
-            roots: derivedCache.state.rootNodes,
-            treeRevision: restoreBrowserIndex.revision,
-            rootPrefix: restoreRootPrefix,
-            query: browserFilter,
-            expandedPaths: expandedBrowserPaths,
-            loadingDirectoryKeys: restoreBrowserLoadCoordinator.loadingDirectoryKeys,
-            forceExpanded: isRestoreBrowserForceExpanded
-        )
-        var renderedRowsCache = restoreBrowserRenderedRowsCache
-        renderedRowsCache.resolve(
-            visibleRows: visibleRowsCache.rows,
-            selectedPath: selectedBrowserPath
-        )
         restoreBrowserDerivedCache = derivedCache
-        restoreBrowserVisibleRowsCache = visibleRowsCache
-        restoreBrowserRenderedRowsCache = renderedRowsCache
     }
 
     func chooseRestoreDestination() {
@@ -446,194 +425,4 @@ extension BaxterRestoreView {
         restoreDestinationMode = .custom
         restoreToDir = selectedURL.path
     }
-}
-
-struct RestoreBrowserTree: View {
-    let rows: [RestoreBrowserRenderedRow]
-    let forceExpanded: Bool
-    let iconName: (String) -> String
-    let iconColor: (String) -> Color
-    let onClearSelection: () -> Void
-    let onSelect: (String) -> Void
-    let onToggleExpansion: (String, Bool) -> Void
-    let onQuickLook: (String) -> Void
-    let onUseForRestore: (String) -> Void
-
-    var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                ZStack(alignment: .topLeading) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            onClearSelection()
-                        }
-
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(rows) { row in
-                            RestoreBrowserVisibleRowView(
-                                renderedRow: row,
-                                forceExpanded: forceExpanded,
-                                iconName: iconName,
-                                iconColor: iconColor,
-                                onSelect: onSelect,
-                                onToggleExpansion: onToggleExpansion,
-                                onQuickLook: onQuickLook,
-                                onUseForRestore: onUseForRestore
-                            )
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .topLeading)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-}
-
-struct RestoreBrowserVisibleRowView: View, Equatable {
-    let renderedRow: RestoreBrowserRenderedRow
-    let forceExpanded: Bool
-    let iconName: (String) -> String
-    let iconColor: (String) -> Color
-    let onSelect: (String) -> Void
-    let onToggleExpansion: (String, Bool) -> Void
-    let onQuickLook: (String) -> Void
-    let onUseForRestore: (String) -> Void
-
-    static func == (lhs: RestoreBrowserVisibleRowView, rhs: RestoreBrowserVisibleRowView) -> Bool {
-        lhs.renderedRow == rhs.renderedRow &&
-            lhs.forceExpanded == rhs.forceExpanded
-    }
-
-    private var row: RestoreBrowserVisibleRow {
-        renderedRow.visibleRow
-    }
-
-    private var node: RestoreBrowserNode? {
-        row.node
-    }
-
-    private var isExpanded: Bool {
-        row.isExpanded
-    }
-
-    private var isSelected: Bool {
-        renderedRow.isSelected
-    }
-
-    private var isLoading: Bool {
-        row.isLoadingPlaceholder || row.isLoading
-    }
-
-    private var rowLeadingPadding: CGFloat {
-        CGFloat(row.depth) * 12 + 4
-    }
-
-    private var loadingPlaceholderLeadingPadding: CGFloat {
-        CGFloat(row.depth) * 12 + 20
-    }
-
-    var body: some View {
-        Group {
-            if row.isLoadingPlaceholder {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Loading...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.leading, loadingPlaceholderLeadingPadding)
-                .padding(.vertical, 1)
-            } else if let node {
-                HStack(spacing: 4) {
-                    expansionToggle(for: node)
-
-                    Image(systemName: iconName(node.path))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(iconColor(node.path))
-
-                    Text(node.name)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 0)
-
-                    if isLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .frame(minHeight: 21)
-                .padding(.leading, rowLeadingPadding)
-                .padding(.trailing, 10)
-                .padding(.vertical, 1)
-                .background(
-                    isSelected ? Color.accentColor.opacity(0.24) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .onTapGesture {
-                    if node.isDirectory && !isExpanded && !forceExpanded {
-                        onToggleExpansion(node.path, true)
-                    }
-                    onSelect(node.path)
-                }
-                .contextMenu {
-                    Button("Quick Look") {
-                        onQuickLook(node.path)
-                    }
-                    Button("Use for Restore") {
-                        onUseForRestore(node.path)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func expansionToggle(for node: RestoreBrowserNode) -> some View {
-        if node.isDirectory {
-            Button {
-                guard !forceExpanded else {
-                    return
-                }
-                onToggleExpansion(node.path, !isExpanded)
-            } label: {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14, height: 14)
-                    .padding(2)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        } else {
-            Color.clear
-                .frame(width: 18, height: 18)
-        }
-    }
-}
-
-private let textLikeRestoreExtensions: Set<String> = [
-    "bash", "c", "cc", "cfg", "conf", "cpp", "css", "env", "gitignore", "go",
-    "h", "hpp", "html", "ini", "java", "js", "json", "jsx", "m", "markdown",
-    "md", "mm", "pbxproj", "py", "rb", "rst", "sh", "sql", "swift",
-    "swiftformat", "swiftlint", "toml", "ts", "tsx", "txt", "xml", "yaml", "yml", "zsh",
-]
-
-private let textLikeRestoreNames: Set<String> = [
-    "brewfile", "dockerfile", "license", "makefile", "readme",
-]
-
-private func isTextLikeRestorePath(_ path: String) -> Bool {
-    let fileName = (path as NSString).lastPathComponent.lowercased()
-    if textLikeRestoreNames.contains(fileName) {
-        return true
-    }
-    let pathExtension = URL(fileURLWithPath: path).pathExtension.lowercased()
-    return textLikeRestoreExtensions.contains(pathExtension)
 }
