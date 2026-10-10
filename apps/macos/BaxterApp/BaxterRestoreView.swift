@@ -65,11 +65,6 @@ struct BaxterRestoreView: View {
                 }
                 scheduleAutomaticRestoreSearch()
             }
-            .onChange(of: selectedBrowserPath) { _, path in
-                if path != nil {
-                    showRestoreInspector = true
-                }
-            }
             .onChange(of: restoreActionStatusMessage) { _, message in
                 if message != nil {
                     showRestoreInspector = true

@@ -1221,6 +1221,13 @@ final class RestoreBrowserIndexTests: XCTestCase {
         XCTAssertEqual(cache.state.visiblePaths, ["/music", "/music/song.mp3"])
     }
 
+    func testRestoreBrowserIconNameDistinguishesFoldersTextAndOtherFiles() {
+        XCTAssertEqual(restoreBrowserIconName(for: "/docs", isDirectory: true), "folder")
+        XCTAssertEqual(restoreBrowserIconName(for: "/docs/notes.md", isDirectory: false), "doc.text")
+        XCTAssertEqual(restoreBrowserIconName(for: "/docs/Makefile", isDirectory: false), "doc.text")
+        XCTAssertEqual(restoreBrowserIconName(for: "/docs/photo.jpg", isDirectory: false), "doc")
+    }
+
     func testRestorePathHelpersHandleAbsoluteAndRelativePaths() {
         XCTAssertEqual(restorePathName("/docs/notes/todo.txt"), "todo.txt")
         XCTAssertEqual(restorePathName("/"), "/")

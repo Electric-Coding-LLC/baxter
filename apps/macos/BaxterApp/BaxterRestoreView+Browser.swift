@@ -92,8 +92,9 @@ extension BaxterRestoreView {
             set: { path in
                 if let path {
                     selectBrowserPath(path)
+                    showRestoreInspector = true
                 } else {
-                    clearBrowserSelection()
+                    selectedBrowserPath = nil
                 }
             }
         )
@@ -223,11 +224,6 @@ extension BaxterRestoreView {
         restorePath = path
     }
 
-    func clearBrowserSelection() {
-        selectedBrowserPath = nil
-        restorePath = ""
-    }
-
     func searchRestorePaths() {
         let query = currentRestoreBrowserQuery()
         cancelRestoreBrowserLoadTasks()
@@ -331,7 +327,7 @@ extension BaxterRestoreView {
                     if let parentPath {
                         statusModel.restorePreviewMessage = "Loaded \(paths.count) child path(s) under \(parentPath)."
                     } else {
-                        statusModel.restorePreviewMessage = "Loaded \(paths.count) path(s). Select a folder to load more."
+                        statusModel.restorePreviewMessage = "Loaded \(paths.count) path(s). Open a folder to load more."
                     }
                 }
             } catch {
