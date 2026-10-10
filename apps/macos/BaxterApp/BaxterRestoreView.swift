@@ -25,8 +25,6 @@ struct BaxterRestoreView: View {
     @State var selectedBrowserPath: String?
     @State var restoreBrowserIndex: RestoreBrowserIndex = .empty
     @State var restoreBrowserDerivedCache = RestoreBrowserDerivedCache()
-    @State var restoreBrowserVisibleRowsCache = RestoreBrowserVisibleRowsCache()
-    @State var restoreBrowserRenderedRowsCache = RestoreBrowserRenderedRowsCache()
     @State var restoreBrowserLoadCoordinator = RestoreBrowserLoadCoordinator()
     @State var restoreBrowserLoadTasks: [String: Task<Void, Never>] = [:]
     @State var restoreRootPrefix = ""
@@ -164,18 +162,21 @@ struct BaxterRestoreView: View {
                 }
             } else {
                 RestoreBrowserTree(
-                    rows: renderedRestoreBrowserRows,
+                    roots: filteredRestoreBrowserRoots,
                     forceExpanded: isRestoreBrowserForceExpanded,
-                    iconName: iconName(for:),
-                    iconColor: iconColor(for:),
-                    onClearSelection: clearBrowserSelection,
-                    onSelect: selectBrowserPath,
-                    onToggleExpansion: setBrowserNodeExpanded(path:isExpanded:),
+                    expandedPaths: expandedBrowserPaths,
+                    loadingPaths: restoreBrowserLoadCoordinator.loadingDirectoryKeys,
+                    selection: browserSelectionBinding,
+                    isDirectory: { restoreBrowserIndex.isDirectoryByPath[$0] == true },
+                    onSetExpanded: setBrowserNodeExpanded(path:isExpanded:),
                     onQuickLook: { path in
                         selectBrowserPath(path)
                         presentQuickLook()
                     },
-                    onUseForRestore: selectBrowserPath
+                    onUseForRestore: { path in
+                        selectBrowserPath(path)
+                        showRestoreInspector = true
+                    }
                 )
             }
         }
