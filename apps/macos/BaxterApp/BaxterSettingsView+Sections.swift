@@ -115,11 +115,11 @@ extension BaxterSettingsView {
             if model.schedule == .weekly {
                 weekdayPicker(selection: $model.weeklyDay)
                 timePicker(\.weeklyTime)
-                fieldError(.weeklyTime)
+                timeError(.weeklyTime, storedValue: model.weeklyTime)
             }
             if model.schedule == .daily {
                 timePicker(\.dailyTime)
-                fieldError(.dailyTime)
+                timeError(.dailyTime, storedValue: model.dailyTime)
             }
         }
 
@@ -128,11 +128,11 @@ extension BaxterSettingsView {
             if model.verifySchedule == .weekly {
                 weekdayPicker(selection: $model.verifyWeeklyDay)
                 timePicker(\.verifyWeeklyTime)
-                fieldError(.verifyWeeklyTime)
+                timeError(.verifyWeeklyTime, storedValue: model.verifyWeeklyTime)
             }
             if model.verifySchedule == .daily {
                 timePicker(\.verifyDailyTime)
-                fieldError(.verifyDailyTime)
+                timeError(.verifyDailyTime, storedValue: model.verifyDailyTime)
             }
         }
 
@@ -179,6 +179,15 @@ extension BaxterSettingsView {
         }
         .onChange(of: selection.wrappedValue) { _, _ in
             model.validateDraft()
+        }
+    }
+
+    @ViewBuilder
+    private func timeError(_ field: SettingsField, storedValue: String) -> some View {
+        if model.validationMessage(for: field) != nil {
+            Text("The saved time “\(storedValue)” is not valid. Choose a time to replace it.")
+                .font(.callout)
+                .foregroundStyle(.red)
         }
     }
 

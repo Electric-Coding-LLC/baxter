@@ -61,6 +61,10 @@ final class BaxterSettingsModel: ObservableObject {
         load()
     }
 
+    var firstValidationError: String? {
+        firstValidationMessage(from: validationErrors)
+    }
+
     func validationMessage(for field: SettingsField) -> String? {
         validationErrors[field]
     }
@@ -167,13 +171,6 @@ final class BaxterSettingsModel: ObservableObject {
 
     func removeBackupRoot(_ root: String) {
         backupRoots.removeAll { $0 == root }
-        statusMessage = nil
-        errorMessage = nil
-        validateDraft()
-    }
-
-    func clearBackupRoots() {
-        backupRoots = []
         statusMessage = nil
         errorMessage = nil
         validateDraft()
@@ -460,11 +457,7 @@ final class BaxterSettingsModel: ObservableObject {
     }
 
     private func isValidTime(_ value: String) -> Bool {
-        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
-        guard parts.count == 2 else { return false }
-        guard parts[0].count == 2, parts[1].count == 2 else { return false }
-        guard let hour = Int(parts[0]), let minute = Int(parts[1]) else { return false }
-        return (0...23).contains(hour) && (0...59).contains(minute)
+        SettingsTimeOfDay.components(from: value) != nil
     }
 
     private func nonNegativeInt(from value: String) -> Int? {

@@ -5,8 +5,7 @@ enum SettingsTimeOfDay {
     static let fallback = "09:00"
 
     static func components(from value: String) -> DateComponents? {
-        let parts = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: ":", omittingEmptySubsequences: false)
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 2, parts[0].count == 2, parts[1].count == 2 else {
             return nil
         }

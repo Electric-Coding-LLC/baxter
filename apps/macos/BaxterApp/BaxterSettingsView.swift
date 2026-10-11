@@ -54,6 +54,7 @@ struct BaxterSettingsView: View {
     @AppStorage("baxter.onboarding.dismissed") var onboardingDismissed = false
     @AppStorage("baxter.settings.selectedTab") var selectedTab: BaxterSettingsTab = .general
     @State var showApplyNow = false
+    @State private var isOnboarding = false
     @State var selectedBackupRoots: Set<String> = []
     @State var onboardingMode: OnboardingMode = .newBackup
     @State var onboardingStorageMode: StorageModeOption = .local
@@ -62,7 +63,7 @@ struct BaxterSettingsView: View {
 
     var body: some View {
         Group {
-            if shouldShowOnboarding {
+            if isOnboarding && !onboardingDismissed {
                 onboardingPane
             } else {
                 settingsTabs
@@ -86,6 +87,7 @@ struct BaxterSettingsView: View {
             onboardingMessage = nil
         }
         .onAppear {
+            isOnboarding = shouldShowOnboarding
             onboardingStorageMode = model.storageMode()
             if model.configExists && model.backupRoots.isEmpty {
                 onboardingMode = .existingBackup
@@ -171,6 +173,11 @@ struct BaxterSettingsView: View {
     private var settingsFooterStatus: some View {
         if let errorMessage = model.errorMessage {
             Label(errorMessage, systemImage: "exclamationmark.triangle")
+                .font(.callout)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+        } else if let validationMessage = model.firstValidationError {
+            Label(validationMessage, systemImage: "exclamationmark.triangle")
                 .font(.callout)
                 .foregroundStyle(.red)
                 .lineLimit(2)
