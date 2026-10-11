@@ -160,12 +160,22 @@ extension BaxterRestoreView {
         return isBrowserStatusMessage(message) ? message : nil
     }
 
-    var restoreSourceNotice: String? {
-        if let snapshotsMessage = statusModel.snapshotsMessage, !snapshotsMessage.isEmpty {
-            let lowered = snapshotsMessage.lowercased()
-            if lowered.contains("failed") || lowered.contains("error") {
-                return snapshotsMessage
+    var restoreSourceFailure: String? {
+        for message in [statusModel.snapshotsMessage, restoreBrowserStatusMessage] {
+            guard let message, !message.isEmpty else {
+                continue
             }
+            let lowered = message.lowercased()
+            if lowered.contains("failed") || lowered.contains("error") {
+                return message
+            }
+        }
+        return nil
+    }
+
+    var restoreSourceNotice: String? {
+        if let failure = restoreSourceFailure {
+            return failure
         }
         if let browserMessage = restoreBrowserStatusMessage, !browserMessage.isEmpty {
             return browserMessage

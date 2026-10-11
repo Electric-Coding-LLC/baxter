@@ -72,6 +72,11 @@ struct BaxterRestoreView: View {
                     showRestoreInspector = true
                 }
             }
+            .onChange(of: restoreActionStatusMessage) { _, message in
+                if message != nil {
+                    showRestoreInspector = true
+                }
+            }
             .onDisappear {
                 restoreSearchDebounceTask?.cancel()
                 restoreSearchDebounceTask = nil
@@ -127,6 +132,14 @@ struct BaxterRestoreView: View {
         }
 
         ToolbarItem {
+            if statusModel.isSnapshotsBusy || statusModel.isRestoreBusy {
+                ProgressView()
+                    .controlSize(.small)
+                    .help(statusModel.isRestoreBusy ? "Restore in progress" : "Loading snapshots")
+            }
+        }
+
+        ToolbarItem {
             Button {
                 showRestoreInspector.toggle()
             } label: {
@@ -146,7 +159,7 @@ struct BaxterRestoreView: View {
                     ContentUnavailableView(
                         restoreBrowserEmptyStateTitle,
                         systemImage: "tray",
-                        description: Text(restoreBrowserEmptyStateMessage)
+                        description: Text(restoreSourceFailure ?? restoreBrowserEmptyStateMessage)
                     )
                 }
             } else {
