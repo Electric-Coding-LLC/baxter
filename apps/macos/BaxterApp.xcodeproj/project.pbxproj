@@ -31,7 +31,7 @@
 		A000000000000000000000A8 /* BaxterApp/KeychainPassphraseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000A3 /* BaxterApp/KeychainPassphraseStore.swift */; };
 		A000000000000000000000A9 /* BaxterApp/SettingsModel+Recovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000A4 /* BaxterApp/SettingsModel+Recovery.swift */; };
 		A000000000000000000000AA /* BaxterAppTests/RecoveryOnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000A5 /* BaxterAppTests/RecoveryOnboardingTests.swift */; };
-		A000000000000000000000AC /* BaxterApp/RestoreBrowserVisibleRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000AB /* BaxterApp/RestoreBrowserVisibleRows.swift */; };
+		A000000000000000000000AC /* BaxterApp/RestoreBrowserTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000AB /* BaxterApp/RestoreBrowserTree.swift */; };
 		A000000000000000000000AE /* BaxterApp/BaxterRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000AD /* BaxterApp/BaxterRuntime.swift */; };
 		A000000000000000000000B1 /* BaxterApp/LaunchdSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000B0 /* BaxterApp/LaunchdSupport.swift */; };
 		A000000000000000000000C1 /* BaxterApp/BaxterWorkspaceWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A000000000000000000000C0 /* BaxterApp/BaxterWorkspaceWindow.swift */; };
@@ -76,7 +76,7 @@
 		A000000000000000000000A3 /* BaxterApp/KeychainPassphraseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/KeychainPassphraseStore.swift; sourceTree = "<group>"; };
 		A000000000000000000000A4 /* BaxterApp/SettingsModel+Recovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BaxterApp/SettingsModel+Recovery.swift"; sourceTree = "<group>"; };
 		A000000000000000000000A5 /* BaxterAppTests/RecoveryOnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterAppTests/RecoveryOnboardingTests.swift; sourceTree = "<group>"; };
-		A000000000000000000000AB /* BaxterApp/RestoreBrowserVisibleRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/RestoreBrowserVisibleRows.swift; sourceTree = "<group>"; };
+		A000000000000000000000AB /* BaxterApp/RestoreBrowserTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/RestoreBrowserTree.swift; sourceTree = "<group>"; };
 		A000000000000000000000AD /* BaxterApp/BaxterRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterRuntime.swift; sourceTree = "<group>"; };
 		A000000000000000000000B0 /* BaxterApp/LaunchdSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/LaunchdSupport.swift; sourceTree = "<group>"; };
 		A000000000000000000000C0 /* BaxterApp/BaxterWorkspaceWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BaxterApp/BaxterWorkspaceWindow.swift; sourceTree = "<group>"; };
@@ -138,7 +138,7 @@
 				A000000000000000000000A2 /* BaxterApp/BaxterSettingsView+Onboarding.swift */,
 				A000000000000000000000A3 /* BaxterApp/KeychainPassphraseStore.swift */,
 				A000000000000000000000A4 /* BaxterApp/SettingsModel+Recovery.swift */,
-				A000000000000000000000AB /* BaxterApp/RestoreBrowserVisibleRows.swift */,
+				A000000000000000000000AB /* BaxterApp/RestoreBrowserTree.swift */,
 				A000000000000000000000AD /* BaxterApp/BaxterRuntime.swift */,
 				A000000000000000000000B0 /* BaxterApp/LaunchdSupport.swift */,
 				A000000000000000000000C0 /* BaxterApp/BaxterWorkspaceWindow.swift */,
@@ -268,7 +268,7 @@
 				A000000000000000000000A7 /* BaxterApp/BaxterSettingsView+Onboarding.swift in Sources */,
 				A000000000000000000000A8 /* BaxterApp/KeychainPassphraseStore.swift in Sources */,
 				A000000000000000000000A9 /* BaxterApp/SettingsModel+Recovery.swift in Sources */,
-				A000000000000000000000AC /* BaxterApp/RestoreBrowserVisibleRows.swift in Sources */,
+				A000000000000000000000AC /* BaxterApp/RestoreBrowserTree.swift in Sources */,
 				A000000000000000000000AE /* BaxterApp/BaxterRuntime.swift in Sources */,
 				A000000000000000000000B1 /* BaxterApp/LaunchdSupport.swift in Sources */,
 				A000000000000000000000C1 /* BaxterApp/BaxterWorkspaceWindow.swift in Sources */,
