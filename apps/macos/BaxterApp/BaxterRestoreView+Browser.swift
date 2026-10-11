@@ -110,18 +110,14 @@ extension BaxterRestoreView {
     var restoreBrowserEmptyStateMessage: String {
         if selectedSnapshotIsEmpty {
             if statusModel.selectedSnapshot == BackupStatusModel.latestSnapshotSelection && hasOlderSnapshotsWithContents {
-                return "The newest backup completed with 0 restorable paths. Open Source and choose an older snapshot with contents."
+                return "The newest backup completed with 0 restorable paths. Choose an older snapshot with contents in the toolbar."
             }
-            return "This snapshot has 0 restorable paths. Open Source to pick another snapshot or run a backup with files in scope."
+            return "This snapshot has 0 restorable paths. Choose another snapshot in the toolbar or run a backup with files in scope."
         }
         if hasLoadedRestoreBrowserPaths {
-            return "Adjust filters in Source and results will refresh automatically."
+            return "Change the search or the filter in the inspector and results will refresh automatically."
         }
         return "Run a backup or connect an existing backup set, then refresh Restore."
-    }
-
-    var isRestoreActionsPanelVisible: Bool {
-        activeRestorePath != nil
     }
 
     var restoreMessageColor: Color {
@@ -164,12 +160,22 @@ extension BaxterRestoreView {
         return isBrowserStatusMessage(message) ? message : nil
     }
 
-    var restoreSourceNotice: String? {
-        if let snapshotsMessage = statusModel.snapshotsMessage, !snapshotsMessage.isEmpty {
-            let lowered = snapshotsMessage.lowercased()
-            if lowered.contains("failed") || lowered.contains("error") {
-                return snapshotsMessage
+    var restoreSourceFailure: String? {
+        for message in [statusModel.snapshotsMessage, restoreBrowserStatusMessage] {
+            guard let message, !message.isEmpty else {
+                continue
             }
+            let lowered = message.lowercased()
+            if lowered.contains("failed") || lowered.contains("error") {
+                return message
+            }
+        }
+        return nil
+    }
+
+    var restoreSourceNotice: String? {
+        if let failure = restoreSourceFailure {
+            return failure
         }
         if let browserMessage = restoreBrowserStatusMessage, !browserMessage.isEmpty {
             return browserMessage

@@ -23,6 +23,7 @@ struct BaxterApp: App {
                 windowCoordinator: workspaceWindowCoordinator
             )
         }
+        .defaultSize(width: 1100, height: 720)
 
         Settings {
             BaxterSettingsView(
