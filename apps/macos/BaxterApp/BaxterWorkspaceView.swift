@@ -83,74 +83,86 @@ struct BaxterDiagnosticsView: View {
     @State private var diagnosticsMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Config path: \(settingsModel.configURL.path)")
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                    Text("Baxter state: \(statusModel.daemonServiceState.rawValue)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("IPC reachable: \(statusModel.isDaemonReachable ? "yes" : "no")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("Backup state: \(statusModel.state.rawValue)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("Verify state: \(statusModel.verifyState.rawValue)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let lastError = statusModel.lastError, !lastError.isEmpty {
-                        Text("Last backup error: \(lastError)")
-                            .font(.caption2)
-                            .foregroundStyle(.red)
-                    }
-                    if let lastVerifyError = statusModel.lastVerifyError, !lastVerifyError.isEmpty {
-                        Text("Last verify error: \(lastVerifyError)")
-                            .font(.caption2)
-                            .foregroundStyle(.red)
-                    }
-                    if let lastRestoreError = statusModel.lastRestoreError, !lastRestoreError.isEmpty {
-                        Text("Last restore error: \(lastRestoreError)")
-                            .font(.caption2)
-                            .foregroundStyle(.red)
-                    }
-                    Text("Daemon logs:")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("  \(daemonOutLogPath)")
-                        .font(.caption2.monospaced())
-                        .textSelection(.enabled)
-                    Text("  \(daemonErrLogPath)")
-                        .font(.caption2.monospaced())
-                        .textSelection(.enabled)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        Form {
+            Section("Status") {
+                LabeledContent("Background Service", value: statusModel.daemonServiceState.rawValue)
+                LabeledContent("Connection", value: statusModel.isDaemonReachable ? "Reachable" : "Not Reachable")
+                LabeledContent("Backup", value: statusModel.state.rawValue)
+                LabeledContent("Verify", value: statusModel.verifyState.rawValue)
             }
 
-            HStack(spacing: 10) {
-                Button("Run Verify") {
+            Section("Errors") {
+                if errors.isEmpty {
+                    Text("No Errors")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(errors, id: \.label) { error in
+                        LabeledContent(error.label) {
+                            Text(error.message)
+                                .foregroundStyle(.red)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+            }
+
+            Section {
+                pathRow("Config", path: settingsModel.configURL.path)
+                pathRow("Service Log", path: daemonOutLogPath)
+                pathRow("Service Error Log", path: daemonErrLogPath)
+            } header: {
+                Text("Files")
+            } footer: {
+                if let diagnosticsMessage {
+                    Text(diagnosticsMessage)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .toolbar {
+            ToolbarItemGroup {
+                Button("Run Verify", systemImage: "checkmark.shield") {
                     statusModel.runVerify()
                 }
                 .disabled(statusModel.verifyState == .running || statusModel.isLifecycleBusy || statusModel.daemonServiceState != .running)
+                .help("Check stored backups against their checksums")
 
-                Button("Copy Diagnostics Summary") {
+                Button("Copy Summary", systemImage: "doc.on.doc") {
                     copyDiagnosticsSummary()
                 }
-                Button("Export Diagnostics Bundle") {
+                .help("Copy a diagnostics summary to the clipboard")
+
+                Button("Export Bundle", systemImage: "square.and.arrow.up") {
                     exportDiagnosticsBundle()
                 }
-                if let diagnosticsMessage {
-                    Text(diagnosticsMessage)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+                .help("Save a diagnostics bundle with redacted config and recent logs")
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var errors: [(label: String, message: String)] {
+        [
+            ("Last Backup", statusModel.lastError),
+            ("Last Verify", statusModel.lastVerifyError),
+            ("Last Restore", statusModel.lastRestoreError),
+        ].compactMap { label, message in
+            guard let message, !message.isEmpty else {
+                return nil
+            }
+            return (label, message)
+        }
+    }
+
+    private func pathRow(_ label: String, path: String) -> some View {
+        LabeledContent(label) {
+            Text(path)
+                .font(.callout.monospaced())
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .help(path)
+        }
     }
 
     private var daemonOutLogPath: String {
