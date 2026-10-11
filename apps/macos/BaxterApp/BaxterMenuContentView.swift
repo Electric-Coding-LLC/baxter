@@ -39,7 +39,9 @@ struct BaxterMenuContentView: View {
 
         Button("Settings…") {
             NSApplication.shared.activate(ignoringOtherApps: true)
-            openSettings()
+            DispatchQueue.main.async {
+                openSettings()
+            }
         }
         .keyboardShortcut(",", modifiers: [.command])
 
@@ -57,6 +59,11 @@ struct BaxterMenuContentView: View {
                 model.stopDaemon()
             }
             .disabled(!status.canStopDaemon)
+
+            Button("Restart Baxter") {
+                model.startDaemon()
+            }
+            .disabled(!status.canRestartDaemon)
 
             Divider()
 

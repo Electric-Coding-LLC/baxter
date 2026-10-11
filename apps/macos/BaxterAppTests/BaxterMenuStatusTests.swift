@@ -94,6 +94,30 @@ final class BaxterMenuStatusTests: XCTestCase {
         XCTAssertEqual(status.runBackupDisabledReason, "Open Settings to set up your first backup.")
     }
 
+    func testUnreachableRunningServiceOffersRestart() {
+        let model = makeModel()
+        model.connectionState = .unavailable
+        let status = BaxterMenuStatus(model: model)
+
+        XCTAssertFalse(status.canStartDaemon)
+        XCTAssertTrue(status.canRestartDaemon)
+        XCTAssertEqual(
+            status.runBackupDisabledReason,
+            "Baxter can't reach its background service. Try Background Service > Restart Baxter."
+        )
+    }
+
+    func testLongErrorsAreShortenedToOneLine() {
+        let model = makeModel()
+        model.state = .failed
+        model.lastError = String(repeating: "x", count: 300) + "\nsecond line"
+
+        let warning = BaxterMenuStatus(model: model).warnings[0]
+        XCTAssertEqual(warning.count, 90)
+        XCTAssertTrue(warning.hasSuffix("…"))
+        XCTAssertFalse(warning.contains("\n"))
+    }
+
     func testLifecycleFailureIsShownAsWarning() {
         let model = makeModel()
         model.lifecycleMessage = "Start failed: launchctl exited 5"
