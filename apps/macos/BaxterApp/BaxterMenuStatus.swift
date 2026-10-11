@@ -3,6 +3,13 @@ import Foundation
 @MainActor
 struct BaxterMenuStatus {
     let model: BackupStatusModel
+    private let needsInitialSetup: Bool
+    private let maxWarningLength = 90
+
+    init(model: BackupStatusModel) {
+        self.model = model
+        needsInitialSetup = model.connectionState == .stopped && !model.hasConfigFile()
+    }
 
     var statusLines: [String] {
         var lines = [daemonHeadline, backupHeadline]
@@ -19,6 +26,11 @@ struct BaxterMenuStatus {
         if let lifecycleFailureMessage {
             messages.append(lifecycleFailureMessage)
         }
+        return (messages + backupWarnings).map(shortened)
+    }
+
+    private var backupWarnings: [String] {
+        var messages: [String] = []
         guard model.connectionState == .connected else {
             return messages
         }
@@ -58,7 +70,7 @@ struct BaxterMenuStatus {
         case .connected, .connecting, .delayed, .unknown:
             return nil
         case .unavailable:
-            return "Baxter can't reach its background service. Try Refresh or Start Baxter."
+            return "Baxter can't reach its background service. Try Background Service > Restart Baxter."
         case .stopped:
             return "Start Baxter to run backups."
         }
@@ -72,6 +84,10 @@ struct BaxterMenuStatus {
         !model.isLifecycleBusy && model.daemonServiceState != .stopped
     }
 
+    var canRestartDaemon: Bool {
+        !model.isLifecycleBusy && model.daemonServiceState == .running
+    }
+
     var startTitle: String {
         model.activeLifecycleAction == .starting ? "Starting Baxter…" : "Start Baxter"
     }
@@ -80,12 +96,16 @@ struct BaxterMenuStatus {
         model.activeLifecycleAction == .stopping ? "Stopping Baxter…" : "Stop Baxter"
     }
 
-    private var isDaemonOperational: Bool {
-        model.connectionState == .connected && model.daemonServiceState == .running && model.isDaemonReachable
+    private func shortened(_ message: String) -> String {
+        let singleLine = message.split(whereSeparator: \.isNewline).joined(separator: " ")
+        guard singleLine.count > maxWarningLength else {
+            return singleLine
+        }
+        return String(singleLine.prefix(maxWarningLength - 1)) + "…"
     }
 
-    private var needsInitialSetup: Bool {
-        !model.hasConfigFile() && model.connectionState == .stopped
+    private var isDaemonOperational: Bool {
+        model.connectionState == .connected && model.daemonServiceState == .running && model.isDaemonReachable
     }
 
     private var daemonHeadline: String {
