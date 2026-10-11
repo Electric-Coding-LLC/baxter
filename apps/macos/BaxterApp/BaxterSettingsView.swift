@@ -1,5 +1,45 @@
 import SwiftUI
 
+enum BaxterSettingsTab: String, CaseIterable, Hashable, Identifiable {
+    case general
+    case schedule
+    case storage
+    case encryption
+    case notifications
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general:
+            return "General"
+        case .schedule:
+            return "Schedule"
+        case .storage:
+            return "Storage"
+        case .encryption:
+            return "Encryption"
+        case .notifications:
+            return "Notifications"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general:
+            return "gearshape"
+        case .schedule:
+            return "calendar.badge.clock"
+        case .storage:
+            return "externaldrive"
+        case .encryption:
+            return "lock"
+        case .notifications:
+            return "bell.badge"
+        }
+    }
+}
+
 struct BaxterSettingsView: View {
     enum OnboardingMode: String, CaseIterable, Identifiable {
         case newBackup
@@ -11,56 +51,25 @@ struct BaxterSettingsView: View {
     @ObservedObject var model: BaxterSettingsModel
     @ObservedObject var statusModel: BackupStatusModel
     var onRecoveryConnected: (() -> Void)? = nil
-    var embedded: Bool = false
     @AppStorage("baxter.onboarding.dismissed") var onboardingDismissed = false
+    @AppStorage("baxter.settings.selectedTab") var selectedTab: BaxterSettingsTab = .general
     @State var showApplyNow = false
+    @State private var isOnboarding = false
+    @State var selectedBackupRoots: Set<String> = []
     @State var onboardingMode: OnboardingMode = .newBackup
     @State var onboardingStorageMode: StorageModeOption = .local
     @State var recoveryPassphrase = ""
     @State var onboardingMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if !embedded {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Settings")
-                        .font(.title2.weight(.semibold))
-                    Text("Tune backup, verify, storage, and encryption behavior.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
+        Group {
+            if isOnboarding && !onboardingDismissed {
+                onboardingPane
+            } else {
+                settingsTabs
             }
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if shouldShowOnboarding {
-                        onboardingSection
-                        sectionDivider
-                    }
-
-                    backupSection
-                    sectionDivider
-                    verifySection
-                    sectionDivider
-                    s3Section
-                    sectionDivider
-                    encryptionSection
-                    sectionDivider
-                    notificationsSection
-                }
-                .frame(maxWidth: SettingsLayout.contentWidth, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
-            }
-            .frame(maxHeight: .infinity)
-
-            Divider()
-            settingsFooter
         }
-        .padding(embedded ? 0 : 10)
-        .frame(minWidth: embedded ? nil : 700, minHeight: embedded ? nil : 620)
+        .frame(width: 620, height: 520)
         .onChange(of: statusModel.daemonServiceState) { _, state in
             if state != .running {
                 showApplyNow = false
@@ -71,10 +80,14 @@ struct BaxterSettingsView: View {
                 showApplyNow = false
             }
         }
+        .onChange(of: model.backupRoots) { _, roots in
+            selectedBackupRoots.formIntersection(roots)
+        }
         .onChange(of: onboardingMode) { _, _ in
             onboardingMessage = nil
         }
         .onAppear {
+            isOnboarding = shouldShowOnboarding
             onboardingStorageMode = model.storageMode()
             if model.configExists && model.backupRoots.isEmpty {
                 onboardingMode = .existingBackup
@@ -82,81 +95,113 @@ struct BaxterSettingsView: View {
         }
     }
 
-    var sectionDivider: some View {
-        Divider()
-            .padding(.horizontal, 10)
+    private var settingsTabs: some View {
+        TabView(selection: $selectedTab) {
+            ForEach(BaxterSettingsTab.allCases) { tab in
+                Tab(tab.title, systemImage: tab.systemImage, value: tab) {
+                    settingsPane(for: tab)
+                }
+            }
+        }
+    }
+
+    private func settingsPane(for tab: BaxterSettingsTab) -> some View {
+        Form {
+            switch tab {
+            case .general:
+                generalSections
+            case .schedule:
+                scheduleSections
+            case .storage:
+                storageSections
+            case .encryption:
+                encryptionSections
+            case .notifications:
+                notificationsSections
+            }
+        }
+        .formStyle(.grouped)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if tab != .notifications {
+                settingsFooter
+            }
+        }
     }
 
     var settingsFooter: some View {
-        let isAwaitingApply = showApplyNow && !model.hasUnsavedChanges
-
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .bottom, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Config: \(model.configURL.path)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-
-                    if let statusMessage = model.statusMessage {
-                        Label(statusMessage, systemImage: "checkmark.circle")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let errorMessage = model.errorMessage {
-                        Label(errorMessage, systemImage: "exclamationmark.triangle")
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                }
-
-                Spacer(minLength: 12)
-
-                HStack(spacing: 8) {
+        VStack(spacing: 0) {
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 12) {
+                    settingsFooterStatus
+                    Spacer(minLength: 12)
                     Button("Reload") {
                         model.load()
                         showApplyNow = false
                     }
-                    .buttonStyle(.bordered)
 
-                    if isAwaitingApply {
-                        Button("Saved") {
-                            model.save()
-                            showApplyNow = model.shouldOfferApplyNow(daemonState: statusModel.daemonServiceState)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(!model.canSave)
-                        .keyboardShortcut("s", modifiers: [.command])
-                    } else {
-                        Button("Save") {
-                            model.save()
-                            showApplyNow = model.shouldOfferApplyNow(daemonState: statusModel.daemonServiceState)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!model.canSave)
-                        .keyboardShortcut("s", modifiers: [.command])
+                    Button("Save") {
+                        model.save()
+                        showApplyNow = model.shouldOfferApplyNow(daemonState: statusModel.daemonServiceState)
                     }
-                }
-            }
-
-            if showApplyNow {
-                HStack(spacing: 10) {
-                    Text("Saved settings. Restart daemon to apply changes now.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Apply Now") {
-                        statusModel.applyConfigNow()
-                        showApplyNow = false
-                    }
+                    .keyboardShortcut("s", modifiers: [.command])
                     .buttonStyle(.borderedProminent)
-                    .disabled(statusModel.isLifecycleBusy)
+                    .disabled(!model.canSave)
+                }
+
+                if showApplyNow {
+                    HStack(spacing: 12) {
+                        Text("Restart the daemon to apply the saved settings now.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 12)
+                        Button("Apply Now") {
+                            statusModel.applyConfigNow()
+                            showApplyNow = false
+                        }
+                        .disabled(statusModel.isLifecycleBusy)
+                    }
                 }
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .background(.bar)
+    }
+
+    @ViewBuilder
+    private var settingsFooterStatus: some View {
+        if let errorMessage = model.errorMessage {
+            Label(errorMessage, systemImage: "exclamationmark.triangle")
+                .font(.callout)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+        } else if let validationMessage = model.firstValidationError {
+            Label(validationMessage, systemImage: "exclamationmark.triangle")
+                .font(.callout)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+        } else if model.hasUnsavedChanges {
+            Text("Unsaved changes")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        } else if let statusMessage = model.statusMessage {
+            Text(statusMessage)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+        }
+    }
+
+    @ViewBuilder
+    func fieldError(_ field: SettingsField) -> some View {
+        if let message = model.validationMessage(for: field) {
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.red)
+        }
     }
 
     private var shouldShowOnboarding: Bool {

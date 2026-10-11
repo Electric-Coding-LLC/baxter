@@ -4,7 +4,6 @@ import SwiftUI
 
 enum BaxterWorkspaceSection: String, CaseIterable, Hashable, Identifiable {
     case restore
-    case settings
     case diagnostics
 
     var id: String { rawValue }
@@ -13,8 +12,6 @@ enum BaxterWorkspaceSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .restore:
             return "Restore"
-        case .settings:
-            return "Settings"
         case .diagnostics:
             return "Diagnostics"
         }
@@ -24,8 +21,6 @@ enum BaxterWorkspaceSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .restore:
             return "Browse snapshots and restore files with confidence."
-        case .settings:
-            return "Tune backup, verify, storage, and encryption behavior."
         case .diagnostics:
             return "Inspect runtime state and export support bundles."
         }
@@ -35,8 +30,6 @@ enum BaxterWorkspaceSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .restore:
             return "externaldrive.badge.timemachine"
-        case .settings:
-            return "slider.horizontal.3"
         case .diagnostics:
             return "stethoscope"
         }
@@ -103,13 +96,6 @@ struct BaxterWorkspaceView: View {
                     switch router.selectedSection {
                     case .restore:
                         BaxterRestoreView(statusModel: statusModel, settingsModel: settingsModel, embedded: true)
-                    case .settings:
-                        BaxterSettingsView(
-                            model: settingsModel,
-                            statusModel: statusModel,
-                            onRecoveryConnected: { router.selectedSection = .restore },
-                            embedded: true
-                        )
                     case .diagnostics:
                         BaxterDiagnosticsView(statusModel: statusModel, settingsModel: settingsModel, embedded: true)
                     }
