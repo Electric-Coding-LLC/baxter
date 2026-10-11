@@ -11,10 +11,9 @@ struct BaxterApp: App {
 
     var body: some Scene {
         MenuBarExtra(BaxterRuntime.applicationName, systemImage: iconName) {
-            BaxterMenuContentView(model: model, openWorkspace: openWorkspace, dismissMenu: closeMenuBarPanel)
-                .frame(width: 340)
+            BaxterMenuContentView(model: model, openWorkspace: openWorkspace)
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
 
         Window(BaxterRuntime.applicationName, id: "workspace") {
             BaxterWorkspaceView(
@@ -46,25 +45,7 @@ struct BaxterApp: App {
 
     private func openWorkspace(section: BaxterWorkspaceSection) {
         workspaceRouter.selectedSection = section
-        closeMenuBarPanel()
         openWindow(id: "workspace")
         workspaceWindowCoordinator.requestPresentation()
-    }
-
-    private func closeMenuBarPanel() {
-        if let keyWindow = NSApplication.shared.keyWindow, isMenuBarPanelWindow(keyWindow) {
-            keyWindow.orderOut(nil)
-        }
-    }
-
-    private func isMenuBarPanelWindow(_ window: NSWindow) -> Bool {
-        let className = NSStringFromClass(type(of: window))
-        if className.contains("MenuBarExtra") {
-            return true
-        }
-        if window.level == .statusBar || window.level == .popUpMenu {
-            return true
-        }
-        return className.contains("Panel")
     }
 }
