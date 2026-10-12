@@ -11,7 +11,7 @@ struct BaxterApp: App {
 
     var body: some Scene {
         MenuBarExtra(BaxterRuntime.applicationName, systemImage: iconName) {
-            BaxterMenuContentView(model: model, openWorkspace: openWorkspace)
+            BaxterMenuContentView(model: model, openWorkspace: openWorkspace, dismissMenu: closeMenuBarPanel)
                 .frame(width: 340)
         }
         .menuBarExtraStyle(.window)
@@ -22,6 +22,14 @@ struct BaxterApp: App {
                 settingsModel: settingsModel,
                 router: workspaceRouter,
                 windowCoordinator: workspaceWindowCoordinator
+            )
+        }
+
+        Settings {
+            BaxterSettingsView(
+                model: settingsModel,
+                statusModel: model,
+                onRecoveryConnected: { openWorkspace(section: .restore) }
             )
         }
     }
