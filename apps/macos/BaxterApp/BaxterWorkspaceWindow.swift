@@ -38,90 +38,27 @@ final class BaxterWorkspaceWindowCoordinator: ObservableObject {
     }
 }
 
-struct WorkspaceWindowTitleSync: NSViewRepresentable {
-    let title: String
-    let trailingTitle: String
+struct WorkspaceWindowRegistration: NSViewRepresentable {
     let windowCoordinator: BaxterWorkspaceWindowCoordinator
 
-    final class Coordinator {
-        weak var window: NSWindow?
-        weak var trailingLabel: NSTextField?
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async {
-            guard let window = view.window else {
-                return
-            }
-            synchronizeWindow(window, coordinator: context.coordinator)
+        let view = WindowObservingView()
+        view.onWindowChange = { window in
+            windowCoordinator.register(window)
         }
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let window = nsView.window else {
-                return
-            }
-            synchronizeWindow(window, coordinator: context.coordinator)
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private final class WindowObservingView: NSView {
+    var onWindowChange: ((NSWindow) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window {
+            onWindowChange?(window)
         }
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.trailingLabel?.removeFromSuperview()
-    }
-
-    private func synchronizeWindow(_ window: NSWindow, coordinator: Coordinator) {
-        windowCoordinator.register(window)
-        removeRightTitlebarAccessories(from: window)
-        window.title = title
-        installOrUpdateTrailingLabel(on: window, coordinator: coordinator)
-    }
-
-    private func removeRightTitlebarAccessories(from window: NSWindow) {
-        let indexedAccessories = Array(window.titlebarAccessoryViewControllers.enumerated())
-        for (index, accessory) in indexedAccessories.reversed() where accessory.layoutAttribute == .right {
-            window.removeTitlebarAccessoryViewController(at: index)
-        }
-    }
-
-    private func installOrUpdateTrailingLabel(on window: NSWindow, coordinator: Coordinator) {
-        guard let titlebarView = window.standardWindowButton(.closeButton)?.superview else {
-            return
-        }
-
-        let label: NSTextField
-        if let existing = coordinator.trailingLabel, existing.superview === titlebarView {
-            label = existing
-        } else {
-            let created = NSTextField(labelWithString: trailingTitle)
-            created.identifier = NSUserInterfaceItemIdentifier("baxter.trailing.title.label")
-            created.font = NSFont.systemFont(
-                ofSize: NSFont.titleBarFont(ofSize: NSFont.systemFontSize).pointSize,
-                weight: .semibold
-            )
-            created.textColor = .labelColor
-            created.alignment = .right
-            created.lineBreakMode = .byTruncatingTail
-            created.translatesAutoresizingMaskIntoConstraints = false
-
-            titlebarView.addSubview(created)
-            NSLayoutConstraint.activate([
-                created.trailingAnchor.constraint(equalTo: titlebarView.trailingAnchor, constant: -24),
-                created.centerYAnchor.constraint(equalTo: titlebarView.centerYAnchor)
-            ])
-
-            coordinator.trailingLabel = created
-            coordinator.window = window
-            label = created
-        }
-
-        label.stringValue = trailingTitle
-        label.sizeToFit()
     }
 }

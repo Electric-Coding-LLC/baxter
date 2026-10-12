@@ -17,15 +17,6 @@ enum BaxterWorkspaceSection: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .restore:
-            return "Browse snapshots and restore files with confidence."
-        case .diagnostics:
-            return "Inspect runtime state and export support bundles."
-        }
-    }
-
     var systemImage: String {
         switch self {
         case .restore:
@@ -49,90 +40,50 @@ struct BaxterWorkspaceView: View {
 
     var body: some View {
         NavigationSplitView {
-            VStack(alignment: .leading, spacing: 10) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(BaxterWorkspaceSection.allCases) { section in
-                            Button {
-                                router.selectedSection = section
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: section.systemImage)
-                                        .frame(width: 16)
-                                    Text(section.title)
-                                        .lineLimit(1)
-                                }
-                                .font(.body)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(router.selectedSection == section ? Color.accentColor.opacity(0.20) : .clear)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.top, 10)
+            List(selection: sectionSelection) {
+                ForEach(BaxterWorkspaceSection.allCases) { section in
+                    Label(section.title, systemImage: section.systemImage)
+                        .tag(section)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .navigationSplitViewColumnWidth(min: 230, ideal: 250, max: 280)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
         } detail: {
-            VStack(alignment: .leading, spacing: 8) {
-                if router.selectedSection != .restore {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(router.selectedSection.title)
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                        Text(router.selectedSection.subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+            Group {
+                switch router.selectedSection {
+                case .restore:
+                    BaxterRestoreView(statusModel: statusModel, settingsModel: settingsModel)
+                case .diagnostics:
+                    BaxterDiagnosticsView(statusModel: statusModel, settingsModel: settingsModel)
                 }
-
-                Group {
-                    switch router.selectedSection {
-                    case .restore:
-                        BaxterRestoreView(statusModel: statusModel, settingsModel: settingsModel, embedded: true)
-                    case .diagnostics:
-                        BaxterDiagnosticsView(statusModel: statusModel, settingsModel: settingsModel, embedded: true)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(.horizontal, router.selectedSection == .restore ? 0 : 18)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .navigationTitle(router.selectedSection.title)
         }
-        .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1400, minHeight: 760)
+        .frame(minWidth: 900, minHeight: 600)
         .background {
-            WorkspaceWindowTitleSync(
-                title: router.selectedSection.title,
-                trailingTitle: BaxterRuntime.applicationName,
-                windowCoordinator: windowCoordinator
-            )
+            WorkspaceWindowRegistration(windowCoordinator: windowCoordinator)
                 .frame(width: 0, height: 0)
         }
+    }
+
+    private var sectionSelection: Binding<BaxterWorkspaceSection?> {
+        Binding(
+            get: { router.selectedSection },
+            set: { section in
+                if let section {
+                    router.selectedSection = section
+                }
+            }
+        )
     }
 }
 
 struct BaxterDiagnosticsView: View {
     @ObservedObject var statusModel: BackupStatusModel
     @ObservedObject var settingsModel: BaxterSettingsModel
-    var embedded: Bool = false
     @State private var diagnosticsMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if !embedded {
-                Text("Diagnostics")
-                    .font(.title2.weight(.semibold))
-            }
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Config path: \(settingsModel.configURL.path)")
@@ -198,8 +149,8 @@ struct BaxterDiagnosticsView: View {
                 Spacer()
             }
         }
-        .padding(embedded ? 12 : 16)
-        .frame(minWidth: embedded ? nil : 680, minHeight: embedded ? nil : 460)
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var daemonOutLogPath: String {
