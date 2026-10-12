@@ -96,25 +96,42 @@ func (d *Daemon) noteStatusPoll() {
 
 // recordSkippedFiles stores what the latest completed backup left out and
 // notifies when a backup starts skipping files or skips at least twice as many
-// as the one before.
+// as the one before. Cloud-only files are counted apart from files that could
+// not be read, so a standing set of offloaded files does not hide a new
+// failure.
 func (d *Daemon) recordSkippedFiles(skipped []backup.SkippedFile) {
 	reported := skipped
 	if len(reported) > maxReportedSkippedFiles {
 		reported = reported[:maxReportedSkippedFiles]
 	}
+	var cloudOnly, unreadable []backup.SkippedFile
+	for _, file := range skipped {
+		if file.Reason == backup.CloudOnlySkipReason {
+			cloudOnly = append(cloudOnly, file)
+		} else {
+			unreadable = append(unreadable, file)
+		}
+	}
 
 	d.mu.Lock()
-	previousCount := d.status.LastSkippedCount
+	previousCloudOnly := d.status.LastSkippedCloudOnlyCount
+	previousUnreadable := d.status.LastSkippedCount - previousCloudOnly
 	d.status.LastSkippedCount = len(skipped)
+	d.status.LastSkippedCloudOnlyCount = len(cloudOnly)
 	d.status.LastSkipped = append([]backup.SkippedFile(nil), reported...)
 	d.mu.Unlock()
 
+	d.notifySkipped("file", "files", unreadable, previousUnreadable)
+	d.notifySkipped("cloud-only file", "cloud-only files", cloudOnly, previousCloudOnly)
+}
+
+func (d *Daemon) notifySkipped(singular, plural string, skipped []backup.SkippedFile, previousCount int) {
 	if len(skipped) == 0 || (previousCount > 0 && len(skipped) < 2*previousCount) {
 		return
 	}
-	title := fmt.Sprintf("Baxter skipped %d files", len(skipped))
+	title := fmt.Sprintf("Baxter skipped %d %s", len(skipped), plural)
 	if len(skipped) == 1 {
-		title = "Baxter skipped 1 file"
+		title = "Baxter skipped 1 " + singular
 	}
 	d.notify(title, fmt.Sprintf("%s: %s", skipped[0].Path, skipped[0].Reason))
 }

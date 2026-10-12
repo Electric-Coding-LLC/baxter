@@ -18,19 +18,21 @@ type daemonStatus struct {
 	// ConsecutiveFailures counts failed runs since the last successful backup.
 	ConsecutiveFailures int
 	// LastSkipped lists up to maxReportedSkippedFiles paths the last
-	// successful backup left out; LastSkippedCount is the full count.
-	LastSkippedCount   int
-	LastSkipped        []backup.SkippedFile
-	LastOverdueAlertAt time.Time
-	BackupProgress     backupProgressSummary
-	LastRestoreAt      time.Time
-	LastRestorePath    string
-	LastRestoreError   string
-	VerifyState        string
-	LastVerifyAt       time.Time
-	NextVerifyAt       time.Time
-	LastVerifyError    string
-	LastVerifyResult   verifyResultSummary
+	// successful backup left out; LastSkippedCount is the full count and
+	// LastSkippedCloudOnlyCount the part that is cloud-only files.
+	LastSkippedCount          int
+	LastSkippedCloudOnlyCount int
+	LastSkipped               []backup.SkippedFile
+	LastOverdueAlertAt        time.Time
+	BackupProgress            backupProgressSummary
+	LastRestoreAt             time.Time
+	LastRestorePath           string
+	LastRestoreError          string
+	VerifyState               string
+	LastVerifyAt              time.Time
+	NextVerifyAt              time.Time
+	LastVerifyError           string
+	LastVerifyResult          verifyResultSummary
 }
 
 type verifyResultSummary struct {

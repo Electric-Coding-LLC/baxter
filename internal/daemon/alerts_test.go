@@ -212,3 +212,35 @@ func TestSkippedFilesAreReportedInStatus(t *testing.T) {
 		t.Fatalf("a clean backup must clear skipped files: %+v", status)
 	}
 }
+
+func TestCloudOnlySkipsDoNotHideUnreadableFiles(t *testing.T) {
+	now := time.Date(2026, time.October, 11, 22, 0, 0, 0, time.UTC)
+	d, notifications := newAlertTestDaemon(t, &now)
+
+	cloudOnly := make([]backup.SkippedFile, 0, 40)
+	for i := 0; i < 40; i++ {
+		cloudOnly = append(cloudOnly, backup.SkippedFile{
+			Path:   fmt.Sprintf("/Users/me/Documents/scan-%03d.pdf", i),
+			Reason: backup.CloudOnlySkipReason,
+		})
+	}
+	d.recordSkippedFiles(cloudOnly)
+	d.recordSkippedFiles(cloudOnly)
+	if notifications.count() != 1 || notifications.titles[0] != "Baxter skipped 40 cloud-only files" {
+		t.Fatalf("cloud-only files must notify once when they start: %+v", notifications.titles)
+	}
+
+	unreadable := backup.SkippedFile{Path: "/Users/me/Library/Mail/001.emlx", Reason: "operation not permitted"}
+	d.recordSkippedFiles(append([]backup.SkippedFile{unreadable}, cloudOnly...))
+	if notifications.count() != 2 || notifications.titles[1] != "Baxter skipped 1 file" {
+		t.Fatalf("a new unreadable file must notify despite standing cloud-only files: %+v", notifications.titles)
+	}
+	if status := d.snapshot(); status.LastBackupSkippedCount != 41 {
+		t.Fatalf("status must count every skipped file: %d", status.LastBackupSkippedCount)
+	}
+
+	d.recordSkippedFiles(cloudOnly)
+	if notifications.count() != 2 {
+		t.Fatalf("unchanged cloud-only files must not notify again: %+v", notifications.titles)
+	}
+}

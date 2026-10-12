@@ -103,6 +103,7 @@ A simple, secure macOS backup utility with an S3 backend.
 - `GET /v1/status`
   - includes backup fields (`state`, `last_backup_at`, `next_scheduled_at`, `last_error`)
   - includes backup health fields (`last_failure_at`, `consecutive_failures`, `backup_overdue`, `days_since_last_backup`, `last_backup_skipped_count`, `last_backup_skipped`)
+  - skipped files include cloud-only files (for example iCloud Drive files offloaded by Optimize Mac Storage); Baxter does not download them, and keeps the last good backup of any it stored before they were offloaded
   - includes verify fields (`verify_state`, `last_verify_at`, `next_verify_at`, `last_verify_error`, and last verify counters)
 - `POST /v1/backup/run`
 - `POST /v1/verify/run`

@@ -93,7 +93,7 @@ func BuildManifestWithOptions(roots []string, opts BuildOptions) (*Manifest, err
 }
 
 // ScanManifest builds a manifest of the roots and returns the paths it could
-// not read. Only a failure on a configured root itself fails the scan.
+// not read, including cloud-only files that are not downloaded. Only a failure on a configured root itself fails the scan.
 func ScanManifest(roots []string, opts BuildOptions) (*Manifest, []SkippedFile, error) {
 	entries := make([]ManifestEntry, 0)
 	skipped := make([]SkippedFile, 0)
@@ -144,6 +144,7 @@ func ScanManifest(roots []string, opts BuildOptions) (*Manifest, []SkippedFile, 
 			}
 			if placeholderEntry, ok := cloudPlaceholderManifestEntry(cleanPath, info); ok {
 				entries = append(entries, placeholderEntry)
+				skipped = append(skipped, SkippedFile{Path: cleanPath, Reason: CloudOnlySkipReason})
 				return nil
 			}
 
