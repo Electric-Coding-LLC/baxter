@@ -4,7 +4,14 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 )
+
+// CloudOnlySkipReason is the reason reported for files whose content is held
+// by a cloud provider and is not downloaded to this Mac.
+const CloudOnlySkipReason = "cloud-only file is not downloaded to this Mac"
+
+var isCloudPlaceholder = isCloudPlaceholderFileInfo
 
 type CloudPlaceholderError struct {
 	Path string
@@ -23,7 +30,7 @@ func (e *CloudPlaceholderRestoreError) Error() string {
 }
 
 func cloudPlaceholderError(path string, info fs.FileInfo) error {
-	if info == nil || !isCloudPlaceholderFileInfo(info) {
+	if info == nil || !isCloudPlaceholder(info) {
 		return nil
 	}
 	return &CloudPlaceholderError{Path: path}
@@ -59,4 +66,30 @@ func cloudPlaceholderRestoreError(entry ManifestEntry) error {
 
 func CloudPlaceholderRestoreErrorForEntry(entry ManifestEntry) error {
 	return cloudPlaceholderRestoreError(entry)
+}
+
+// keepLastGoodForCloudPlaceholders keeps the previous manifest's entry for a
+// file that was backed up and has since been offloaded to its cloud provider,
+// so it stays restorable from its last good backup.
+func keepLastGoodForCloudPlaceholders(previous, current *Manifest) {
+	if previous == nil || current == nil {
+		return
+	}
+	var lastGood map[string]ManifestEntry
+	for i, entry := range current.Entries {
+		if !entry.IsCloudPlaceholder() {
+			continue
+		}
+		if lastGood == nil {
+			lastGood = make(map[string]ManifestEntry, len(previous.Entries))
+			for _, prev := range previous.Entries {
+				if prev.HasStoredContent() {
+					lastGood[filepath.Clean(prev.Path)] = prev
+				}
+			}
+		}
+		if prev, ok := lastGood[entry.Path]; ok {
+			current.Entries[i] = prev
+		}
+	}
 }

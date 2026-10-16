@@ -14,6 +14,10 @@ type SkippedFile struct {
 }
 
 func skipReason(err error) string {
+	var placeholderErr *CloudPlaceholderError
+	if errors.As(err, &placeholderErr) {
+		return CloudOnlySkipReason
+	}
 	var pathErr *fs.PathError
 	if errors.As(err, &pathErr) && pathErr.Err != nil {
 		return pathErr.Err.Error()

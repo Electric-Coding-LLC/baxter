@@ -85,6 +85,7 @@ func Run(cfg *config.Config, opts RunOptions) (RunResult, error) {
 		return RunResult{}, fmt.Errorf("build manifest: %w", err)
 	}
 	carryForwardSkipped(previous, current, skipped, buildOpts)
+	keepLastGoodForCloudPlaceholders(previous, current)
 	AssignObjectKeys(previous, current)
 
 	plan := PlanChanges(previous, current)
