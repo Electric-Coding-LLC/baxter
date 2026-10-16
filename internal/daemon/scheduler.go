@@ -27,19 +27,15 @@ func (d *Daemon) runScheduler(ctx context.Context) {
 		}
 
 		d.setNextScheduledAt(nextRun)
-		wait := time.Until(nextRun)
-		if wait < 0 {
-			wait = 0
-		}
-		fmt.Printf("backup scheduler next run: schedule=%s next=%s wait=%s\n", schedule.Schedule, nextRun.Format(time.RFC3339), wait)
+		fmt.Printf("backup scheduler next run: schedule=%s next=%s wait=%s\n", schedule.Schedule, nextRun.Format(time.RFC3339), d.untilScheduled(nextRun))
 
-		select {
-		case <-ctx.Done():
+		switch d.waitForScheduledRun(ctx, d.scheduleChanged, nextRun) {
+		case scheduleWaitCanceled:
 			return
-		case <-d.scheduleChanged:
+		case scheduleWaitChanged:
 			fmt.Printf("backup scheduler config changed: recomputing next run\n")
 			continue
-		case <-d.timerAfter(wait):
+		case scheduleWaitDue:
 			if err := d.triggerBackup(); err != nil && !errors.Is(err, errBackupAlreadyRunning) {
 				d.setFailed(err)
 			}
@@ -64,24 +60,61 @@ func (d *Daemon) runVerifyScheduler(ctx context.Context) {
 		}
 
 		d.setNextVerifyAt(nextRun)
-		wait := time.Until(nextRun)
-		if wait < 0 {
-			wait = 0
-		}
-		fmt.Printf("verify scheduler next run: schedule=%s next=%s wait=%s\n", schedule.Schedule, nextRun.Format(time.RFC3339), wait)
+		fmt.Printf("verify scheduler next run: schedule=%s next=%s wait=%s\n", schedule.Schedule, nextRun.Format(time.RFC3339), d.untilScheduled(nextRun))
 
-		select {
-		case <-ctx.Done():
+		switch d.waitForScheduledRun(ctx, d.verifyScheduleChanged, nextRun) {
+		case scheduleWaitCanceled:
 			return
-		case <-d.verifyScheduleChanged:
+		case scheduleWaitChanged:
 			fmt.Printf("verify scheduler config changed: recomputing next run\n")
 			continue
-		case <-d.timerAfter(wait):
+		case scheduleWaitDue:
 			if err := d.triggerVerify(); err != nil && !errors.Is(err, errVerifyAlreadyRunning) {
 				d.setVerifyFailed(err, backup.VerifyResult{})
 			}
 		}
 	}
+}
+
+// schedulerMaxSleep caps each timer wait. Go timers count monotonic time,
+// which stops while macOS sleeps, so one long wait can fire hours after its
+// wall-clock target. Waking periodically and re-reading the wall clock makes a
+// missed run fire on the first wake after its time.
+const schedulerMaxSleep = time.Minute
+
+type scheduleWaitResult int
+
+const (
+	scheduleWaitDue scheduleWaitResult = iota
+	scheduleWaitChanged
+	scheduleWaitCanceled
+)
+
+func (d *Daemon) waitForScheduledRun(ctx context.Context, changed <-chan struct{}, nextRun time.Time) scheduleWaitResult {
+	for {
+		wait := d.untilScheduled(nextRun)
+		if wait > schedulerMaxSleep {
+			wait = schedulerMaxSleep
+		}
+		select {
+		case <-ctx.Done():
+			return scheduleWaitCanceled
+		case <-changed:
+			return scheduleWaitChanged
+		case <-d.timerAfter(wait):
+			if d.untilScheduled(nextRun) <= 0 {
+				return scheduleWaitDue
+			}
+		}
+	}
+}
+
+func (d *Daemon) untilScheduled(nextRun time.Time) time.Duration {
+	wait := nextRun.Sub(d.now())
+	if wait < 0 {
+		return 0
+	}
+	return wait
 }
 
 func (d *Daemon) now() time.Time {
