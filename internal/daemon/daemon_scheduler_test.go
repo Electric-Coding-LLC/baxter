@@ -364,6 +364,9 @@ func TestDaemonEndToEndReloadScheduledTriggerAndStatus(t *testing.T) {
 
 	waitForNextScheduledAt(t, d, time.Date(2026, time.February, 8, 9, 30, 0, 0, time.UTC).Format(time.RFC3339))
 
+	nowMu.Lock()
+	currentNow = time.Date(2026, time.February, 8, 9, 30, 0, 0, time.UTC)
+	nowMu.Unlock()
 	timerCh <- time.Now()
 	select {
 	case <-backupDone:
@@ -390,4 +393,83 @@ func TestDaemonEndToEndReloadScheduledTriggerAndStatus(t *testing.T) {
 		t.Fatalf("reload status code: got %d want %d", rr.Code, http.StatusOK)
 	}
 	waitForNextScheduledAt(t, d, "")
+}
+
+func TestSchedulerWaitsInShortStepsAndFiresOnWallClock(t *testing.T) {
+	var nowMu sync.Mutex
+	currentNow := time.Date(2026, time.February, 8, 9, 0, 0, 0, time.UTC)
+
+	cfg := config.DefaultConfig()
+	cfg.Schedule = "daily"
+	cfg.DailyTime = "09:30"
+	d := New(cfg)
+	d.clockNow = func() time.Time {
+		nowMu.Lock()
+		defer nowMu.Unlock()
+		return currentNow
+	}
+
+	waits := make(chan time.Duration, 8)
+	timerCh := make(chan time.Time)
+	d.timerAfter = func(wait time.Duration) <-chan time.Time {
+		waits <- wait
+		return timerCh
+	}
+
+	backupDone := make(chan struct{}, 1)
+	d.backupRunner = func(ctx context.Context, cfg *config.Config) error {
+		backupDone <- struct{}{}
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		d.runScheduler(ctx)
+		close(done)
+	}()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("scheduler goroutine did not stop in time")
+		}
+	}()
+
+	nextWait := func() time.Duration {
+		select {
+		case wait := <-waits:
+			return wait
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("scheduler did not arm a timer")
+			return 0
+		}
+	}
+
+	if wait := nextWait(); wait != schedulerMaxSleep {
+		t.Fatalf("first wait: got %s want %s", wait, schedulerMaxSleep)
+	}
+
+	// Timer fires early in wall-clock terms: no backup yet, re-arm.
+	timerCh <- time.Now()
+	if wait := nextWait(); wait != schedulerMaxSleep {
+		t.Fatalf("second wait: got %s want %s", wait, schedulerMaxSleep)
+	}
+	select {
+	case <-backupDone:
+		t.Fatal("backup ran before its scheduled time")
+	default:
+	}
+
+	// The Mac slept past 09:30; the next wake must run the backup.
+	nowMu.Lock()
+	currentNow = time.Date(2026, time.February, 8, 11, 0, 0, 0, time.UTC)
+	nowMu.Unlock()
+	timerCh <- time.Now()
+	select {
+	case <-backupDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("backup did not run on the first wake after its scheduled time")
+	}
 }
